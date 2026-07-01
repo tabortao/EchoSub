@@ -1,0 +1,22 @@
+services:
+  echosub:
+    image: ghcr.io/yaole/echosub:latest
+    container_name: echosub
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - ECHOSUB_PORT=8080
+      - ECHOSUB_DB_PATH=/app/data/echosub.db
+      - ECHOSUB_MEDIA_DIR=/media
+      - ECHOSUB_JWT_SECRET=please-change-this-secret
+      - GIN_MODE=release
+    volumes:
+      # 媒体目录：将 NAS 上的媒体文件夹挂载到 /media
+      - /path/to/your/media:/media:ro
+      # 数据持久化：SQLite 数据库
+      - echosub-data:/app/data
+    # NAS 设备通常无需特殊设备映射；如需硬件解码视频可按需配置
+
+volumes:
+  echosub-data:

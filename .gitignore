@@ -1,0 +1,39 @@
+# Go
+backend/bin/
+backend/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+backend/data/
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+backend/config.yaml
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.env.local
+frontend/.env.*.local
+frontend/*.local
+
+test-media/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Trae
+.trae/
+
+# Build artifacts
+*.log

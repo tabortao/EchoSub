@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/.git
+**/.vscode
+**/.idea
+**/*.log
+backend/data
+backend/*.db
+backend/*.sqlite*
+backend/config.yaml
+.trae
+docs
+*.md
+!frontend/dist/.gitkeep

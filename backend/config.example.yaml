@@ -1,0 +1,18 @@
+# EchoSub 配置示例
+# 复制为 config.yaml 或通过环境变量覆盖（环境变量前缀 ECHOSUB_）
+
+server:
+  port: "8080"                 # ECHOSUB_PORT
+
+database:
+  path: "data/echosub.db"      # ECHOSUB_DB_PATH
+
+jwt:
+  secret: "change-me-in-production"  # ECHOSUB_JWT_SECRET
+  expire_hours: 72
+
+media:
+  dir: "/media"                # ECHOSUB_MEDIA_DIR  媒体文件根目录
+  supported_video: [".mp4", ".mkv", ".mov", ".webm", ".avi"]
+  supported_audio: [".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg"]
+  supported_subs: [".srt", ".vtt"]
