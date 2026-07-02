@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Slider, Button, Space, InputNumber, Switch, Tag, Tooltip, message, Typography } from 'antd'
+import { Slider, Button, Space, InputNumber, Switch, Tag, Tooltip, message, Typography, Select } from 'antd'
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -34,6 +34,9 @@ function maskText(text: string): string {
 
 export default function MediaPlayer({ mediaId, mediaType, initialPosition, sentences }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
+  const videoContainerRef = useRef<HTMLDivElement>(null)
+  const subtitleListRef = useRef<HTMLDivElement>(null)
+  const sentenceRefs = useRef<(HTMLDivElement | null)[]>([])
   const { loop_count, sentence_repeat, pause_seconds } = useSettingsStore()
   const token = useAuthStore((s) => s.token)
 
@@ -49,7 +52,9 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const [currentSentenceIdx, setCurrentSentenceIdx] = useState(-1)
   const [repeatCount, setRepeatCount] = useState(0) // 当前句已重复次数
   const [maskMode, setMaskMode] = useState(false) // 字幕遮挡模式（背诵用）
+  const [revealed, setRevealed] = useState<Set<number>>(new Set()) // 逐句揭示集合
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [playbackRate, setPlaybackRate] = useState(1)
 
   // 可变状态（不触发渲染）
   const handlingEndRef = useRef(false)
@@ -62,6 +67,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const pauseSecondsRef = useRef(1.5)
   const loopCountRef = useRef(1)
   const sentencesRef = useRef<Sentence[]>(sentences)
+  const currentSentenceIdxRef = useRef(-1)
 
   // 同步 ref
   useEffect(() => { modeRef.current = mode }, [mode])
@@ -69,6 +75,20 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   useEffect(() => { pauseSecondsRef.current = pauseSeconds }, [pauseSeconds])
   useEffect(() => { loopCountRef.current = loopCount }, [loopCount])
   useEffect(() => { sentencesRef.current = sentences }, [sentences])
+  useEffect(() => { currentSentenceIdxRef.current = currentSentenceIdx }, [currentSentenceIdx])
+
+  // 字幕自动滚动：当前句始终在可见范围中央
+  useEffect(() => {
+    if (currentSentenceIdx < 0) return
+    const container = subtitleListRef.current
+    const el = sentenceRefs.current[currentSentenceIdx]
+    if (!container || !el) return
+    const targetTop = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2
+    container.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: 'smooth',
+    })
+  }, [currentSentenceIdx])
 
   // 找到当前时间对应的句子索引
   const findSentenceIndex = useCallback((t: number) => {
@@ -76,7 +96,6 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     for (let i = 0; i < list.length; i++) {
       if (t >= list[i].start && t < list[i].end) return i
     }
-    // 若落在两句之间（间隔），返回上一句的下一句
     for (let i = 0; i < list.length; i++) {
       if (t < list[i].start) return i
     }
@@ -110,29 +129,25 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
 
     // 更新当前句子高亮
     const si = findSentenceIndex(t)
-    if (si !== currentSentenceIdx) {
+    if (si !== currentSentenceIdxRef.current) {
       setCurrentSentenceIdx(si)
     }
 
     // 逐句复读模式
     if (modeRef.current === 'repeat' && sentencesRef.current.length > 0) {
       const list = sentencesRef.current
-      // 当前正在复读的句子
       const curIdx = currentSentenceIdxRef.current
       if (curIdx >= 0 && curIdx < list.length) {
         const cur = list[curIdx]
         if (t >= cur.end) {
-          // 到达当前句末尾
           handlingEndRef.current = true
           sentenceRepeatRef.current += 1
           setRepeatCount(sentenceRepeatRef.current)
 
           if (sentenceRepeatRef.current < sentenceRepeatTargetRef.current) {
-            // 重复次数不足，回到句首
             el.currentTime = cur.start
             handlingEndRef.current = false
           } else {
-            // 重复完成，标记并停顿
             markSentenceCompleted(curIdx)
             el.pause()
             setPlaying(false)
@@ -140,7 +155,6 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
             if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
             pauseTimerRef.current = setTimeout(() => {
               if (nextIdx < list.length) {
-                // 进入下一句
                 sentenceRepeatRef.current = 0
                 setRepeatCount(0)
                 currentSentenceIdxRef.current = nextIdx
@@ -148,7 +162,6 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                 el.currentTime = list[nextIdx].start
                 el.play().then(() => setPlaying(true)).catch(() => {})
               } else {
-                // 全部句子完成，检查整体循环
                 if (overallLoopRef.current + 1 < loopCountRef.current) {
                   overallLoopRef.current += 1
                   sentenceRepeatRef.current = 0
@@ -158,7 +171,6 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                   el.currentTime = 0
                   el.play().then(() => setPlaying(true)).catch(() => {})
                 } else {
-                  // 全部结束
                   savePosition(t, true)
                 }
               }
@@ -168,11 +180,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
         }
       }
     }
-  }, [findSentenceIndex, currentSentenceIdx, markSentenceCompleted, savePosition])
-
-  // 用 ref 跟踪当前句子索引以避免闭包陈旧
-  const currentSentenceIdxRef = useRef(-1)
-  useEffect(() => { currentSentenceIdxRef.current = currentSentenceIdx }, [currentSentenceIdx])
+  }, [findSentenceIndex, markSentenceCompleted, savePosition])
 
   // 媒体加载完成
   const onLoadedMetadata = () => {
@@ -204,7 +212,6 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
     el.currentTime = value
     setCurrentTime(value)
-    // 重置当前句复读计数
     sentenceRepeatRef.current = 0
     setRepeatCount(0)
     const si = findSentenceIndex(value)
@@ -220,9 +227,16 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     setVolume(value)
   }
 
+  // 播放速度
+  const onRateChange = (rate: number) => {
+    const el = mediaRef.current
+    if (el) el.playbackRate = rate
+    setPlaybackRate(rate)
+  }
+
   // 媒体自然结束（普通模式）
   const onEnded = () => {
-    if (modeRef.current === 'repeat') return // 逐句模式由 timeupdate 处理
+    if (modeRef.current === 'repeat') return
     const el = mediaRef.current
     if (!el) return
     if (overallLoopRef.current + 1 < loopCountRef.current) {
@@ -236,7 +250,24 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     }
   }
 
-  // 点击句子跳转
+  // 点击句子跳转 + 遮挡模式下 toggle 揭示
+  const handleSentenceClick = (idx: number) => {
+    if (maskMode) {
+      setRevealed((prev) => {
+        const next = new Set(prev)
+        const sentIdx = sentences[idx].index
+        if (next.has(sentIdx)) {
+          next.delete(sentIdx)
+        } else {
+          next.add(sentIdx)
+        }
+        return next
+      })
+    }
+    jumpToSentence(idx)
+  }
+
+  // 跳转到指定句子
   const jumpToSentence = (idx: number) => {
     const el = mediaRef.current
     if (!el || !sentences[idx]) return
@@ -265,9 +296,19 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     }
   }
 
-  // 视频全屏切换
+  // 切换遮挡模式时清空揭示集合
+  const onMaskModeChange = (checked: boolean) => {
+    setMaskMode(checked)
+    if (!checked) setRevealed(new Set())
+  }
+
+  // 全部揭示/全部遮挡
+  const revealAll = () => setRevealed(new Set(sentences.map((s) => s.index)))
+  const hideAll = () => setRevealed(new Set())
+
+  // 视频全屏切换（全屏整个容器，保留叠加字幕）
   const toggleFullscreen = () => {
-    const el = mediaRef.current
+    const el = videoContainerRef.current
     if (!el) return
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {})
@@ -276,7 +317,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     }
   }
 
-  // 监听全屏变化（ESC 退出时同步状态）
+  // 监听全屏变化
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', handler)
@@ -295,17 +336,22 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
 
   const streamUrl = token ? mediaApi.streamUrl(mediaId, token) : ''
   const hasSubtitle = sentences.length > 0
+  const currentSentence = currentSentenceIdx >= 0 ? sentences[currentSentenceIdx] : null
+  const currentMasked = maskMode && currentSentence ? !revealed.has(currentSentence.index) : false
 
   return (
     <div>
       {/* 媒体元素 */}
-      <div style={{ position: 'relative', background: '#000', borderRadius: 8, overflow: 'hidden', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+      <div
+        ref={videoContainerRef}
+        style={{ position: 'relative', background: '#000', borderRadius: 8, overflow: 'hidden', marginBottom: 16, display: 'flex', justifyContent: 'center' }}
+      >
         {mediaType === 'video' ? (
           <>
             <video
               ref={mediaRef as React.RefObject<HTMLVideoElement>}
               src={streamUrl}
-              style={{ maxHeight: 420, width: '100%' }}
+              style={{ maxHeight: isFullscreen ? '100vh' : 480, width: '100%' }}
               onTimeUpdate={onTimeUpdate}
               onLoadedMetadata={onLoadedMetadata}
               onEnded={onEnded}
@@ -313,11 +359,34 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
               onPause={() => setPlaying(false)}
               controls={false}
             />
+            {/* 视频叠加字幕：在画面底部显示当前句 */}
+            {currentSentence && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 16,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: 'rgba(0,0,0,0.75)',
+                  color: '#fff',
+                  padding: '6px 18px',
+                  borderRadius: 6,
+                  maxWidth: '90%',
+                  textAlign: 'center',
+                  fontSize: isFullscreen ? 22 : 16,
+                  lineHeight: 1.5,
+                  pointerEvents: 'none',
+                  zIndex: 10,
+                }}
+              >
+                {currentMasked ? maskText(currentSentence.text) : currentSentence.text}
+              </div>
+            )}
             <Button
               type="text"
               icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
               onClick={toggleFullscreen}
-              style={{ position: 'absolute', top: 8, right: 8, color: '#fff', background: 'rgba(0,0,0,0.45)' }}
+              style={{ position: 'absolute', top: 8, right: 8, color: '#fff', background: 'rgba(0,0,0,0.45)', zIndex: 11 }}
               title={isFullscreen ? '退出全屏' : '全屏播放'}
             />
           </>
@@ -368,6 +437,23 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
           <SoundOutlined />
           <Slider min={0} max={1} step={0.05} value={volume} onChange={onVolume} style={{ width: 100 }} tooltip={{ formatter: (v) => `${Math.round((v ?? 0) * 100)}%` }} />
         </Space>
+        <Space>
+          <span>速度</span>
+          <Select
+            value={playbackRate}
+            onChange={onRateChange}
+            size="small"
+            style={{ width: 80 }}
+            options={[
+              { value: 0.5, label: '0.5x' },
+              { value: 0.75, label: '0.75x' },
+              { value: 1, label: '1.0x' },
+              { value: 1.25, label: '1.25x' },
+              { value: 1.5, label: '1.5x' },
+              { value: 2, label: '2.0x' },
+            ]}
+          />
+        </Space>
       </Space>
 
       {/* 播放设置 */}
@@ -402,19 +488,29 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
         <div>
           <div style={{ marginBottom: 8, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span><OrderedListOutlined /> 字幕（点击跳转，绿色为已完成）</span>
-            <Space size="small">
+            <Space size="small" wrap>
               <EyeInvisibleOutlined />
-              <Switch checked={maskMode} onChange={setMaskMode} size="small" />
-              <span style={{ fontSize: 12 }}>遮挡模式{maskMode ? '（仅当前句可见）' : ''}</span>
+              <Switch checked={maskMode} onChange={onMaskModeChange} size="small" />
+              <span style={{ fontSize: 12 }}>遮挡模式</span>
+              {maskMode && (
+                <>
+                  <Button size="small" type="link" onClick={revealAll} style={{ padding: 0 }}>全部揭示</Button>
+                  <Button size="small" type="link" onClick={hideAll} style={{ padding: 0 }}>全部遮挡</Button>
+                </>
+              )}
             </Space>
           </div>
-          <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}>
+          <div
+            ref={subtitleListRef}
+            style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
+          >
             {sentences.map((s, i) => {
-              const masked = maskMode && i !== currentSentenceIdx
+              const masked = maskMode && !revealed.has(s.index)
               return (
                 <div
                   key={s.index}
-                  onClick={() => jumpToSentence(i)}
+                  ref={(el) => { sentenceRefs.current[i] = el }}
+                  onClick={() => handleSentenceClick(i)}
                   style={{
                     padding: '8px 12px',
                     marginBottom: 4,

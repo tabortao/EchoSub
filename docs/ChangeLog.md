@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Upload page** (`src/pages/Upload.tsx`): new page with two cards — a directory browser (breadcrumb navigation + list of dirs/files, click to enter subdirs, "上级" and "刷新" controls) and an upload zone (`Upload.Dragger` in manual mode) that collects files, shows them in a list, and uploads to the current browsed directory with a live `Progress` bar via `mediaApi.upload(path, files, onProgress)`. Reports saved/skipped counts and refreshes the directory after upload.
 - **API helpers** (`src/api/index.ts`): added `mediaApi.browse(path?)` and `mediaApi.upload(path, files, onProgress)` (with `onUploadProgress` for percent reporting). Added `BrowseEntry`, `BrowseResponse`, `UploadResult` types to `src/types/index.ts`.
 
+#### Player & Layout Refinements
+
+- **Subtitle mask mode (per-sentence recall)** (`src/components/MediaPlayer.tsx`): the mask mode now hides **all** sentences (including the current one) by default — enabling dictation/recitation practice. Click any sentence to toggle its reveal state individually (click still jumps playback to that sentence). Added "全部揭示" / "全部遮挡" quick-toggle buttons. Closing mask mode clears the reveal set.
+- **Video overlay subtitle**: the current sentence text is now overlaid at the bottom of the video frame (semi-transparent black bar, white text, centered), so subtitles are visible directly on the video — not only in the list below. In mask mode the overlay respects the per-sentence reveal state. The overlay font enlarges during fullscreen for readability.
+- **Fullscreen container**: `toggleFullscreen` now fullscreenes the video container `div` (not just the `<video>` element), so the overlay subtitle and the fullscreen button remain visible in fullscreen mode.
+- **Auto-scrolling subtitle list**: the subtitle list now auto-scrolls to keep the current sentence vertically centered within the visible area (`scrollTo` with `behavior: 'smooth'`). List height grew to `calc(100vh - 420px)` (min 200px) to show more sentences at once.
+- **Playback speed control**: added a `Select` next to the volume slider offering 0.5x / 0.75x / 1.0x / 1.25x / 1.5x / 2.0x, wired to `el.playbackRate`.
+- **Full-width layout** (`src/layouts/MainLayout.tsx`): removed the outer `Content` margin and the inner card's `borderRadius`, reduced padding to 16px (8px on mobile), and set `minHeight: calc(100vh - 64px)` so the app fills the viewport without large side gutters.
+
 #### Infrastructure
 
 - **Dockerfile**: three-stage build (`golang:1.26-alpine` → `node:22-alpine` → `alpine:3.20` + `ffmpeg`), single static binary serving the SPA.

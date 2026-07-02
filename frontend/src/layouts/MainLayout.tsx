@@ -114,8 +114,8 @@ export default function MainLayout() {
             </Button>
           </Space>
         </Header>
-        <Content style={{ margin: isMobile ? 8 : 16 }}>
-          <div style={{ padding: isMobile ? 12 : 24, background: colorBgContainer, minHeight: 360, borderRadius: 8 }}>
+        <Content style={{ margin: 0 }}>
+          <div style={{ padding: isMobile ? 8 : 16, background: colorBgContainer, minHeight: 'calc(100vh - 64px)' }}>
             <Outlet />
           </div>
         </Content>
