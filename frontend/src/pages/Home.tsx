@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { mediaApi } from '@/api'
 import MediaCover from '@/components/MediaCover'
 import TagManagerModal from '@/components/TagManagerModal'
-import type { MediaListResponse, MediaListItem } from '@/types'
+import type { MediaListResponse, MediaListItem, Album } from '@/types'
 import { formatDuration, formatRelative } from '@/utils'
 
 const { Text } = Typography
@@ -21,9 +21,15 @@ export default function Home() {
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [tagModalMediaId, setTagModalMediaId] = useState<number | null>(null)
   const [tagModalTagIds, setTagModalTagIds] = useState<number[]>([])
+  const [albums, setAlbums] = useState<Album[]>([])
 
   const albumFilter = searchParams.get('album') ?? undefined
+  const subAlbumFilter = searchParams.get('sub_album') ?? undefined
   const tagFilter = searchParams.get('tag_id') ?? undefined
+
+  // 当前选中专辑的子专辑列表
+  const currentAlbum = albums.find((a) => a.album === albumFilter)
+  const subAlbums = currentAlbum?.sub_albums ?? []
 
   const load = async () => {
     setLoading(true)
@@ -36,6 +42,7 @@ export default function Home() {
         page: 1,
         size: 100,
         album: albumFilter,
+        sub_album: subAlbumFilter,
         tag_id: tagFilter,
       })
       setData(res.data.data)
@@ -46,11 +53,16 @@ export default function Home() {
     }
   }
 
+  // 加载专辑列表（含子专辑），用于子专辑筛选下拉
+  useEffect(() => {
+    mediaApi.albums().then((res) => setAlbums(res.data.data.albums ?? [])).catch(() => {})
+  }, [])
+
   useEffect(() => {
     const t = setTimeout(load, 300)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, type, sort, albumFilter, tagFilter])
+  }, [keyword, type, sort, albumFilter, subAlbumFilter, tagFilter])
 
   const clearFilter = () => {
     setSearchParams({})
@@ -67,7 +79,7 @@ export default function Home() {
   return (
     <div>
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={14}>
+        <Col xs={24} md={12} lg={10} xl={8}>
           <Input
             prefix={<SearchOutlined />}
             placeholder="搜索媒体名称"
@@ -76,7 +88,7 @@ export default function Home() {
             allowClear
           />
         </Col>
-        <Col xs={12} md={5}>
+        <Col xs={12} md={4} lg={3}>
           <Select
             placeholder="类型"
             allowClear
@@ -89,7 +101,24 @@ export default function Home() {
             ]}
           />
         </Col>
-        <Col xs={12} md={5}>
+        {albumFilter && subAlbums.length > 0 && (
+          <Col xs={12} md={4} lg={3}>
+            <Select
+              placeholder="子专辑"
+              allowClear
+              style={{ width: '100%' }}
+              value={subAlbumFilter}
+              onChange={(v) => {
+                const next = new URLSearchParams(searchParams)
+                if (v) next.set('sub_album', v)
+                else next.delete('sub_album')
+                setSearchParams(next)
+              }}
+              options={subAlbums.map((s) => ({ value: s.sub_album, label: `${s.sub_album} (${s.count})` }))}
+            />
+          </Col>
+        )}
+        <Col xs={12} md={4} lg={3}>
           <Select
             style={{ width: '100%' }}
             value={sort}
@@ -103,11 +132,16 @@ export default function Home() {
         </Col>
       </Row>
 
-      {(albumFilter || tagFilter) && (
+      {(albumFilter || subAlbumFilter || tagFilter) && (
         <div style={{ marginBottom: 16 }}>
-          <Space>
+          <Space wrap>
             <span style={{ color: '#666' }}>当前筛选：</span>
             {albumFilter && <Tag color="blue" closable onClose={clearFilter}>专辑: {albumFilter}</Tag>}
+            {subAlbumFilter && <Tag color="cyan" closable onClose={() => {
+              const next = new URLSearchParams(searchParams)
+              next.delete('sub_album')
+              setSearchParams(next)
+            }}>子专辑: {subAlbumFilter}</Tag>}
             {tagFilter && <Tag color="purple" closable onClose={clearFilter}>标签筛选</Tag>}
             <Button type="link" size="small" icon={<CloseCircleOutlined />} onClick={clearFilter}>清除</Button>
           </Space>
@@ -121,7 +155,7 @@ export default function Home() {
       ) : (
         <Row gutter={[16, 16]}>
           {items.map((item: MediaListItem) => (
-            <Col xs={24} sm={12} md={8} lg={6} key={item.media.id}>
+            <Col xs={24} sm={12} md={8} lg={6} xl={4} xxl={3} key={item.media.id}>
               <Card
                 hoverable
                 onClick={() => navigate(`/play/${item.media.id}`)}
@@ -157,6 +191,7 @@ export default function Home() {
                     <div>
                       <div style={{ marginBottom: 4 }}>
                         {item.media.album && <Tag color="blue">{item.media.album}</Tag>}
+                        {item.media.sub_album && <Tag color="cyan">{item.media.sub_album}</Tag>}
                         <Text type="secondary">{formatDuration(item.media.duration)}</Text>
                       </div>
                       {item.media.tags && item.media.tags.length > 0 && (

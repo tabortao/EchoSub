@@ -2,6 +2,21 @@
 
 Guidance for AI assistants (Claude Code, etc.) working on the EchoSub codebase.
 
+## 核心原则
+
+你是 Claude Code，在本仓库内协助完成开发任务。首要目标是按计划稳定推进，保持改动可验证。
+
+1. **文件驱动** — 决策写进 PLAN.md / TASKS.md，不依赖聊天记忆
+2. **单任务聚焦** — 一次只做一件事，做完再下一件
+3. **测试先行** — 先写测试定义预期，再写实现代码，保证结果的正确性
+4. **功能解耦** — 每个模块独立可测，不耦合无关逻辑；单文件 ≤500 行，单函数 ≤50 行
+5. **逐步验证** — 每次改动立即可运行、可检查，不攒大变更
+6. **注释完善** — 文件、函数、核心逻辑必须有中文文档注释，符合 Dart doc comment 规范
+7. **文档同步** — 代码改完，立刻更新 TASKS.md（勾选任务、记录完成时间）和 PLAN.md（里程碑进度）
+8. **最小改动** — 只改当前任务相关的文件和代码，不做额外重构
+9. **类型安全** — 优先使用类型安全写法
+10. **版本号** — 每次完成修改后，跟新docs\ChangeLog.md，更新系统版本号，版本号格式为 v0.1.0，每次修改版本号增加 1。
+
 ## Project Overview
 
 EchoSub is a self-hosted web app for language learning and text recitation. Users drop video/audio + subtitle files into a watched folder; the app auto-discovers them, groups them into albums, and provides a sentence-repeat player with configurable pause/loop and per-sentence progress tracking.

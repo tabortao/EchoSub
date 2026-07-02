@@ -11,6 +11,7 @@ import type {
   Settings,
   BrowseResponse,
   UploadResult,
+  StudyNote,
   ApiResponse,
 } from '@/types'
 
@@ -27,6 +28,7 @@ export const authApi = {
 export const mediaApi = {
   list: (params?: {
     album?: string
+    sub_album?: string
     type?: string
     keyword?: string
     tag_id?: string
@@ -84,7 +86,32 @@ export const recordApi = {
       completed,
       repeat_count: repeatCount ?? 0,
     }),
+  toggleFavorite: (mediaId: number, idx: number) =>
+    client.post<ApiResponse<{ favorited: boolean }>>(`/records/${mediaId}/sentences/${idx}/favorite`),
   progress: () => client.get<ApiResponse<ProgressResponse>>('/progress'),
+}
+
+// ===== 学习页面（专辑内自定义笔记 + 多图 + markdown）=====
+export const noteApi = {
+  list: (album?: string) =>
+    client.get<ApiResponse<{ notes: StudyNote[] }>>('/notes', { params: album ? { album } : {} }),
+  create: (album: string, title: string, content = '') =>
+    client.post<ApiResponse<StudyNote>>('/notes', { album, title, content }),
+  get: (id: number) => client.get<ApiResponse<StudyNote>>(`/notes/${id}`),
+  update: (id: number, data: { title?: string; content?: string }) =>
+    client.put<ApiResponse<StudyNote>>(`/notes/${id}`, data),
+  delete: (id: number) => client.delete<ApiResponse>(`/notes/${id}`),
+  uploadImages: (id: number, files: File[]) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    return client.post<ApiResponse<{ images: string[] }>>(`/notes/${id}/images`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  deleteImage: (id: number, filename: string) =>
+    client.delete<ApiResponse<{ images: string[] }>>(`/notes/${id}/images/${encodeURIComponent(filename)}`),
+  imageUrl: (id: number, filename: string, token: string) =>
+    `/api/v1/notes/${id}/images/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`,
 }
 
 // ===== 设置 =====

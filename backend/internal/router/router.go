@@ -63,8 +63,23 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			records.PUT("/:mediaId", handlers.UpdateRecord())
 			records.GET("/:mediaId", handlers.GetRecord())
 			records.PUT("/:mediaId/sentences/:idx", handlers.UpdateSentenceProgress())
+			// 句子收藏（重难点句子）
+			records.POST("/:mediaId/sentences/:idx/favorite", handlers.ToggleFavorite())
 		}
 		authed.GET("/progress", handlers.GetProgress())
+
+		// 学习页面（专辑内自定义笔记 + 多图 + markdown）
+		notes := authed.Group("/notes")
+		{
+			notes.GET("", handlers.ListNotes(cfg))
+			notes.POST("", handlers.CreateNote(cfg))
+			notes.GET("/:id", handlers.GetNote(cfg))
+			notes.PUT("/:id", handlers.UpdateNote(cfg))
+			notes.DELETE("/:id", handlers.DeleteNote(cfg))
+			notes.POST("/:id/images", handlers.UploadNoteImage(cfg))
+			notes.DELETE("/:id/images/:filename", handlers.DeleteNoteImage(cfg))
+			notes.GET("/:id/images/:filename", handlers.ServeNoteImage(cfg))
+		}
 
 		// 设置
 		settings := authed.Group("/settings")

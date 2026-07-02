@@ -9,7 +9,7 @@ interface SettingsState extends Settings {
 }
 
 const DEFAULTS: Settings = {
-  loop_count: 1,
+  loop_count: 3,
   sentence_repeat: 3,
   pause_seconds: 1.5,
 }

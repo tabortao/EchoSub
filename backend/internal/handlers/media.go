@@ -27,6 +27,9 @@ func ListMedia() gin.HandlerFunc {
 		if album := c.Query("album"); album != "" {
 			q = q.Where("album = ?", album)
 		}
+		if subAlbum := c.Query("sub_album"); subAlbum != "" {
+			q = q.Where("sub_album = ?", subAlbum)
+		}
 		if typ := c.Query("type"); typ != "" {
 			q = q.Where("type = ?", typ)
 		}
@@ -183,6 +186,7 @@ func GetSubtitle() gin.HandlerFunc {
 			subtitle.Sentence
 			Completed   bool `json:"completed"`
 			RepeatCount int  `json:"repeat_count"`
+			Favorited   bool `json:"favorited"`
 		}
 		out := make([]sentenceWithProgress, 0, len(sentences))
 		for _, s := range sentences {
@@ -191,18 +195,19 @@ func GetSubtitle() gin.HandlerFunc {
 				Sentence:    s,
 				Completed:   ok && p.Completed,
 				RepeatCount: p.RepeatCount,
+				Favorited:   ok && p.Favorited,
 			})
 		}
 		utils.OK(c, gin.H{"sentences": out})
 	}
 }
 
-// ListAlbums 列出所有专辑
+// ListAlbums 列出所有专辑（含子专辑）
 func ListAlbums() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		type albumRow struct {
-			Album    string `json:"album"`
-			Count    int64  `json:"count"`
+			Album string `json:"album"`
+			Count int64  `json:"count"`
 		}
 		var rows []albumRow
 		database.DB.Model(&models.MediaFile{}).
@@ -211,7 +216,28 @@ func ListAlbums() gin.HandlerFunc {
 			Group("album").
 			Order("album ASC").
 			Scan(&rows)
-		utils.OK(c, gin.H{"albums": rows})
+
+		type subAlbumRow struct {
+			SubAlbum string `json:"sub_album"`
+			Count    int64  `json:"count"`
+		}
+		type albumWithSubs struct {
+			Album     string        `json:"album"`
+			Count     int64         `json:"count"`
+			SubAlbums []subAlbumRow `json:"sub_albums"`
+		}
+		result := make([]albumWithSubs, 0, len(rows))
+		for _, r := range rows {
+			var subs []subAlbumRow
+			database.DB.Model(&models.MediaFile{}).
+				Select("sub_album, count(*) as count").
+				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> ''", r.Album).
+				Group("sub_album").
+				Order("sub_album ASC").
+				Scan(&subs)
+			result = append(result, albumWithSubs{Album: r.Album, Count: r.Count, SubAlbums: subs})
+		}
+		utils.OK(c, gin.H{"albums": result})
 	}
 }
 

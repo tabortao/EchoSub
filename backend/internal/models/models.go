@@ -23,6 +23,7 @@ type MediaFile struct {
 	Name           string         `gorm:"size:255;not null" json:"name"`
 	Type           string         `gorm:"size:16;not null" json:"type"` // video / audio
 	Album          *string        `gorm:"size:255;index" json:"album"`
+	SubAlbum       *string        `gorm:"size:255;index" json:"sub_album"` // 子专辑（路径第二级）
 	Duration       float64        `json:"duration"` // 秒
 	FileSize       int64          `json:"file_size"`
 	FileModifiedAt time.Time      `json:"file_modified_at"`
@@ -58,12 +59,26 @@ type PlayRecord struct {
 // SentenceProgress 句子背诵进度
 type SentenceProgress struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
-	UserID       uint      `gorm:"index;not null" json:"user_id"`
+	UserID        uint      `gorm:"index;not null" json:"user_id"`
 	MediaID      uint      `gorm:"index;not null" json:"media_id"`
 	SentenceIndex int      `gorm:"not null" json:"sentence_index"`
 	Completed    bool      `json:"completed"`
 	RepeatCount  int       `json:"repeat_count"`
+	Favorited    bool      `json:"favorited"` // 收藏的重难点句子
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// StudyNote 学习页面（用户在专辑内创建的自定义学习内容）
+type StudyNote struct {
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	UserID    uint           `gorm:"index;not null" json:"user_id"`
+	Album     string         `gorm:"size:255;index;not null" json:"album"` // 所属专辑
+	Title     string         `gorm:"size:255;not null" json:"title"`
+	Content   string         `gorm:"type:text" json:"content"`  // markdown 原文
+	Images    string         `gorm:"type:text" json:"images"`   // JSON array of image filenames
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // Setting 用户学习偏好

@@ -25,6 +25,7 @@ export interface MediaFile {
   name: string
   type: MediaType
   album: string | null
+  sub_album: string | null
   duration: number
   file_size: number
   file_modified_at: string
@@ -47,9 +48,15 @@ export interface MediaListResponse {
   size: number
 }
 
+export interface SubAlbum {
+  sub_album: string
+  count: number
+}
+
 export interface Album {
   album: string
   count: number
+  sub_albums?: SubAlbum[]
 }
 
 export interface BrowseEntry {
@@ -78,6 +85,7 @@ export interface Sentence {
   text: string
   completed: boolean
   repeat_count: number
+  favorited: boolean
 }
 
 export interface SubtitleResponse {
@@ -128,6 +136,17 @@ export interface ProgressResponse {
   albums: AlbumProgress[]
   tags: TagProgress[]
   completed_sentences: number
+}
+
+// 学习页面（专辑内自定义笔记，支持 markdown + 多图）
+export interface StudyNote {
+  id: number
+  album: string
+  title: string
+  content: string
+  images: string[]
+  created_at: string
+  updated_at: string
 }
 
 // API 统一响应

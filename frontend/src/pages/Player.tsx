@@ -5,9 +5,8 @@ import { ArrowLeftOutlined } from '@ant-design/icons'
 import { mediaApi } from '@/api'
 import type { MediaFile, Sentence, MediaListItem } from '@/types'
 import MediaPlayer from '@/components/MediaPlayer'
-import { formatDuration } from '@/utils'
 
-const { Title, Text } = Typography
+const { Title } = Typography
 
 export default function Player() {
   const { id } = useParams<{ id: string }>()
@@ -52,24 +51,18 @@ export default function Player() {
 
   return (
     <div>
-      <Button
-        type="text"
-        icon={<ArrowLeftOutlined />}
-        onClick={() => navigate(-1)}
-        style={{ marginBottom: 12 }}
-      >
-        返回
-      </Button>
-      <Title level={4} style={{ marginBottom: 4 }}>{media.name}</Title>
-      <Text type="secondary" style={{ marginBottom: 16, display: 'block' }}>
-        {media.album ? `${media.album} · ` : ''}{formatDuration(media.duration)}
-        {record && record.play_count > 0 ? ` · 已听 ${record.play_count} 次` : ''}
-      </Text>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+        <Title level={4} style={{ marginBottom: 0, marginRight: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {media.name}
+        </Title>
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} title="返回" />
+      </div>
       <MediaPlayer
         mediaId={media.id}
         mediaType={media.type}
         initialPosition={record?.last_position ?? 0}
         sentences={sentences}
+        playCount={record?.play_count ?? 0}
       />
     </div>
   )

@@ -151,11 +151,16 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 	rel, _ := filepath.Rel(s.cfg.Media.Dir, path)
 	dir := filepath.Dir(rel)
 	var album *string
+	var subAlbum *string
 	if dir != "." && dir != "" {
-		// 取相对路径第一级作为专辑名
+		// 取相对路径第一级作为专辑名，第二级作为子专辑
 		parts := strings.SplitN(filepath.ToSlash(dir), "/", 2)
 		a := parts[0]
 		album = &a
+		if len(parts) > 1 && parts[1] != "" {
+			sa := parts[1]
+			subAlbum = &sa
+		}
 	}
 
 	var existing models.MediaFile
@@ -181,6 +186,8 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 			"file_modified_at": info.ModTime(),
 			"subtitle_path":    subPtr,
 			"cover_path":       coverPtr,
+			"album":            album,
+			"sub_album":        subAlbum,
 		}
 		return database.DB.Model(&existing).Updates(updates).Error
 	}
@@ -190,6 +197,7 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 		Name:           info.Name(),
 		Type:           mediaType,
 		Album:          album,
+		SubAlbum:       subAlbum,
 		FileSize:       info.Size(),
 		FileModifiedAt: info.ModTime(),
 		SubtitlePath:   subPtr,

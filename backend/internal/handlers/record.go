@@ -178,3 +178,28 @@ func atou(s string) uint {
 	}
 	return n
 }
+
+// ToggleFavorite 切换句子收藏状态（重难点句子）
+// 路由: POST /records/:mediaId/sentences/:idx/favorite
+func ToggleFavorite() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := middleware.GetUserID(c)
+		mediaID := c.Param("mediaId")
+		idx := c.Param("idx")
+		var sp models.SentenceProgress
+		result := database.DB.Where("user_id = ? AND media_id = ? AND sentence_index = ?", uid, mediaID, idx).First(&sp)
+		if result.Error != nil {
+			sp = models.SentenceProgress{
+				UserID:        uid,
+				MediaID:       atou(mediaID),
+				SentenceIndex: int(atou(idx)),
+				Favorited:     true,
+			}
+			database.DB.Create(&sp)
+		} else {
+			sp.Favorited = !sp.Favorited
+			database.DB.Save(&sp)
+		}
+		utils.OK(c, gin.H{"favorited": sp.Favorited})
+	}
+}

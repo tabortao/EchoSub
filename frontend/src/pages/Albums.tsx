@@ -56,8 +56,9 @@ export default function Albums() {
       <Row gutter={[16, 16]}>
         {albums.map((a) => {
           const pv = preview[a.album]
+          const subs = a.sub_albums ?? []
           return (
-            <Col xs={24} sm={12} md={8} lg={6} key={a.album}>
+            <Col xs={24} sm={12} md={8} lg={6} xl={4} xxl={3} key={a.album}>
               <Card
                 hoverable
                 onClick={() => navigate(`/?album=${encodeURIComponent(a.album)}`)}
@@ -80,7 +81,26 @@ export default function Albums() {
                 <Card.Meta
                   title={<Text ellipsis style={{ maxWidth: '100%' }}>{a.album}</Text>}
                   description={
-                    <Tag color="blue">{a.count} 个文件</Tag>
+                    <div>
+                      <Tag color="blue">{a.count} 个文件</Tag>
+                      {subs.length > 0 && (
+                        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {subs.map((s) => (
+                            <Tag
+                              key={s.sub_album}
+                              color="cyan"
+                              style={{ cursor: 'pointer', marginRight: 0 }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigate(`/?album=${encodeURIComponent(a.album)}&sub_album=${encodeURIComponent(s.sub_album)}`)
+                              }}
+                            >
+                              {s.sub_album} ({s.count})
+                            </Tag>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   }
                 />
               </Card>

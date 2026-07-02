@@ -47,6 +47,7 @@ func Init(cfg *config.Config) error {
 		&models.PlayRecord{},
 		&models.SentenceProgress{},
 		&models.Setting{},
+		&models.StudyNote{},
 	); err != nil {
 		return fmt.Errorf("数据库迁移失败: %w", err)
 	}

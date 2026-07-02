@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Slider, Button, Space, InputNumber, Switch, Tag, Tooltip, message, Typography, Select } from 'antd'
+import { Slider, Button, Space, InputNumber, Switch, Tag, Tooltip, message, Typography, Tabs } from 'antd'
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -9,6 +9,10 @@ import {
   FullscreenOutlined,
   FullscreenExitOutlined,
   EyeInvisibleOutlined,
+  StarOutlined,
+  StarFilled,
+  MinusOutlined,
+  PlusOutlined,
 } from '@ant-design/icons'
 import { mediaApi, recordApi } from '@/api'
 import { useSettingsStore } from '@/store/settings'
@@ -23,6 +27,7 @@ interface MediaPlayerProps {
   mediaType: 'video' | 'audio'
   initialPosition: number
   sentences: Sentence[]
+  playCount: number
 }
 
 type PlayMode = 'normal' | 'repeat'
@@ -32,7 +37,12 @@ function maskText(text: string): string {
   return text.replace(/[^\s]/g, '*')
 }
 
-export default function MediaPlayer({ mediaId, mediaType, initialPosition, sentences }: MediaPlayerProps) {
+// 速度上下限
+const RATE_MIN = 0.5
+const RATE_MAX = 2.0
+const RATE_STEP = 0.1
+
+export default function MediaPlayer({ mediaId, mediaType, initialPosition, sentences, playCount }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
   const videoContainerRef = useRef<HTMLDivElement>(null)
   const subtitleListRef = useRef<HTMLDivElement>(null)
@@ -46,7 +56,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1)
   const [mode, setMode] = useState<PlayMode>('normal')
-  const [loopCount, setLoopCount] = useState(loop_count || 1)
+  const [loopCount, setLoopCount] = useState(loop_count || 3)
   const [sentenceRepeat, setSentenceRepeat] = useState(sentence_repeat || 3)
   const [pauseSeconds, setPauseSeconds] = useState(pause_seconds ?? 1.5)
   const [currentSentenceIdx, setCurrentSentenceIdx] = useState(-1)
@@ -55,6 +65,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const [revealed, setRevealed] = useState<Set<number>>(new Set()) // 逐句揭示集合
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1)
+  const [favoriteSet, setFavoriteSet] = useState<Set<number>>(new Set()) // 收藏的句子 index 集合
 
   // 可变状态（不触发渲染）
   const handlingEndRef = useRef(false)
@@ -76,6 +87,15 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   useEffect(() => { loopCountRef.current = loopCount }, [loopCount])
   useEffect(() => { sentencesRef.current = sentences }, [sentences])
   useEffect(() => { currentSentenceIdxRef.current = currentSentenceIdx }, [currentSentenceIdx])
+
+  // 从 sentences 初始化收藏集合
+  useEffect(() => {
+    const fav = new Set<number>()
+    sentences.forEach((s) => {
+      if (s.favorited) fav.add(s.index)
+    })
+    setFavoriteSet(fav)
+  }, [sentences])
 
   // 字幕自动滚动：当前句始终在可见范围中央
   useEffect(() => {
@@ -227,12 +247,17 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     setVolume(value)
   }
 
-  // 播放速度
+  // 播放速度（0.1 间隔加减，范围 0.5-2.0）
   const onRateChange = (rate: number) => {
+    const clamped = Math.min(RATE_MAX, Math.max(RATE_MIN, rate))
+    // 修正浮点精度（0.1 累加误差）
+    const rounded = Math.round(clamped * 10) / 10
     const el = mediaRef.current
-    if (el) el.playbackRate = rate
-    setPlaybackRate(rate)
+    if (el) el.playbackRate = rounded
+    setPlaybackRate(rounded)
   }
+  const decRate = () => onRateChange(playbackRate - RATE_STEP)
+  const incRate = () => onRateChange(playbackRate + RATE_STEP)
 
   // 媒体自然结束（普通模式）
   const onEnded = () => {
@@ -281,6 +306,32 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     if (el.paused) {
       el.play().then(() => setPlaying(true)).catch(() => {})
     }
+  }
+
+  // 切换句子收藏（重难点句子）
+  const toggleFavorite = async (idx: number) => {
+    const s = sentences[idx]
+    if (!s) return
+    const next = new Set(favoriteSet)
+    let favorited: boolean
+    if (next.has(s.index)) {
+      next.delete(s.index)
+      favorited = false
+    } else {
+      next.add(s.index)
+      favorited = true
+    }
+    setFavoriteSet(next)
+    try {
+      await recordApi.toggleFavorite(mediaId, s.index)
+    } catch {
+      // 回滚
+      const rollback = new Set(favoriteSet)
+      setFavoriteSet(rollback)
+      message.error('收藏失败')
+      return
+    }
+    message.success(favorited ? '已收藏' : '已取消收藏')
   }
 
   // 切换模式
@@ -439,21 +490,11 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
         </Space>
         <Space>
           <span>速度</span>
-          <Select
-            value={playbackRate}
-            onChange={onRateChange}
-            size="small"
-            style={{ width: 80 }}
-            options={[
-              { value: 0.5, label: '0.5x' },
-              { value: 0.75, label: '0.75x' },
-              { value: 1, label: '1.0x' },
-              { value: 1.25, label: '1.25x' },
-              { value: 1.5, label: '1.5x' },
-              { value: 2, label: '2.0x' },
-            ]}
-          />
+          <Button shape="circle" size="small" icon={<MinusOutlined />} onClick={decRate} disabled={playbackRate <= RATE_MIN} />
+          <span style={{ minWidth: 44, textAlign: 'center', fontWeight: 500 }}>{playbackRate.toFixed(1)}x</span>
+          <Button shape="circle" size="small" icon={<PlusOutlined />} onClick={incRate} disabled={playbackRate >= RATE_MAX} />
         </Space>
+        <Tag color="gold" style={{ margin: 0 }}>已听 {playCount} 遍</Tag>
       </Space>
 
       {/* 播放设置 */}
@@ -483,56 +524,137 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
         )}
       </Space>
 
-      {/* 字幕列表 */}
+      {/* 字幕列表（Tabs：全部字幕 / 收藏句子） */}
       {hasSubtitle && (
-        <div>
-          <div style={{ marginBottom: 8, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <span><OrderedListOutlined /> 字幕（点击跳转，绿色为已完成）</span>
-            <Space size="small" wrap>
-              <EyeInvisibleOutlined />
-              <Switch checked={maskMode} onChange={onMaskModeChange} size="small" />
-              <span style={{ fontSize: 12 }}>遮挡模式</span>
-              {maskMode && (
-                <>
-                  <Button size="small" type="link" onClick={revealAll} style={{ padding: 0 }}>全部揭示</Button>
-                  <Button size="small" type="link" onClick={hideAll} style={{ padding: 0 }}>全部遮挡</Button>
-                </>
-              )}
-            </Space>
-          </div>
-          <div
-            ref={subtitleListRef}
-            style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
-          >
-            {sentences.map((s, i) => {
-              const masked = maskMode && !revealed.has(s.index)
-              return (
-                <div
-                  key={s.index}
-                  ref={(el) => { sentenceRefs.current[i] = el }}
-                  onClick={() => handleSentenceClick(i)}
-                  style={{
-                    padding: '8px 12px',
-                    marginBottom: 4,
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    background: i === currentSentenceIdx ? '#e6f4ff' : s.completed ? '#f6ffed' : 'transparent',
-                    borderLeft: i === currentSentenceIdx ? '3px solid #1677ff' : s.completed ? '3px solid #52c41a' : '3px solid transparent',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <span style={{ color: '#999', fontSize: 12, marginRight: 8 }}>
-                    {formatDuration(s.start)}
-                  </span>
-                  <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333' }}>
-                    {masked ? maskText(s.text) : s.text}
-                  </span>
-                  {s.completed && <Tag color="success" style={{ marginLeft: 8 }}>已背</Tag>}
+        <Tabs
+          defaultActiveKey="all"
+          items={[
+            {
+              key: 'all',
+              label: <span><OrderedListOutlined /> 全部字幕</span>,
+              children: (
+                <div>
+                  <div style={{ marginBottom: 8, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <span>点击跳转，绿色为已完成</span>
+                    <Space size="small" wrap>
+                      <EyeInvisibleOutlined />
+                      <Switch checked={maskMode} onChange={onMaskModeChange} size="small" />
+                      <span style={{ fontSize: 12 }}>遮挡模式</span>
+                      {maskMode && (
+                        <>
+                          <Button size="small" type="link" onClick={revealAll} style={{ padding: 0 }}>全部揭示</Button>
+                          <Button size="small" type="link" onClick={hideAll} style={{ padding: 0 }}>全部遮挡</Button>
+                        </>
+                      )}
+                    </Space>
+                  </div>
+                  <div
+                    ref={subtitleListRef}
+                    style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
+                  >
+                    {sentences.map((s, i) => {
+                      const masked = maskMode && !revealed.has(s.index)
+                      const isFav = favoriteSet.has(s.index)
+                      return (
+                        <div
+                          key={s.index}
+                          ref={(el) => { sentenceRefs.current[i] = el }}
+                          onClick={() => handleSentenceClick(i)}
+                          style={{
+                            padding: '8px 12px',
+                            marginBottom: 4,
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            background: i === currentSentenceIdx ? '#e6f4ff' : s.completed ? '#f6ffed' : 'transparent',
+                            borderLeft: i === currentSentenceIdx ? '3px solid #1677ff' : s.completed ? '3px solid #52c41a' : '3px solid transparent',
+                            transition: 'all 0.2s',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <span style={{ color: '#999', fontSize: 12, flexShrink: 0 }}>
+                            {formatDuration(s.start)}
+                          </span>
+                          <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333', flex: 1 }}>
+                            {masked ? maskText(s.text) : s.text}
+                          </span>
+                          {s.repeat_count > 0 && (
+                            <Tag color="orange" style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
+                          )}
+                          {s.completed && <Tag color="success" style={{ margin: 0, flexShrink: 0 }}>已背</Tag>}
+                          <Tooltip title={isFav ? '取消收藏' : '收藏重难点'}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={isFav ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+                              onClick={(e) => { e.stopPropagation(); toggleFavorite(i) }}
+                            />
+                          </Tooltip>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-              )
-            })}
-          </div>
-        </div>
+              ),
+            },
+            {
+              key: 'fav',
+              label: <span><StarFilled style={{ color: '#faad14' }} /> 收藏句子 {favoriteSet.size > 0 && <Tag color="orange" style={{ marginLeft: 4 }}>{favoriteSet.size}</Tag>}</span>,
+              children: (
+                <div
+                  style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
+                >
+                  {favoriteSet.size === 0 ? (
+                    <div style={{ textAlign: 'center', color: '#999', padding: 40 }}>
+                      暂无收藏句子，点击字幕右侧星标收藏重难点
+                    </div>
+                  ) : (
+                    sentences.filter((s) => favoriteSet.has(s.index)).map((s) => {
+                      const i = sentences.findIndex((x) => x.index === s.index)
+                      return (
+                        <div
+                          key={s.index}
+                          onClick={() => jumpToSentence(i)}
+                          style={{
+                            padding: '8px 12px',
+                            marginBottom: 4,
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            background: i === currentSentenceIdx ? '#e6f4ff' : 'transparent',
+                            borderLeft: i === currentSentenceIdx ? '3px solid #1677ff' : '3px solid transparent',
+                            transition: 'all 0.2s',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <span style={{ color: '#999', fontSize: 12, flexShrink: 0 }}>
+                            {formatDuration(s.start)}
+                          </span>
+                          <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333', flex: 1 }}>
+                            {s.text}
+                          </span>
+                          {s.repeat_count > 0 && (
+                            <Tag color="orange" style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
+                          )}
+                          <Tooltip title="取消收藏">
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<StarFilled style={{ color: '#faad14' }} />}
+                              onClick={(e) => { e.stopPropagation(); toggleFavorite(i) }}
+                            />
+                          </Tooltip>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              ),
+            },
+          ]}
+        />
       )}
     </div>
   )
