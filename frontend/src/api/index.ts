@@ -9,6 +9,8 @@ import type {
   SentenceProgress,
   ProgressResponse,
   Settings,
+  BrowseResponse,
+  UploadResult,
   ApiResponse,
 } from '@/types'
 
@@ -36,6 +38,21 @@ export const mediaApi = {
   get: (id: number) => client.get<ApiResponse>(`/media/${id}`),
   streamUrl: (id: number, token: string) => `/api/v1/media/${id}/stream?token=${encodeURIComponent(token)}`,
   coverUrl: (id: number, token: string) => `/api/v1/media/${id}/cover?token=${encodeURIComponent(token)}`,
+  browse: (path?: string) =>
+    client.get<ApiResponse<BrowseResponse>>('/media/browse', { params: { path: path ?? '' } }),
+  upload: (path: string, files: File[], onProgress?: (percent: number) => void) => {
+    const form = new FormData()
+    form.append('path', path)
+    files.forEach((f) => form.append('files', f))
+    return client.post<ApiResponse<UploadResult>>('/media/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded / e.total) * 100))
+        }
+      },
+    })
+  },
   subtitle: (id: number) => client.get<ApiResponse<SubtitleResponse>>(`/media/${id}/subtitle`),
   assignTags: (id: number, tagIds: number[]) =>
     client.post<ApiResponse>(`/media/${id}/tags`, { tag_ids: tagIds }),

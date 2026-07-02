@@ -6,6 +6,9 @@ import {
   ReloadOutlined,
   SoundOutlined,
   OrderedListOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
+  EyeInvisibleOutlined,
 } from '@ant-design/icons'
 import { mediaApi, recordApi } from '@/api'
 import { useSettingsStore } from '@/store/settings'
@@ -24,6 +27,11 @@ interface MediaPlayerProps {
 
 type PlayMode = 'normal' | 'repeat'
 
+// 将字幕文字中的非空白字符替换为 *，用于背诵遮挡模式
+function maskText(text: string): string {
+  return text.replace(/[^\s]/g, '*')
+}
+
 export default function MediaPlayer({ mediaId, mediaType, initialPosition, sentences }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
   const { loop_count, sentence_repeat, pause_seconds } = useSettingsStore()
@@ -40,6 +48,8 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const [pauseSeconds, setPauseSeconds] = useState(pause_seconds ?? 1.5)
   const [currentSentenceIdx, setCurrentSentenceIdx] = useState(-1)
   const [repeatCount, setRepeatCount] = useState(0) // 当前句已重复次数
+  const [maskMode, setMaskMode] = useState(false) // 字幕遮挡模式（背诵用）
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   // 可变状态（不触发渲染）
   const handlingEndRef = useRef(false)
@@ -255,6 +265,24 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     }
   }
 
+  // 视频全屏切换
+  const toggleFullscreen = () => {
+    const el = mediaRef.current
+    if (!el) return
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
+    } else {
+      el.requestFullscreen().catch(() => {})
+    }
+  }
+
+  // 监听全屏变化（ESC 退出时同步状态）
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
+
   // 卸载时清理
   useEffect(() => {
     return () => {
@@ -271,19 +299,28 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   return (
     <div>
       {/* 媒体元素 */}
-      <div style={{ background: '#000', borderRadius: 8, overflow: 'hidden', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+      <div style={{ position: 'relative', background: '#000', borderRadius: 8, overflow: 'hidden', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
         {mediaType === 'video' ? (
-          <video
-            ref={mediaRef as React.RefObject<HTMLVideoElement>}
-            src={streamUrl}
-            style={{ maxHeight: 420, width: '100%' }}
-            onTimeUpdate={onTimeUpdate}
-            onLoadedMetadata={onLoadedMetadata}
-            onEnded={onEnded}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-            controls={false}
-          />
+          <>
+            <video
+              ref={mediaRef as React.RefObject<HTMLVideoElement>}
+              src={streamUrl}
+              style={{ maxHeight: 420, width: '100%' }}
+              onTimeUpdate={onTimeUpdate}
+              onLoadedMetadata={onLoadedMetadata}
+              onEnded={onEnded}
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              controls={false}
+            />
+            <Button
+              type="text"
+              icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+              onClick={toggleFullscreen}
+              style={{ position: 'absolute', top: 8, right: 8, color: '#fff', background: 'rgba(0,0,0,0.45)' }}
+              title={isFullscreen ? '退出全屏' : '全屏播放'}
+            />
+          </>
         ) : (
           <audio
             ref={mediaRef as React.RefObject<HTMLAudioElement>}
@@ -363,31 +400,41 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
       {/* 字幕列表 */}
       {hasSubtitle && (
         <div>
-          <div style={{ marginBottom: 8, color: '#666' }}>
-            <OrderedListOutlined /> 字幕（点击跳转，绿色为已完成）
+          <div style={{ marginBottom: 8, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <span><OrderedListOutlined /> 字幕（点击跳转，绿色为已完成）</span>
+            <Space size="small">
+              <EyeInvisibleOutlined />
+              <Switch checked={maskMode} onChange={setMaskMode} size="small" />
+              <span style={{ fontSize: 12 }}>遮挡模式{maskMode ? '（仅当前句可见）' : ''}</span>
+            </Space>
           </div>
           <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}>
-            {sentences.map((s, i) => (
-              <div
-                key={s.index}
-                onClick={() => jumpToSentence(i)}
-                style={{
-                  padding: '8px 12px',
-                  marginBottom: 4,
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  background: i === currentSentenceIdx ? '#e6f4ff' : s.completed ? '#f6ffed' : 'transparent',
-                  borderLeft: i === currentSentenceIdx ? '3px solid #1677ff' : s.completed ? '3px solid #52c41a' : '3px solid transparent',
-                  transition: 'all 0.2s',
-                }}
-              >
-                <span style={{ color: '#999', fontSize: 12, marginRight: 8 }}>
-                  {formatDuration(s.start)}
-                </span>
-                <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333' }}>{s.text}</span>
-                {s.completed && <Tag color="success" style={{ marginLeft: 8 }}>已背</Tag>}
-              </div>
-            ))}
+            {sentences.map((s, i) => {
+              const masked = maskMode && i !== currentSentenceIdx
+              return (
+                <div
+                  key={s.index}
+                  onClick={() => jumpToSentence(i)}
+                  style={{
+                    padding: '8px 12px',
+                    marginBottom: 4,
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    background: i === currentSentenceIdx ? '#e6f4ff' : s.completed ? '#f6ffed' : 'transparent',
+                    borderLeft: i === currentSentenceIdx ? '3px solid #1677ff' : s.completed ? '3px solid #52c41a' : '3px solid transparent',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <span style={{ color: '#999', fontSize: 12, marginRight: 8 }}>
+                    {formatDuration(s.start)}
+                  </span>
+                  <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333' }}>
+                    {masked ? maskText(s.text) : s.text}
+                  </span>
+                  {s.completed && <Tag color="success" style={{ marginLeft: 8 }}>已背</Tag>}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

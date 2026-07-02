@@ -52,6 +52,25 @@ export interface Album {
   count: number
 }
 
+export interface BrowseEntry {
+  name: string
+  is_dir: boolean
+  size: number
+}
+
+export interface BrowseResponse {
+  dirs: BrowseEntry[]
+  files: BrowseEntry[]
+  path: string
+}
+
+export interface UploadResult {
+  saved: string[]
+  skipped: string[]
+  count: number
+  path: string
+}
+
 export interface Sentence {
   index: number
   start: number

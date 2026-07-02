@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/yaole/EchoSub/backend/internal/config"
 	"github.com/yaole/EchoSub/backend/internal/database"
 	"github.com/yaole/EchoSub/backend/internal/middleware"
 	"github.com/yaole/EchoSub/backend/internal/models"
@@ -262,5 +263,102 @@ func coverContentType(path string) string {
 		return "image/gif"
 	default:
 		return "application/octet-stream"
+	}
+}
+
+// browseEntry 目录浏览条目
+type browseEntry struct {
+	Name  string `json:"name"`
+	IsDir bool   `json:"is_dir"`
+	Size  int64  `json:"size"`
+}
+
+// BrowseMedia 列出媒体根目录下指定子路径的目录和文件
+// 用于上传页面展示已有目录结构与文件，避免暴露绝对路径。
+func BrowseMedia(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		root := filepath.Clean(cfg.Media.Dir)
+		sub := c.DefaultQuery("path", "")
+		// 清理并拼接，防止路径穿越
+		full := filepath.Join(root, filepath.Clean(sub))
+		if !strings.HasPrefix(full+string(filepath.Separator), root+string(filepath.Separator)) && full != root {
+			utils.Fail(c, http.StatusBadRequest, "非法路径")
+			return
+		}
+		entries, err := os.ReadDir(full)
+		if err != nil {
+			utils.Fail(c, http.StatusNotFound, "目录不存在")
+			return
+		}
+		dirs := make([]browseEntry, 0)
+		files := make([]browseEntry, 0)
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), ".") {
+				continue // 跳过隐藏文件
+			}
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			en := browseEntry{
+				Name:  e.Name(),
+				IsDir: e.IsDir(),
+				Size:  info.Size(),
+			}
+			if e.IsDir() {
+				dirs = append(dirs, en)
+			} else {
+				files = append(files, en)
+			}
+		}
+		utils.OK(c, gin.H{"dirs": dirs, "files": files, "path": filepath.ToSlash(sub)})
+	}
+}
+
+// UploadMedia 接收 multipart 上传，保存到媒体目录的指定子路径。
+// 表单字段：path（目标相对目录，可空=根目录）、files（多文件）。
+// 保存后 fsnotify watcher 会自动入库，无需手动触发扫描。
+func UploadMedia(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		root := filepath.Clean(cfg.Media.Dir)
+		sub := c.PostForm("path")
+		targetDir := filepath.Join(root, filepath.Clean(sub))
+		if !strings.HasPrefix(targetDir+string(filepath.Separator), root+string(filepath.Separator)) && targetDir != root {
+			utils.Fail(c, http.StatusBadRequest, "非法目标路径")
+			return
+		}
+		if err := os.MkdirAll(targetDir, 0755); err != nil {
+			utils.Fail(c, http.StatusInternalServerError, "创建目录失败: "+err.Error())
+			return
+		}
+		form, err := c.MultipartForm()
+		if err != nil {
+			utils.Fail(c, http.StatusBadRequest, "上传表单错误: "+err.Error())
+			return
+		}
+		files := form.File["files"]
+		if len(files) == 0 {
+			utils.Fail(c, http.StatusBadRequest, "未选择文件")
+			return
+		}
+		saved := make([]string, 0, len(files))
+		skipped := make([]string, 0)
+		for _, f := range files {
+			name := filepath.Base(f.Filename) // 防止路径穿越
+			if name == "." || name == "" {
+				continue
+			}
+			dst := filepath.Join(targetDir, name)
+			if _, err := os.Stat(dst); err == nil {
+				skipped = append(skipped, name+" (已存在，跳过)")
+				continue
+			}
+			if err := c.SaveUploadedFile(f, dst); err != nil {
+				utils.Fail(c, http.StatusInternalServerError, "保存失败 "+name+": "+err.Error())
+				return
+			}
+			saved = append(saved, name)
+		}
+		utils.OK(c, gin.H{"saved": saved, "skipped": skipped, "count": len(saved), "path": filepath.ToSlash(sub)})
 	}
 }

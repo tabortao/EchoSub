@@ -37,6 +37,8 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 		media := authed.Group("/media")
 		{
 			media.GET("", handlers.ListMedia())
+			media.GET("/browse", handlers.BrowseMedia(cfg))
+			media.POST("/upload", handlers.UploadMedia(cfg))
 			media.GET("/:id", handlers.GetMedia())
 			media.GET("/:id/stream", handlers.StreamMedia())
 			media.GET("/:id/cover", handlers.GetCover())

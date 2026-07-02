@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Progress, Typography, Tooltip, Button, Space } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, TagOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { mediaApi } from '@/api'
 import MediaCover from '@/components/MediaCover'
+import TagManagerModal from '@/components/TagManagerModal'
 import type { MediaListResponse, MediaListItem } from '@/types'
 import { formatDuration, formatRelative } from '@/utils'
 
@@ -17,6 +18,9 @@ export default function Home() {
   const [keyword, setKeyword] = useState('')
   const [type, setType] = useState<string | undefined>(undefined)
   const [sort, setSort] = useState('file_modified_at')
+  const [tagModalOpen, setTagModalOpen] = useState(false)
+  const [tagModalMediaId, setTagModalMediaId] = useState<number | null>(null)
+  const [tagModalTagIds, setTagModalTagIds] = useState<number[]>([])
 
   const albumFilter = searchParams.get('album') ?? undefined
   const tagFilter = searchParams.get('tag_id') ?? undefined
@@ -50,6 +54,12 @@ export default function Home() {
 
   const clearFilter = () => {
     setSearchParams({})
+  }
+
+  const openTagModal = (item: MediaListItem) => {
+    setTagModalMediaId(item.media.id)
+    setTagModalTagIds(item.media.tags?.map((t) => t.id) ?? [])
+    setTagModalOpen(true)
   }
 
   const items = data?.list ?? []
@@ -149,6 +159,13 @@ export default function Home() {
                         {item.media.album && <Tag color="blue">{item.media.album}</Tag>}
                         <Text type="secondary">{formatDuration(item.media.duration)}</Text>
                       </div>
+                      {item.media.tags && item.media.tags.length > 0 && (
+                        <div style={{ marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                          {item.media.tags.map((t) => (
+                            <Tag key={t.id} color="purple" style={{ marginRight: 0 }}>{t.name}</Tag>
+                          ))}
+                        </div>
+                      )}
                       {item.play_count > 0 && (
                         <div style={{ marginBottom: 4 }}>
                           <Progress
@@ -158,9 +175,23 @@ export default function Home() {
                           />
                         </div>
                       )}
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {formatRelative(item.last_played_at || item.media.file_modified_at)}
-                      </Text>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {formatRelative(item.last_played_at || item.media.file_modified_at)}
+                        </Text>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<TagOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openTagModal(item)
+                          }}
+                          style={{ padding: 0, fontSize: 12 }}
+                        >
+                          标签
+                        </Button>
+                      </div>
                     </div>
                   }
                 />
@@ -169,6 +200,13 @@ export default function Home() {
           ))}
         </Row>
       )}
+      <TagManagerModal
+        open={tagModalOpen}
+        mediaId={tagModalMediaId}
+        currentTagIds={tagModalTagIds}
+        onClose={() => setTagModalOpen(false)}
+        onSaved={load}
+      />
     </div>
   )
 }

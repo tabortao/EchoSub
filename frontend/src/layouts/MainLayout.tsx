@@ -8,6 +8,7 @@ import {
   LogoutOutlined,
   AudioOutlined,
   MenuOutlined,
+  UploadOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
@@ -22,6 +23,7 @@ const menuItems = [
   { key: '/', icon: <HomeOutlined />, label: '首页' },
   { key: '/albums', icon: <FolderOutlined />, label: '专辑' },
   { key: '/tags', icon: <TagOutlined />, label: '标签' },
+  { key: '/upload', icon: <UploadOutlined />, label: '上传' },
   { key: '/records', icon: <HistoryOutlined />, label: '学习记录' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ]
@@ -33,6 +35,7 @@ export default function MainLayout() {
   const loadSettings = useSettingsStore((s) => s.load)
   const screens = useBreakpoint()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const {
     token: { colorBgContainer },
   } = theme.useToken()
@@ -55,14 +58,16 @@ export default function MainLayout() {
     setDrawerOpen(false)
   }
 
-  const siderContent = (
+  // 侧边栏内容，collapsed 仅影响桌面端 Sider（Drawer 模式始终展开）
+  const renderSider = (showLogoText: boolean) => (
     <>
       <div style={{ height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
         <AudioOutlined style={{ fontSize: 22, color: '#1677ff' }} />
-        <span style={{ fontSize: 20, fontWeight: 700, color: '#1677ff' }}>EchoSub</span>
+        {showLogoText && <span style={{ fontSize: 20, fontWeight: 700, color: '#1677ff' }}>EchoSub</span>}
       </div>
       <Menu
         mode="inline"
+        inlineCollapsed={!showLogoText}
         selectedKeys={[current]}
         items={menuItems}
         onClick={({ key }) => handleMenuClick(key)}
@@ -81,11 +86,18 @@ export default function MainLayout() {
           rootStyle={{ width: 220 }}
           styles={{ body: { padding: 0, background: colorBgContainer } }}
         >
-          {siderContent}
+          {renderSider(true)}
         </Drawer>
       ) : (
-        <Sider width={220} style={{ background: colorBgContainer }}>
-          {siderContent}
+        <Sider
+          width={220}
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
+          theme="light"
+          style={{ background: colorBgContainer }}
+        >
+          {renderSider(!collapsed)}
         </Sider>
       )}
       <Layout>

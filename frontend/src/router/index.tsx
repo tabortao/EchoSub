@@ -7,6 +7,7 @@ import Tags from '@/pages/Tags'
 import Records from '@/pages/Records'
 import Settings from '@/pages/Settings'
 import Player from '@/pages/Player'
+import Upload from '@/pages/Upload'
 import { useAuthStore } from '@/store/auth'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -33,6 +34,7 @@ const routes: RouteObject[] = [
       { index: true, element: <Home /> },
       { path: 'albums', element: <Albums /> },
       { path: 'tags', element: <Tags /> },
+      { path: 'upload', element: <Upload /> },
       { path: 'records', element: <Records /> },
       { path: 'settings', element: <Settings /> },
       { path: 'play/:id', element: <Player /> },
