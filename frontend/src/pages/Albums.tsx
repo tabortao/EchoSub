@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Row, Col, Card, Spin, Empty, Typography, Tag, Modal, Input, message } from 'antd'
-import { FolderOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Row, Col, Card, Spin, Empty, Typography, Tag, Modal, Input, Dropdown, message } from 'antd'
+import type { MenuProps } from 'antd'
+import { FolderOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { mediaApi } from '@/api'
 import MediaCover from '@/components/MediaCover'
@@ -13,16 +14,26 @@ interface AlbumPreview {
   firstMedia?: MediaFile
 }
 
-// 基于专辑名生成确定性浅色背景（与 MediaCover 的 pastelColor 保持一致风格）
+// 基于专辑名生成确定性浅色背景
 function pastelColor(key: string): string {
   let hash = 0
   for (let i = 0; i < key.length; i++) {
     hash = (hash * 31 + key.charCodeAt(i)) >>> 0
   }
   const hue = hash % 360
-  const sat = 45 + (hash % 21)
-  const light = 80 + ((hash >> 4) % 13)
+  const sat = 50 + (hash % 21) // 50~70 稍饱和一点，小学生喜欢鲜艳
+  const light = 78 + ((hash >> 4) % 12) // 78~90
   return `hsl(${hue}, ${sat}%, ${light}%)`
+}
+
+// 基于专辑名生成一个深色（用于文件夹图标）
+function vividColor(key: string): string {
+  let hash = 0
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+  }
+  const hue = hash % 360
+  return `hsl(${hue}, 70%, 55%)`
 }
 
 export default function Albums() {
@@ -40,12 +51,9 @@ export default function Albums() {
         const res = await mediaApi.albums()
         const list = res.data.data.albums ?? []
         setAlbums(list)
-        // 加载每个专辑的封面预览：优先取视频，无视频再取音频
         for (const a of list) {
-          // 先尝试视频
           let m = await mediaApi.list({ album: a.album, type: 'video', size: 1 })
           let firstList = (m.data.data as MediaListResponse).list
-          // 没有视频再取任意（音频）
           if (firstList.length === 0) {
             m = await mediaApi.list({ album: a.album, size: 1 })
             firstList = (m.data.data as MediaListResponse).list
@@ -64,14 +72,12 @@ export default function Albums() {
     load()
   }, [])
 
-  // 打开重命名 Modal
   const openRename = (a: Album) => {
     setRenameTarget(a)
     setRenameValue(a.album)
     setRenameOpen(true)
   }
 
-  // 执行重命名
   const handleRename = async () => {
     if (!renameTarget) return
     const newName = renameValue.trim()
@@ -90,11 +96,10 @@ export default function Albums() {
     }
   }
 
-  // 删除专辑（含目录与所有文件）
   const handleDelete = (a: Album) => {
     Modal.confirm({
-      title: '⚠️ 删除专辑',
-      content: `确定删除专辑「${a.album}」吗？该专辑的整个文件夹（含音频/视频/字幕/封面/子目录）将被永久删除，且无法恢复。`,
+      title: '🗑️ 删除专辑',
+      content: `确定删除专辑「${a.album}」吗？整个文件夹（含音频/视频/字幕/封面）将被永久删除，无法恢复。`,
       okText: '永久删除',
       okType: 'danger',
       cancelText: '取消',
@@ -110,7 +115,18 @@ export default function Albums() {
     })
   }
 
-  // 重新加载专辑列表（重命名/删除后调用）
+  // ⋯ 菜单项：重命名 + 删除
+  const buildMenu = (): MenuProps['items'] => [
+    { key: 'rename', label: '✏️ 重命名', icon: <EditOutlined /> },
+    { type: 'divider' },
+    { key: 'delete', label: '🗑️ 删除专辑', icon: <DeleteOutlined />, danger: true },
+  ]
+
+  const onMenuClick = (a: Album, key: string) => {
+    if (key === 'rename') openRename(a)
+    else if (key === 'delete') handleDelete(a)
+  }
+
   const reloadAlbums = async () => {
     const res = await mediaApi.albums()
     setAlbums(res.data.data.albums ?? [])
@@ -134,16 +150,17 @@ export default function Albums() {
   }
 
   if (albums.length === 0) {
-    return <Empty description="暂无专辑，将媒体放入子文件夹即可形成专辑" />
+    return <Empty description="📁 暂无专辑，把媒体文件放入子文件夹就会自动形成专辑哦~" />
   }
 
   return (
     <div>
-      <Typography.Title level={4}>专辑浏览</Typography.Title>
+      <Typography.Title level={4} style={{ color: '#1a1a1a' }}>📂 专辑浏览</Typography.Title>
       <Row gutter={[16, 16]}>
         {albums.map((a) => {
           const pv = preview[a.album]
           const subs = a.sub_albums ?? []
+          const folderColor = vividColor(a.album)
           return (
             <Col xs={24} sm={12} md={8} lg={6} xl={6} xxl={4} key={a.album}>
               <Card
@@ -152,10 +169,8 @@ export default function Albums() {
                 cover={
                   pv?.firstMedia ? (
                     <div style={{ position: 'relative' }}>
-                      {/* 传入专辑名作为 colorKey，使音频卡片颜色按专辑统一 */}
                       <MediaCover media={pv.firstMedia} colorKey={a.album} />
-                      {/* 专题名右上角，与媒体卡片保持一致 */}
-                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.85)' }}>
+                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
                         {a.album}
                       </Tag>
                     </div>
@@ -168,8 +183,8 @@ export default function Albums() {
                       justifyContent: 'center',
                       position: 'relative',
                     }}>
-                      <FolderOutlined style={{ fontSize: 56, color: '#1677ff' }} />
-                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.85)' }}>
+                      <FolderOutlined style={{ fontSize: 56, color: folderColor }} />
+                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
                         {a.album}
                       </Tag>
                     </div>
@@ -179,29 +194,37 @@ export default function Albums() {
                 <Card.Meta
                   title={
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Text ellipsis style={{ flex: 1, minWidth: 0 }}>{a.album}</Text>
-                      <EditOutlined
-                        onClick={(e) => { e.stopPropagation(); openRename(a) }}
-                        style={{ color: '#1677ff', fontSize: 14, flexShrink: 0 }}
-                        title="重命名专辑"
-                      />
-                      <DeleteOutlined
-                        onClick={(e) => { e.stopPropagation(); handleDelete(a) }}
-                        style={{ color: '#ff4d4f', fontSize: 14, flexShrink: 0 }}
-                        title="删除专辑"
-                      />
+                      <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{a.album}</Text>
+                      <Dropdown
+                        menu={{ items: buildMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMenuClick(a, key) } }}
+                        trigger={['click']}
+                        placement="bottomRight"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            border: 'none', background: 'transparent', cursor: 'pointer',
+                            padding: 4, borderRadius: 8, fontSize: 18, color: '#999',
+                            display: 'flex', alignItems: 'center', flexShrink: 0,
+                          }}
+                          title="更多操作"
+                        >
+                          <MoreOutlined />
+                        </button>
+                      </Dropdown>
                     </div>
                   }
                   description={
                     <div>
-                      <Tag color="blue">{a.count} 个文件</Tag>
+                      <Tag color="blue" style={{ borderRadius: 8 }}>🎵 {a.count} 个文件</Tag>
                       {subs.length > 0 && (
                         <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                           {subs.map((s) => (
                             <Tag
                               key={s.sub_album}
                               color="cyan"
-                              style={{ cursor: 'pointer', marginRight: 0 }}
+                              style={{ cursor: 'pointer', marginRight: 0, borderRadius: 8 }}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 navigate(`/?album=${encodeURIComponent(a.album)}&sub_album=${encodeURIComponent(s.sub_album)}`)
@@ -222,7 +245,7 @@ export default function Albums() {
       </Row>
 
       <Modal
-        title="重命名专辑"
+        title="✏️ 重命名专辑"
         open={renameOpen}
         onCancel={() => setRenameOpen(false)}
         onOk={handleRename}
@@ -235,6 +258,7 @@ export default function Albums() {
           onPressEnter={handleRename}
           placeholder="输入新的专辑名"
           autoFocus
+          size="large"
         />
       </Modal>
     </div>

@@ -95,7 +95,7 @@ go run ./cmd/server
 ```powershell
 cd frontend
 pnpm install
-pnpm dev
+pnpm dev。
 ```
 
 Vite dev server runs on `http://localhost:5173` and proxies `/api` → `http://localhost:8080`.

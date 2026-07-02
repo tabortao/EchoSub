@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, message } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message } from 'antd'
+import type { MenuProps } from 'antd'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -35,7 +36,6 @@ export default function Home() {
   const subAlbumFilter = searchParams.get('sub_album') ?? undefined
   const tagFilter = searchParams.get('tag_id') ?? undefined
 
-  // 当前选中专辑的子专辑列表
   const currentAlbum = albums.find((a) => a.album === albumFilter)
   const subAlbums = currentAlbum?.sub_albums ?? []
 
@@ -43,30 +43,18 @@ export default function Home() {
     setLoading(true)
     try {
       const mediaRes = await mediaApi.list({
-        keyword,
-        type,
-        sort,
-        order: 'desc',
-        page: 1,
-        size: 100,
-        album: albumFilter,
-        sub_album: subAlbumFilter,
-        tag_id: tagFilter,
+        keyword, type, sort, order: 'desc', page: 1, size: 100,
+        album: albumFilter, sub_album: subAlbumFilter, tag_id: tagFilter,
       })
       const mediaList = (mediaRes.data.data as MediaListResponse).list ?? []
       const mediaItems: FeedItem[] = mediaList.map((item) => ({
-        kind: 'media' as const,
-        item,
-        ts: item.media.file_modified_at,
+        kind: 'media' as const, item, ts: item.media.file_modified_at,
       }))
-      // 专辑模式：并行拉取该专辑的学习页面，与媒体混排按时间排序
       if (albumFilter) {
         const noteRes = await noteApi.list(albumFilter)
         const notes = noteRes.data.data.notes ?? []
         const noteItems: FeedItem[] = notes.map((n) => ({
-          kind: 'note' as const,
-          note: n,
-          ts: n.updated_at,
+          kind: 'note' as const, note: n, ts: n.updated_at,
         }))
         const merged = [...mediaItems, ...noteItems].sort((a, b) => b.ts.localeCompare(a.ts))
         setFeed(merged)
@@ -80,21 +68,13 @@ export default function Home() {
     }
   }
 
-  // 加载专辑列表（含子专辑），用于子专辑筛选下拉
   useEffect(() => {
     mediaApi.albums().then((res) => setAlbums(res.data.data.albums ?? [])).catch(() => {})
   }, [])
 
-  // 首页模式：额外加载最近学习页面（最多 6 个），与媒体 load 解耦
   useEffect(() => {
-    if (albumFilter) {
-      setRecentNotes([])
-      return
-    }
-    noteApi
-      .list()
-      .then((res) => setRecentNotes((res.data.data.notes ?? []).slice(0, 6)))
-      .catch(() => {})
+    if (albumFilter) { setRecentNotes([]); return }
+    noteApi.list().then((res) => setRecentNotes((res.data.data.notes ?? []).slice(0, 6))).catch(() => {})
   }, [albumFilter, location.key])
 
   useEffect(() => {
@@ -103,29 +83,20 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyword, type, sort, albumFilter, subAlbumFilter, tagFilter, location.key])
 
-  const clearFilter = () => {
-    setSearchParams({})
-  }
+  const clearFilter = () => setSearchParams({})
 
-  // 新建学习页面（专辑模式下，album 固定为当前 albumFilter）
   const handleCreateNote = async () => {
     if (!albumFilter) return
-    if (!newTitle.trim()) {
-      message.warning('请填写标题')
-      return
-    }
+    if (!newTitle.trim()) { message.warning('请填写标题'); return }
     try {
       const res = await noteApi.create(albumFilter, newTitle.trim())
       message.success('已创建')
       setCreateOpen(false)
       setNewTitle('')
       navigate(`/notes/${res.data.data.id}`)
-    } catch {
-      message.error('创建失败')
-    }
+    } catch { message.error('创建失败') }
   }
 
-  // 重命名媒体文件（含扩展名去除、调用 API、刷新列表）
   const openRenameMedia = (item: MediaListItem) => {
     const name = item.media.name
     const dotIdx = name.lastIndexOf('.')
@@ -135,38 +106,39 @@ export default function Home() {
   const handleRenameMedia = async () => {
     if (!renameMedia) return
     const newName = renameValue.trim()
-    if (!newName) {
-      message.warning('名称不能为空')
-      return
-    }
+    if (!newName) { message.warning('名称不能为空'); return }
     try {
       await mediaApi.rename(renameMedia.media.id, newName)
       message.success('重命名成功')
       setRenameMedia(null)
       await load()
-    } catch (err) {
-      message.error('重命名失败：' + (err as Error).message)
-    }
+    } catch (err) { message.error('重命名失败：' + (err as Error).message) }
   }
 
-  // 删除单个媒体文件（含同名字幕/封面）
   const handleDeleteMedia = (item: MediaListItem) => {
     Modal.confirm({
-      title: '⚠️ 删除媒体文件',
-      content: `确定删除「${item.media.name}」吗？该媒体文件及同目录同名的字幕/封面文件将被永久删除，无法恢复。`,
-      okText: '永久删除',
-      okType: 'danger',
-      cancelText: '取消',
+      title: '🗑️ 删除媒体文件',
+      content: `确定删除「${item.media.name}」吗？该文件及同名的字幕/封面将被永久删除，无法恢复。`,
+      okText: '永久删除', okType: 'danger', cancelText: '取消',
       onOk: async () => {
         try {
           await mediaApi.remove(item.media.id)
           message.success('已删除')
           await load()
-        } catch (err) {
-          message.error('删除失败：' + (err as Error).message)
-        }
+        } catch (err) { message.error('删除失败：' + (err as Error).message) }
       },
     })
+  }
+
+  // ⋯ 菜单：重命名 + 删除（收进下拉菜单避免误触）
+  const buildMediaMenu = (): MenuProps['items'] => [
+    { key: 'rename', label: '✏️ 重命名', icon: <EditOutlined /> },
+    { type: 'divider' },
+    { key: 'delete', label: '🗑️ 删除', icon: <DeleteOutlined />, danger: true },
+  ]
+  const onMediaMenuClick = (item: MediaListItem, key: string) => {
+    if (key === 'rename') openRenameMedia(item)
+    else if (key === 'delete') handleDeleteMedia(item)
   }
 
   const showRecent = !albumFilter && !subAlbumFilter && !tagFilter && recentNotes.length > 0
@@ -177,37 +149,29 @@ export default function Home() {
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={12} lg={10} xl={8}>
           <Input
-            prefix={<SearchOutlined />}
+            prefix={<SearchOutlined style={{ color: '#FF7A45' }} />}
             placeholder="搜索媒体名称"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             allowClear
+            size="large"
           />
         </Col>
         <Col xs={12} md={4} lg={3}>
           <Select
-            placeholder="类型"
-            allowClear
-            style={{ width: '100%' }}
-            value={type}
-            onChange={(v) => setType(v)}
-            options={[
-              { value: 'video', label: '视频' },
-              { value: 'audio', label: '音频' },
-            ]}
+            placeholder="类型" allowClear style={{ width: '100%' }}
+            value={type} onChange={(v) => setType(v)} size="large"
+            options={[{ value: 'video', label: '🎬 视频' }, { value: 'audio', label: '🎵 音频' }]}
           />
         </Col>
         {albumFilter && subAlbums.length > 0 && (
           <Col xs={12} md={4} lg={3}>
             <Select
-              placeholder="子专辑"
-              allowClear
-              style={{ width: '100%' }}
-              value={subAlbumFilter}
+              placeholder="子专辑" allowClear style={{ width: '100%' }}
+              value={subAlbumFilter} size="large"
               onChange={(v) => {
                 const next = new URLSearchParams(searchParams)
-                if (v) next.set('sub_album', v)
-                else next.delete('sub_album')
+                if (v) next.set('sub_album', v); else next.delete('sub_album')
                 setSearchParams(next)
               }}
               options={subAlbums.map((s) => ({ value: s.sub_album, label: `${s.sub_album} (${s.count})` }))}
@@ -216,19 +180,18 @@ export default function Home() {
         )}
         <Col xs={12} md={4} lg={3}>
           <Select
-            style={{ width: '100%' }}
-            value={sort}
-            onChange={(v) => setSort(v)}
+            style={{ width: '100%' }} size="large"
+            value={sort} onChange={(v) => setSort(v)}
             options={[
-              { value: 'file_modified_at', label: '存入时间' },
-              { value: 'name', label: '名称' },
-              { value: 'duration', label: '时长' },
+              { value: 'file_modified_at', label: '📅 存入时间' },
+              { value: 'name', label: '🔤 名称' },
+              { value: 'duration', label: '⏱️ 时长' },
             ]}
           />
         </Col>
         {albumFilter && (
           <Col xs={24} md={6} lg={4}>
-            <Button type="primary" icon={<PlusOutlined />} block onClick={() => setCreateOpen(true)}>
+            <Button type="primary" icon={<PlusOutlined />} block size="large" onClick={() => setCreateOpen(true)}>
               新建学习页面
             </Button>
           </Col>
@@ -239,25 +202,25 @@ export default function Home() {
       {(albumFilter || subAlbumFilter || tagFilter) && (
         <div style={{ marginBottom: 16 }}>
           <Space wrap>
-            <span style={{ color: '#666' }}>当前筛选：</span>
-            {albumFilter && <Tag color="blue" closable onClose={clearFilter}>专辑: {albumFilter}</Tag>}
+            <span style={{ color: '#8c8c8c' }}>当前筛选：</span>
+            {albumFilter && <Tag color="orange" closable onClose={clearFilter} style={{ borderRadius: 8 }}>📂 {albumFilter}</Tag>}
             {subAlbumFilter && <Tag color="cyan" closable onClose={() => {
               const next = new URLSearchParams(searchParams)
               next.delete('sub_album')
               setSearchParams(next)
-            }}>子专辑: {subAlbumFilter}</Tag>}
-            {tagFilter && <Tag color="purple" closable onClose={clearFilter}>标签筛选</Tag>}
+            }} style={{ borderRadius: 8 }}>📁 {subAlbumFilter}</Tag>}
+            {tagFilter && <Tag color="purple" closable onClose={clearFilter} style={{ borderRadius: 8 }}>🏷️ 标签筛选</Tag>}
             <Button type="link" size="small" icon={<CloseCircleOutlined />} onClick={clearFilter}>清除</Button>
           </Space>
         </div>
       )}
 
-      {/* 最近学习页面区块（仅首页、无筛选时） */}
+      {/* 最近学习页面区块 */}
       {showRecent && (
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Title level={5} style={{ margin: 0 }}>最近学习页面</Title>
-            <Button type="link" onClick={() => navigate('/notes')}>查看全部</Button>
+            <Title level={5} style={{ margin: 0, fontWeight: 700, color: '#1a1a1a' }}>📝 最近学习页面</Title>
+            <Button type="link" onClick={() => navigate('/notes')} style={{ color: '#FF7A45' }}>查看全部 →</Button>
           </div>
           <Row gutter={[16, 16]}>
             {recentNotes.map((n) => (
@@ -273,7 +236,7 @@ export default function Home() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
       ) : feed.length === 0 ? (
-        <Empty description="暂无内容，请将文件放入媒体目录或创建学习页面" />
+        <Empty description="🎁 暂无内容，把文件放入媒体目录或创建学习页面吧~" />
       ) : (
         <Row gutter={[16, 16]}>
           {feed.map((f) => (
@@ -287,26 +250,21 @@ export default function Home() {
                       <MediaCover media={f.item.media} />
                       <Tag
                         color={f.item.media.type === 'video' ? 'magenta' : 'green'}
-                        style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.85)' }}
+                        style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}
                       >
-                        {f.item.media.type === 'video' ? '视频' : '音频'}
+                        {f.item.media.type === 'video' ? '🎬 视频' : '🎵 音频'}
                       </Tag>
-                      {/* 专题名移到右上角，节省下方空间 */}
                       {f.item.media.album && (
-                        <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.85)' }}>
+                        <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: 80, verticalAlign: 'middle' }}>
                             {f.item.media.sub_album || f.item.media.album}
                           </span>
                         </Tag>
                       )}
                       <PlayCircleOutlined style={{
-                        position: 'absolute',
-                        top: '50%',
-                        left: '50%',
+                        position: 'absolute', top: '50%', left: '50%',
                         transform: 'translate(-50%, -50%)',
-                        fontSize: 40,
-                        color: 'rgba(22,119,255,0.85)',
-                        pointerEvents: 'none',
+                        fontSize: 44, color: 'rgba(255,122,69,0.85)', pointerEvents: 'none',
                       }} />
                     </div>
                   }
@@ -315,18 +273,17 @@ export default function Home() {
                     title={
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Tooltip title={f.item.media.name}>
-                          <Text ellipsis style={{ flex: 1, minWidth: 0 }}>{f.item.media.name}</Text>
+                          <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{f.item.media.name}</Text>
                         </Tooltip>
-                        <EditOutlined
-                          onClick={(e) => { e.stopPropagation(); openRenameMedia(f.item) }}
-                          style={{ color: '#1677ff', fontSize: 14, flexShrink: 0 }}
-                          title="重命名"
-                        />
-                        <DeleteOutlined
-                          onClick={(e) => { e.stopPropagation(); handleDeleteMedia(f.item) }}
-                          style={{ color: '#ff4d4f', fontSize: 14, flexShrink: 0 }}
-                          title="删除"
-                        />
+                        <Dropdown
+                          menu={{ items: buildMediaMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMediaMenuClick(f.item, key) } }}
+                          trigger={['click']}
+                          placement="bottomRight"
+                        >
+                          <button type="button" onClick={(e) => e.stopPropagation()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4, borderRadius: 8, fontSize: 18, color: '#999', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="更多操作">
+                            <MoreOutlined />
+                          </button>
+                        </Dropdown>
                       </div>
                     }
                     description={
@@ -334,7 +291,7 @@ export default function Home() {
                         {f.item.media.tags && f.item.media.tags.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                             {f.item.media.tags.map((t) => (
-                              <Tag key={t.id} color="purple" style={{ marginRight: 0 }}>{t.name}</Tag>
+                              <Tag key={t.id} color="purple" style={{ marginRight: 0, borderRadius: 8 }}>{t.name}</Tag>
                             ))}
                           </div>
                         )}
@@ -351,48 +308,21 @@ export default function Home() {
       )}
 
       {/* 新建学习页面 Modal */}
-      <Modal
-        title="新建学习页面"
-        open={createOpen}
-        onCancel={() => setCreateOpen(false)}
-        onOk={handleCreateNote}
-        okText="创建"
-        cancelText="取消"
-      >
+      <Modal title="📝 新建学习页面" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={handleCreateNote} okText="创建" cancelText="取消">
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <Input
-            placeholder="标题"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onPressEnter={handleCreateNote}
-          />
-          {albumFilter && <Tag color="blue">专辑: {albumFilter}</Tag>}
+          <Input placeholder="标题" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onPressEnter={handleCreateNote} size="large" autoFocus />
+          {albumFilter && <Tag color="orange" style={{ borderRadius: 8 }}>📂 专辑: {albumFilter}</Tag>}
         </Space>
       </Modal>
 
       {/* 重命名媒体 Modal */}
-      <Modal
-        title="重命名媒体"
-        open={!!renameMedia}
-        onCancel={() => setRenameMedia(null)}
-        onOk={handleRenameMedia}
-        okText="确定"
-        cancelText="取消"
-      >
+      <Modal title="✏️ 重命名媒体" open={!!renameMedia} onCancel={() => setRenameMedia(null)} onOk={handleRenameMedia} okText="确定" cancelText="取消">
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onPressEnter={handleRenameMedia}
-            autoFocus
-            placeholder="输入新名称（不含扩展名）"
-          />
+          <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onPressEnter={handleRenameMedia} autoFocus size="large" placeholder="输入新名称（不含扩展名）" />
           {renameMedia && (
             <Text type="secondary" style={{ fontSize: 12 }}>
-              当前文件：{renameMedia.media.name}
-              <br />
-              扩展名 {renameMedia.media.name.slice(renameMedia.media.name.lastIndexOf('.'))} 将保留，
-              同目录同名字幕/封面文件会同步重命名。
+              当前文件：{renameMedia.media.name}<br />
+              扩展名 {renameMedia.media.name.slice(renameMedia.media.name.lastIndexOf('.'))} 将保留，同目录同名字幕/封面文件会同步重命名。
             </Text>
           )}
         </Space>
@@ -421,16 +351,13 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
             <div style={{
               height: 140,
               background: 'linear-gradient(135deg, #fff7e6, #ffe7ba)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <ReadOutlined style={{ fontSize: 48, color: '#fa8c16' }} />
+              <ReadOutlined style={{ fontSize: 48, color: '#FAAD14' }} />
             </div>
           )}
-          <Tag color="gold" style={{ position: 'absolute', top: 8, left: 8, margin: 0 }}>学习页</Tag>
-          {/* 专题名放右上角 */}
-          <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.85)' }}>
+          <Tag color="gold" style={{ position: 'absolute', top: 8, left: 8, margin: 0, fontWeight: 600, borderRadius: 8 }}>📖 学习页</Tag>
+          <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: 80, verticalAlign: 'middle' }}>
               {note.album}
             </span>
@@ -441,7 +368,7 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
       <Card.Meta
         title={
           <Tooltip title={note.title}>
-            <Text ellipsis style={{ maxWidth: '100%' }}>{note.title}</Text>
+            <Text ellipsis style={{ maxWidth: '100%', fontWeight: 600 }}>{note.title}</Text>
           </Tooltip>
         }
       />

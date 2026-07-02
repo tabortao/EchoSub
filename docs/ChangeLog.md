@@ -7,6 +7,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+#### 小学生审美整体美化
+
+- **`App.tsx`**：antd 主题从蓝色 `#1677ff` 改为温暖橙 `#FF7A45`，`borderRadius` 12，`fontSize` 15；Menu/Card/Button 组件级 token 定制（选中态橙色背景、卡片大圆角 16、按钮圆角 10）。
+- **`index.css`**：全局背景从纯白改为暖白 `#FFF9F0`；清理 Vite 模板残留（过大 h1、dark mode、紫色 accent 变量）；新增卡片 hover 上浮动画（`translateY(-4px)` + 橙色阴影）、滚动条橙色美化、按钮 active 微缩放触觉反馈。
+- **`MainLayout.tsx`**：重写侧边栏为自定义彩色菜单（每项不同颜色图标——首页橙/专辑蓝/标签绿/上传紫/记录粉/设置青），选中态彩色背景块；Logo 改为橙色渐变圆角图标 + 渐变文字；Header 显示当前页 emoji+名称、用户首字母渐变 Avatar。
+
+#### 编辑/删除收进 ⋯ 菜单
+
+- **`Albums.tsx` / `Home.tsx`**：卡片标题区的编辑 ✎ 和删除 🗑 图标收进 `Dropdown` 下拉菜单（⋯ 触发），避免误触。菜单项带 emoji 图标（✏️ 重命名 / 🗑️ 删除），删除项 `danger` 红色高亮。
+
 ### Fixed
 
 #### 句末停顿修复
