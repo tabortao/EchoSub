@@ -3,25 +3,35 @@ import { Row, Col, Card, Spin, Empty, Typography, Tag } from 'antd'
 import { FolderOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { mediaApi } from '@/api'
-import type { Album, MediaListResponse } from '@/types'
+import MediaCover from '@/components/MediaCover'
+import type { Album, MediaFile, MediaListResponse } from '@/types'
 
 const { Text } = Typography
+
+interface AlbumPreview {
+  count: number
+  firstMedia?: MediaFile
+}
 
 export default function Albums() {
   const navigate = useNavigate()
   const [albums, setAlbums] = useState<Album[]>([])
   const [loading, setLoading] = useState(true)
-  const [preview, setPreview] = useState<Record<string, number>>({})
+  const [preview, setPreview] = useState<Record<string, AlbumPreview>>({})
 
   useEffect(() => {
     const load = async () => {
       try {
         const res = await mediaApi.albums()
         setAlbums(res.data.data.albums ?? [])
-        // 加载每个专辑前几个媒体预览
+        // 加载每个专辑第一个媒体作为封面预览
         for (const a of res.data.data.albums ?? []) {
-          const m = await mediaApi.list({ album: a.album, size: 4 })
-          setPreview((p) => ({ ...p, [a.album]: (m.data.data as MediaListResponse).list.length }))
+          const m = await mediaApi.list({ album: a.album, size: 1 })
+          const list = (m.data.data as MediaListResponse).list
+          setPreview((p) => ({
+            ...p,
+            [a.album]: { count: list.length, firstMedia: list[0]?.media },
+          }))
         }
       } catch {
         // ignore
@@ -44,35 +54,39 @@ export default function Albums() {
     <div>
       <Typography.Title level={4}>专辑浏览</Typography.Title>
       <Row gutter={[16, 16]}>
-        {albums.map((a) => (
-          <Col xs={24} sm={12} md={8} lg={6} key={a.album}>
-            <Card
-              hoverable
-              onClick={() => navigate(`/?album=${encodeURIComponent(a.album)}`)}
-              cover={
-                <div style={{
-                  height: 140,
-                  background: 'linear-gradient(135deg, #e3f2fd, #bbdefb)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <FolderOutlined style={{ fontSize: 56, color: '#1677ff' }} />
-                </div>
-              }
-            >
-              <Card.Meta
-                title={<Text ellipsis style={{ maxWidth: '100%' }}>{a.album}</Text>}
-                description={
-                  <Tag color="blue">{a.count} 个文件</Tag>
+        {albums.map((a) => {
+          const pv = preview[a.album]
+          return (
+            <Col xs={24} sm={12} md={8} lg={6} key={a.album}>
+              <Card
+                hoverable
+                onClick={() => navigate(`/?album=${encodeURIComponent(a.album)}`)}
+                cover={
+                  pv?.firstMedia ? (
+                    <MediaCover media={pv.firstMedia} />
+                  ) : (
+                    <div style={{
+                      height: 140,
+                      background: 'linear-gradient(135deg, #e3f2fd, #bbdefb)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <FolderOutlined style={{ fontSize: 56, color: '#1677ff' }} />
+                    </div>
+                  )
                 }
-              />
-              {preview[a.album] !== undefined && (
-                <Text type="secondary" style={{ fontSize: 12 }}>预览 {preview[a.album]} 项</Text>
-              )}
-            </Card>
-          </Col>
-        ))}
+              >
+                <Card.Meta
+                  title={<Text ellipsis style={{ maxWidth: '100%' }}>{a.album}</Text>}
+                  description={
+                    <Tag color="blue">{a.count} 个文件</Tag>
+                  }
+                />
+              </Card>
+            </Col>
+          )
+        })}
       </Row>
     </div>
   )

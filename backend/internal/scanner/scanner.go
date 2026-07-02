@@ -71,6 +71,38 @@ func (s *Scanner) findSubtitle(mediaPath string) string {
 	return ""
 }
 
+// findCover 在同目录下查找同名图片作为封面（.jpg/.jpeg/.png/.webp）
+func (s *Scanner) findCover(mediaPath string) string {
+	dir := filepath.Dir(mediaPath)
+	base := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		matched := false
+		for _, img := range s.cfg.Media.SupportedImages {
+			if ext == img {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		nameBase := strings.TrimSuffix(name, filepath.Ext(name))
+		if strings.EqualFold(filepath.Join(dir, nameBase), base) {
+			return filepath.Join(dir, name)
+		}
+	}
+	return ""
+}
+
 // ScanFull 全量扫描媒体目录并入库
 func (s *Scanner) ScanFull() error {
 	s.mu.Lock()
@@ -135,6 +167,12 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 		subPtr = &subPath
 	}
 
+	coverPath := s.findCover(path)
+	var coverPtr *string
+	if coverPath != "" {
+		coverPtr = &coverPath
+	}
+
 	if result.Error == nil {
 		// 已存在，更新必要字段
 		updates := map[string]interface{}{
@@ -142,6 +180,7 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 			"file_size":        info.Size(),
 			"file_modified_at": info.ModTime(),
 			"subtitle_path":    subPtr,
+			"cover_path":       coverPtr,
 		}
 		return database.DB.Model(&existing).Updates(updates).Error
 	}
@@ -154,6 +193,7 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 		FileSize:       info.Size(),
 		FileModifiedAt: info.ModTime(),
 		SubtitlePath:   subPtr,
+		CoverPath:      coverPtr,
 	}
 	return database.DB.Create(&media).Error
 }

@@ -36,3 +36,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 }))
+
+// 模块加载时同步恢复登录态，确保 ProtectedRoute 在首次渲染前就能读到 token，
+// 避免刷新页面时被误判为未登录而跳转到 /login。
+useAuthStore.getState().hydrate()

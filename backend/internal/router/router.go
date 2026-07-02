@@ -39,6 +39,7 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			media.GET("", handlers.ListMedia())
 			media.GET("/:id", handlers.GetMedia())
 			media.GET("/:id/stream", handlers.StreamMedia())
+			media.GET("/:id/cover", handlers.GetCover())
 			media.GET("/:id/subtitle", handlers.GetSubtitle())
 			media.POST("/:id/tags", handlers.AssignTags())
 		}

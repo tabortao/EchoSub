@@ -35,6 +35,7 @@ export const mediaApi = {
   }) => client.get<ApiResponse<MediaListResponse>>('/media', { params }),
   get: (id: number) => client.get<ApiResponse>(`/media/${id}`),
   streamUrl: (id: number, token: string) => `/api/v1/media/${id}/stream?token=${encodeURIComponent(token)}`,
+  coverUrl: (id: number, token: string) => `/api/v1/media/${id}/cover?token=${encodeURIComponent(token)}`,
   subtitle: (id: number) => client.get<ApiResponse<SubtitleResponse>>(`/media/${id}/subtitle`),
   assignTags: (id: number, tagIds: number[]) =>
     client.post<ApiResponse>(`/media/${id}/tags`, { tag_ids: tagIds }),

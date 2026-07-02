@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Progress, Typography, Tooltip, Button, Space } from 'antd'
-import { PlayCircleOutlined, VideoCameraOutlined, AudioOutlined, SearchOutlined, CloseCircleOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { mediaApi } from '@/api'
+import MediaCover from '@/components/MediaCover'
 import type { MediaListResponse, MediaListItem } from '@/types'
 import { formatDuration, formatRelative } from '@/utils'
 
@@ -55,8 +56,8 @@ export default function Home() {
 
   return (
     <div>
-      <Row gutter={12} style={{ marginBottom: 16 }} align="middle">
-        <Col flex="auto">
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={14}>
           <Input
             prefix={<SearchOutlined />}
             placeholder="搜索媒体名称"
@@ -65,11 +66,11 @@ export default function Home() {
             allowClear
           />
         </Col>
-        <Col>
+        <Col xs={12} md={5}>
           <Select
             placeholder="类型"
             allowClear
-            style={{ width: 120 }}
+            style={{ width: '100%' }}
             value={type}
             onChange={(v) => setType(v)}
             options={[
@@ -78,9 +79,9 @@ export default function Home() {
             ]}
           />
         </Col>
-        <Col>
+        <Col xs={12} md={5}>
           <Select
-            style={{ width: 140 }}
+            style={{ width: '100%' }}
             value={sort}
             onChange={(v) => setSort(v)}
             options={[
@@ -115,23 +116,23 @@ export default function Home() {
                 hoverable
                 onClick={() => navigate(`/play/${item.media.id}`)}
                 cover={
-                  <div style={{
-                    height: 140,
-                    background: '#f0f2f5',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    position: 'relative',
-                  }}>
-                    {item.media.type === 'video' ? (
-                      <VideoCameraOutlined style={{ fontSize: 48, color: '#999' }} />
-                    ) : (
-                      <AudioOutlined style={{ fontSize: 48, color: '#999' }} />
-                    )}
+                  <div style={{ position: 'relative' }}>
+                    <MediaCover media={item.media} />
+                    {/* 类型标识 */}
+                    <Tag
+                      color={item.media.type === 'video' ? 'magenta' : 'green'}
+                      style={{ position: 'absolute', top: 8, left: 8, margin: 0 }}
+                    >
+                      {item.media.type === 'video' ? '视频' : '音频'}
+                    </Tag>
                     <PlayCircleOutlined style={{
                       position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
                       fontSize: 40,
                       color: 'rgba(22,119,255,0.85)',
+                      pointerEvents: 'none',
                     }} />
                   </div>
                 }

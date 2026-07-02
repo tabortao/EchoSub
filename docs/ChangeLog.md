@@ -46,6 +46,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Player.tsx`: media + subtitle loader.
 - **MediaPlayer component** (`src/components/MediaPlayer.tsx`): core player with per-sentence repeat (M times), pause (K seconds) between sentences, overall loop (N times), throttled progress save (5s), clickable subtitle list with current-sentence highlight and completed markers. Uses refs (`handlingEndRef`, `sentenceRepeatRef`, `overallLoopRef`, `pauseTimerRef`, `modeRef`) to avoid stale closures in event callbacks.
 
+#### Mobile, PWA & Session
+
+- **Responsive layout**: `MainLayout` now switches to a slide-in `Drawer` menu on screens below the `lg` breakpoint (hamburger button in the header), with tighter paddings on mobile. `Home.tsx` filter row reflows to stacked single-column on `xs` and two-up on `sm`. `Login.tsx` card is fluid (`maxWidth: 400`, `width: 100%`) with responsive outer padding.
+- **PWA support**: integrated `vite-plugin-pwa` (1.3.0) with `autoUpdate` registration, `devOptions.enabled` for local testing, and a Web App Manifest (`name=EchoSub`, `theme_color=#1677ff`, `display=standalone`, `lang=zh-CN`). Generated `pwa-192.png` and `pwa-512.png` icons (maskable variant included) under `frontend/public/`. `index.html` gained `theme-color`, `apple-touch-icon`, `apple-mobile-web-app-capable`, and a `viewport-fit=cover` viewport. `main.tsx` registers the service worker via `virtual:pwa-register`.
+- **Workbox runtime caching**: media stream requests (`/api/v1/media/:id/stream`) use `NetworkOnly` to preserve Range/token semantics; other `/api/*` calls use `NetworkFirst` with a 5s timeout and short-lived cache.
+- **Remember password**: `Login.tsx` adds a "记住密码" checkbox (login tab only). When checked, credentials are stored in `localStorage` under `echosub_remember` and pre-filled on next visit. Unchecking clears the entry.
+- **Session persistence on refresh**: `useAuthStore.getState().hydrate()` is now invoked at module load time (`store/auth.ts`), so the JWT is restored synchronously before `ProtectedRoute` renders — refreshing a protected page no longer bounces to `/login`.
+
+#### Media Cover & Type Badge
+
+- **Backend cover scanning** (`internal/scanner/scanner.go`): added `findCover()` mirroring `findSubtitle()` to locate a same-name image (`.jpg/.jpeg/.png/.webp`) in the media's directory. `upsertMedia` now populates `MediaFile.CoverPath` (the field existed in the model but was never filled before). `MediaConfig` gained `SupportedImages` with sensible defaults.
+- **Cover endpoint** (`GET /api/v1/media/:id/cover`): new handler `GetCover` in `internal/handlers/media.go`. Resolution order: (1) serve the same-name image directly with the correct `Content-Type`; (2) for a video without an image cover, issue `302 Found` redirect to `GET /media/:id/stream?token=<jwt>` so the client can use `<video preload="metadata">` to render the first frame; (3) for audio without a cover, return `404`. Route registered in `internal/router/router.go`.
+- **Frontend `MediaCover` component** (`src/components/MediaCover.tsx`): reusable cover renderer with three branches — image cover via `coverUrl` API, video first-frame via `<video preload="metadata" src={streamUrl}>`, and an `AudioOutlined` icon fallback. Includes `onError` fallbacks that degrade gracefully (image error → try video first-frame; video error → icon).
+- **`mediaApi.coverUrl(id, token)`**: new API helper appending the JWT as a query param, mirroring `streamUrl` for use in `<img src>`.
+- **Home page cards** (`src/pages/Home.tsx`): replaced the static icon placeholder with `<MediaCover>`. Added a type badge (`Tag` — magenta "视频" for video, green "音频" for audio) overlaid on the cover top-left, and re-centered the play button overlay.
+- **Albums page cards** (`src/pages/Albums.tsx`): each album card now fetches its first media item and renders `<MediaCover>` as the card cover, falling back to the gradient + `FolderOutlined` placeholder when the album is empty or still loading.
+
 #### Infrastructure
 
 - **Dockerfile**: three-stage build (`golang:1.26-alpine` → `node:22-alpine` → `alpine:3.20` + `ffmpeg`), single static binary serving the SPA.

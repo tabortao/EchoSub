@@ -118,6 +118,40 @@ func StreamMedia() gin.HandlerFunc {
 	}
 }
 
+// GetCover 返回媒体封面图片
+// 优先返回同目录同名图片；若无则对视频重定向到 stream 端点（前端可用 <video> 显示首帧）；
+// 音频无封面时返回 404，前端用图标占位。
+func GetCover() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		var m models.MediaFile
+		if err := database.DB.First(&m, id).Error; err != nil {
+			utils.Fail(c, http.StatusNotFound, "媒体不存在")
+			return
+		}
+		// 有同名封面图片，直接返回图片
+		if m.CoverPath != nil && *m.CoverPath != "" {
+			if _, err := os.Stat(*m.CoverPath); err == nil {
+				c.Header("Content-Type", coverContentType(*m.CoverPath))
+				c.File(*m.CoverPath)
+				return
+			}
+		}
+		// 视频无封面图：重定向到流式端点，前端可用 <video preload="metadata"> 显示首帧
+		if m.Type == "video" {
+			token := c.Query("token")
+			loc := "/api/v1/media/" + id + "/stream"
+			if token != "" {
+				loc += "?token=" + token
+			}
+			c.Redirect(http.StatusFound, loc)
+			return
+		}
+		// 音频无封面
+		utils.Fail(c, http.StatusNotFound, "无封面")
+	}
+}
+
 // GetSubtitle 获取媒体对应字幕（解析后句子数组）
 func GetSubtitle() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -209,6 +243,23 @@ func contentTypeFor(m models.MediaFile) string {
 		return "audio/flac"
 	case ".ogg":
 		return "audio/ogg"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// coverContentType 根据封面文件扩展名返回 Content-Type
+func coverContentType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
 	default:
 		return "application/octet-stream"
 	}

@@ -37,6 +37,7 @@ type MediaConfig struct {
 	SupportedVideo []string
 	SupportedAudio []string
 	SupportedSubs  []string
+	SupportedImages []string
 }
 
 // Default 返回默认配置
@@ -57,6 +58,7 @@ func Default() *Config {
 			SupportedVideo: []string{".mp4", ".mkv", ".mov", ".webm", ".avi"},
 			SupportedAudio: []string{".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg"},
 			SupportedSubs:  []string{".srt", ".vtt"},
+			SupportedImages: []string{".jpg", ".jpeg", ".png", ".webp"},
 		},
 	}
 }
