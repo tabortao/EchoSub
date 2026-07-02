@@ -9,7 +9,6 @@ import {
   AudioOutlined,
   MenuOutlined,
   UploadOutlined,
-  ReadOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
@@ -25,7 +24,6 @@ const menuItems = [
   { key: '/albums', icon: <FolderOutlined />, label: '专辑' },
   { key: '/tags', icon: <TagOutlined />, label: '标签' },
   { key: '/upload', icon: <UploadOutlined />, label: '上传' },
-  { key: '/notes', icon: <ReadOutlined />, label: '学习页面' },
   { key: '/records', icon: <HistoryOutlined />, label: '学习记录' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置' },
 ]

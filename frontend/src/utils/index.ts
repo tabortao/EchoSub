@@ -38,3 +38,56 @@ export function formatRelative(iso: string): string {
   if (day < 30) return `${day} 天前`
   return date.toLocaleDateString('zh-CN')
 }
+
+/**
+ * 将 Markdown 原文转换为适合 TTS 朗读的纯文本。
+ * 移除所有 Markdown 标记符号（#、-、>、**、`、[]() 等），保留可读文字内容。
+ *
+ * 处理顺序：先块级（代码块/HTML/图片/链接/水平线/标题/引用/列表/表格），再行内（代码/粗体斜体/HTML实体），最后折叠空白。
+ * 代码块整体移除（朗读代码无意义）；图片保留 alt 文本；链接保留显示文本。
+ *
+ * @param md Markdown 原文
+ * @returns 可直接用于 TTS 朗读的纯文本
+ */
+export function markdownToPlainText(md: string): string {
+  if (!md) return ''
+  let s = md
+  // 1. 代码块（围栏 ``` 或 ~~~）整体移除
+  s = s.replace(/```[\s\S]*?```/g, '')
+  s = s.replace(/~~~[\s\S]*?~~~/g, '')
+  // 2. HTML 标签移除
+  s = s.replace(/<[^>]+>/g, '')
+  // 3. 图片 ![alt](url) → 保留 alt
+  s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+  // 4. 链接 [text](url) → 保留 text
+  s = s.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+  // 5. 水平线 --- *** ___
+  s = s.replace(/^\s*([-*_=])\1{2,}\s*$/gm, '')
+  // 6. 标题前缀 # ## ###
+  s = s.replace(/^\s{0,3}#{1,6}\s+/gm, '')
+  // 7. 引用前缀 >
+  s = s.replace(/^\s{0,3}>\s?/gm, '')
+  // 8. 无序列表前缀 - * +
+  s = s.replace(/^\s*[-*+]\s+/gm, '')
+  // 9. 有序列表前缀 1.
+  s = s.replace(/^\s*\d+\.\s+/gm, '')
+  // 10. 表格分隔行移除，其余 | 替换为空格
+  s = s.replace(/^\s*\|?[\s:|-]+\|?\s*$/gm, '')
+  s = s.replace(/\|/g, ' ')
+  // 11. 行内代码 `code` → 保留 code
+  s = s.replace(/`([^`]+)`/g, '$1')
+  // 12. 粗体/斜体 **x** __x__ *x* _x_ → 保留 x
+  s = s.replace(/\*\*([^*]+)\*\*/g, '$1')
+  s = s.replace(/__([^_]+)__/g, '$1')
+  s = s.replace(/\*([^*]+)\*/g, '$1')
+  s = s.replace(/_([^_]+)_/g, '$1')
+  // 13. HTML 实体还原
+  s = s.replace(/&nbsp;/g, ' ')
+  s = s.replace(/&amp;/g, '&')
+  s = s.replace(/&lt;/g, '<')
+  s = s.replace(/&gt;/g, '>')
+  s = s.replace(/&quot;/g, '"')
+  // 14. 折叠多余空白
+  s = s.replace(/\n{3,}/g, '\n\n')
+  return s.trim()
+}

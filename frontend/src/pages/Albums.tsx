@@ -58,7 +58,7 @@ export default function Albums() {
           const pv = preview[a.album]
           const subs = a.sub_albums ?? []
           return (
-            <Col xs={24} sm={12} md={8} lg={6} xl={4} xxl={3} key={a.album}>
+            <Col xs={24} sm={12} md={8} lg={6} xl={6} xxl={4} key={a.album}>
               <Card
                 hoverable
                 onClick={() => navigate(`/?album=${encodeURIComponent(a.album)}`)}

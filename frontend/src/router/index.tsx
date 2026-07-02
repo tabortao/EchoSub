@@ -9,6 +9,7 @@ import Settings from '@/pages/Settings'
 import Player from '@/pages/Player'
 import Upload from '@/pages/Upload'
 import StudyNotes from '@/pages/StudyNotes'
+import NoteEditorPage from '@/pages/NoteEditor'
 import { useAuthStore } from '@/store/auth'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,7 @@ const routes: RouteObject[] = [
       { path: 'tags', element: <Tags /> },
       { path: 'upload', element: <Upload /> },
       { path: 'notes', element: <StudyNotes /> },
+      { path: 'notes/:id', element: <NoteEditorPage /> },
       { path: 'records', element: <Records /> },
       { path: 'settings', element: <Settings /> },
       { path: 'play/:id', element: <Player /> },
