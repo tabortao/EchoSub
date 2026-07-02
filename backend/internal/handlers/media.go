@@ -301,12 +301,15 @@ type browseEntry struct {
 
 // BrowseMedia 列出媒体根目录下指定子路径的目录和文件
 // 用于上传页面展示已有目录结构与文件，避免暴露绝对路径。
+// path 参数统一使用 / 作为分隔符（前端友好），后端内部转换为 OS 路径。
 func BrowseMedia(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		root := filepath.Clean(cfg.Media.Dir)
 		sub := c.DefaultQuery("path", "")
-		// 清理并拼接，防止路径穿越
-		full := filepath.Join(root, filepath.Clean(sub))
+		// 将前端传入的 / 分隔路径转为 OS 路径再 Clean，防止路径穿越
+		osSub := filepath.Clean(filepath.FromSlash(sub))
+		full := filepath.Join(root, osSub)
+		// 安全校验：必须位于 root 之下（或等于 root）
 		if !strings.HasPrefix(full+string(filepath.Separator), root+string(filepath.Separator)) && full != root {
 			utils.Fail(c, http.StatusBadRequest, "非法路径")
 			return
@@ -337,7 +340,12 @@ func BrowseMedia(cfg *config.Config) gin.HandlerFunc {
 				files = append(files, en)
 			}
 		}
-		utils.OK(c, gin.H{"dirs": dirs, "files": files, "path": filepath.ToSlash(sub)})
+		// 返回的 path 统一用 / 分隔（前端按 / 分割做面包屑）
+		returnPath := filepath.ToSlash(osSub)
+		if returnPath == "." {
+			returnPath = ""
+		}
+		utils.OK(c, gin.H{"dirs": dirs, "files": files, "path": returnPath})
 	}
 }
 
@@ -348,7 +356,8 @@ func UploadMedia(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		root := filepath.Clean(cfg.Media.Dir)
 		sub := c.PostForm("path")
-		targetDir := filepath.Join(root, filepath.Clean(sub))
+		// 前端传入的 path 用 / 分隔，转为 OS 路径再 Clean
+		targetDir := filepath.Join(root, filepath.Clean(filepath.FromSlash(sub)))
 		if !strings.HasPrefix(targetDir+string(filepath.Separator), root+string(filepath.Separator)) && targetDir != root {
 			utils.Fail(c, http.StatusBadRequest, "非法目标路径")
 			return

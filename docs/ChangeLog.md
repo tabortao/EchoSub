@@ -7,6 +7,37 @@
 
 ## [Unreleased]
 
+### Added
+
+#### 学习记录按周/月/年统计
+
+- **后端 `handlers/stats.go`**（新建）：`GET /records/stats?granularity=week|month|year&date=2026-07-02`
+  - week：返回 date 所在周（周一~周日）的 7 天每日统计（播放次数/媒体数/背诵句子数）
+  - month：返回 date 所在年的 12 个月每月统计
+  - year：返回最近 5 年每年统计
+  - 统计数据源：PlayRecord.last_played_at + SentenceProgress.updated_at
+- **前端 `Records.tsx`** 重写：Tabs 切换周/月/年视图
+  - 周视图：7 天每日统计卡片 + 橙色柱状图 + 左右翻页（±7天）+ 回到本周
+  - 月视图：12 个月统计卡片 + 按年翻页
+  - 年视图：5 年统计卡片 + 翻页
+  - 汇总卡片：总播放次数/媒体数/背诵句子数
+  - 保留原有专辑进度条 + 播放记录表
+
+### Fixed
+
+#### 上传页面目录浏览修复
+
+- **后端 `handlers/media.go`**：`BrowseMedia` 和 `UploadMedia` 的 path 参数处理修复——前端传入的 `/` 分隔路径用 `filepath.FromSlash` 转为 OS 路径再 `Clean`，返回的 path 统一用 `filepath.ToSlash` 归一化为 `/` 分隔。修复 Windows 下面包屑分割失效问题。
+- **前端 `Upload.tsx`**：Breadcrumb 改用 antd v5 的 `items` prop（替代已废弃的 `Breadcrumb.Item` 子组件）；UI 美化为橙色主题风格。
+
+### Changed
+
+#### Docker 构建配置优化
+
+- **`Dockerfile`**：Go 版本从 `golang:1.26-alpine` 改为 `golang:1.23-alpine`（1.26 镜像不存在于 Docker Hub）；go.mod 添加 `toolchain go1.26.4` 声明。
+- **`docker-compose.yml`**：媒体目录挂载从 `:ro`（只读）改为读写模式（上传功能需要写入）；添加详细注释说明数据卷映射。
+- **`.github/workflows/docker.yml`**：添加 `docker/setup-qemu-action` 支持多架构构建；添加 `main` 分支 push 触发（构建 `dev` tag）；保留 tag 触发构建 `latest`。
+
 ### Changed
 
 #### 小学生审美整体美化

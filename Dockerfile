@@ -1,5 +1,5 @@
 # ===== Stage 1: 构建后端 =====
-FROM golang:1.26-alpine AS backend-builder
+FROM golang:1.23-alpine AS backend-builder
 
 # 安装 git（go mod 需要）
 RUN apk add --no-cache git
@@ -11,6 +11,7 @@ COPY backend/go.mod backend/go.sum* ./
 RUN go mod download
 
 # 复制后端源码并编译
+# CGO_ENABLED=0 纯静态编译，方便多架构
 COPY backend/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /echosub-server ./cmd/server
 
@@ -33,7 +34,7 @@ RUN pnpm build
 # ===== Stage 3: 最终运行镜像 =====
 FROM alpine:3.20
 
-# 安装 ffmpeg（用于媒体时长提取/首帧封面）和 ca-certificates
+# 安装 ffmpeg（用于媒体时长提取/首帧封面）和 ca-certificates tzdata
 RUN apk add --no-cache ffmpeg ca-certificates tzdata && \
     cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone
@@ -56,6 +57,7 @@ ENV GIN_MODE=release
 
 EXPOSE 8080
 
+# 声明数据卷（SQLite 数据库 + 媒体文件）
 VOLUME ["/app/data", "/media"]
 
 ENTRYPOINT ["/app/echosub-server"]

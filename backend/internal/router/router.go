@@ -64,6 +64,7 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 		records := authed.Group("/records")
 		{
 			records.GET("", handlers.ListRecords())
+			records.GET("/stats", handlers.GetStudyStats())
 			records.PUT("/:mediaId", handlers.UpdateRecord())
 			records.GET("/:mediaId", handlers.GetRecord())
 			records.PUT("/:mediaId/sentences/:idx", handlers.UpdateSentenceProgress())

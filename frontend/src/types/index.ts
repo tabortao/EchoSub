@@ -138,6 +138,24 @@ export interface ProgressResponse {
   completed_sentences: number
 }
 
+// 学习统计（按周/月/年维度）
+export interface StudyStat {
+  date: string
+  label: string
+  play_count: number
+  media_count: number
+  sentence_count: number
+  is_current: boolean
+}
+
+export interface StudyStatsResponse {
+  granularity: 'week' | 'month' | 'year'
+  stats: StudyStat[]
+  total_play: number
+  total_media: number
+  total_sentence: number
+}
+
 // 学习页面（专辑内自定义笔记，支持 markdown + 多图）
 export interface StudyNote {
   id: number

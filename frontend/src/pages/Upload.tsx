@@ -4,10 +4,10 @@ import type { UploadFile } from 'antd'
 import {
   UploadOutlined,
   FolderOutlined,
-  FileOutlined,
   ArrowLeftOutlined,
   InboxOutlined,
   ReloadOutlined,
+  HomeOutlined,
 } from '@ant-design/icons'
 import { mediaApi } from '@/api'
 import type { BrowseEntry } from '@/types'
@@ -15,6 +15,16 @@ import { formatSize } from '@/utils'
 
 const { Title, Text } = Typography
 const { Dragger } = Upload
+
+// 文件扩展名 → emoji 图标
+function fileEmoji(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (['mp4', 'mkv', 'mov', 'webm', 'avi'].includes(ext)) return '🎬'
+  if (['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg'].includes(ext)) return '🎵'
+  if (['srt', 'vtt'].includes(ext)) return '📄'
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return '🖼️'
+  return '📄'
+}
 
 export default function UploadPage() {
   const [path, setPath] = useState('')
@@ -43,6 +53,7 @@ export default function UploadPage() {
     load('')
   }, [])
 
+  // path 统一用 / 分隔（后端已归一化）
   const pathSegments = path ? path.split('/').filter(Boolean) : []
 
   const enterDir = (name: string) => {
@@ -89,10 +100,18 @@ export default function UploadPage() {
     }
   }
 
+  // 面包屑 items（antd v5 用 items prop 替代 Breadcrumb.Item 子组件）
+  const breadcrumbItems = [
+    { title: <a onClick={() => load('')}><HomeOutlined /> 根目录</a> },
+    ...pathSegments.map((seg, idx) => ({
+      title: <a key={idx} onClick={() => goToSegment(idx)}>{seg}</a>,
+    })),
+  ]
+
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>
-        <UploadOutlined /> 上传文件
+      <Title level={4} style={{ marginBottom: 16, color: '#1a1a1a' }}>
+        ⬆️ 上传文件
       </Title>
 
       {/* 目录浏览 */}
@@ -100,7 +119,7 @@ export default function UploadPage() {
         size="small"
         title={
           <Space>
-            <Text strong>媒体目录</Text>
+            <Text strong>📂 媒体目录</Text>
             {pathSegments.length > 0 && (
               <Button size="small" type="text" icon={<ArrowLeftOutlined />} onClick={goUp}>
                 上级
@@ -111,44 +130,35 @@ export default function UploadPage() {
         extra={<Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => load(path)}>刷新</Button>}
         style={{ marginBottom: 16 }}
       >
-        <Breadcrumb style={{ marginBottom: 12 }}>
-          <Breadcrumb.Item>
-            <a onClick={() => load('')}>根目录</a>
-          </Breadcrumb.Item>
-          {pathSegments.map((seg, idx) => (
-            <Breadcrumb.Item key={idx}>
-              <a onClick={() => goToSegment(idx)}>{seg}</a>
-            </Breadcrumb.Item>
-          ))}
-        </Breadcrumb>
+        <Breadcrumb items={breadcrumbItems} style={{ marginBottom: 12 }} />
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
         ) : dirs.length === 0 && files.length === 0 ? (
-          <Empty description="空目录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <Empty description="📦 空目录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <List
             size="small"
             dataSource={[...dirs, ...files]}
             renderItem={(item) => (
               <List.Item
-                style={{ cursor: item.is_dir ? 'pointer' : 'default', padding: '6px 12px' }}
+                style={{ cursor: item.is_dir ? 'pointer' : 'default', padding: '8px 12px', borderRadius: 8 }}
                 onClick={() => item.is_dir && enterDir(item.name)}
               >
                 <Space>
                   {item.is_dir ? (
-                    <FolderOutlined style={{ color: '#1677ff' }} />
+                    <FolderOutlined style={{ color: '#1890FF', fontSize: 18 }} />
                   ) : (
-                    <FileOutlined style={{ color: '#999' }} />
+                    <span style={{ fontSize: 16 }}>{fileEmoji(item.name)}</span>
                   )}
-                  <Text style={{ color: item.is_dir ? '#1677ff' : '#333' }}>{item.name}</Text>
+                  <Text style={{ color: item.is_dir ? '#1890FF' : '#333', fontWeight: item.is_dir ? 600 : 400 }}>{item.name}</Text>
                   {!item.is_dir && (
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       {formatSize(item.size)}
                     </Text>
                   )}
                 </Space>
-                {item.is_dir && <Tag color="blue">文件夹</Tag>}
+                {item.is_dir && <Tag color="blue" style={{ borderRadius: 8 }}>📁 文件夹</Tag>}
               </List.Item>
             )}
           />
@@ -156,12 +166,11 @@ export default function UploadPage() {
       </Card>
 
       {/* 上传区域 */}
-      <Card size="small" title={<Text strong>上传到当前目录{path ? `：${path}` : '：根目录'}</Text>}>
+      <Card size="small" title={<Text strong>📤 上传到当前目录{path ? `：${path}` : '：根目录'}</Text>}>
         <Dragger
           multiple
           fileList={fileList}
           beforeUpload={(_, files) => {
-            // 阻止自动上传，收集到 fileList
             setFileList((prev) => {
               const existing = new Set(prev.map((f) => f.name))
               const newFiles: UploadFile[] = files
@@ -183,7 +192,7 @@ export default function UploadPage() {
           style={{ marginBottom: 16 }}
         >
           <p className="ant-upload-drag-icon">
-            <InboxOutlined />
+            <InboxOutlined style={{ color: '#FF7A45' }} />
           </p>
           <p className="ant-upload-text">点击或拖拽文件到此处</p>
           <p className="ant-upload-hint">支持多文件上传，同名文件将自动跳过</p>
@@ -214,7 +223,7 @@ export default function UploadPage() {
         </Space>
 
         <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-          上传完成后文件会自动被扫描入库，可在首页查看。
+          ✨ 上传完成后文件会自动被扫描入库，可在首页查看。
         </Text>
       </Card>
     </div>

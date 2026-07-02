@@ -9,6 +9,7 @@ import type {
   PlayRecord,
   SentenceProgress,
   ProgressResponse,
+  StudyStatsResponse,
   Settings,
   BrowseResponse,
   UploadResult,
@@ -105,6 +106,9 @@ export const recordApi = {
   incrementRepeat: (mediaId: number, idx: number) =>
     client.post<ApiResponse<{ repeat_count: number }>>(`/records/${mediaId}/sentences/${idx}/repeat`),
   progress: () => client.get<ApiResponse<ProgressResponse>>('/progress'),
+  /** 按周/月/年维度获取学习统计 */
+  stats: (granularity: 'week' | 'month' | 'year', date?: string) =>
+    client.get<ApiResponse<StudyStatsResponse>>('/records/stats', { params: { granularity, date } }),
 }
 
 // ===== 学习页面（专辑内自定义笔记 + 多图 + markdown）=====
