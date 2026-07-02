@@ -223,6 +223,58 @@ All under `/api/v1`. Public: `POST /auth/register`, `POST /auth/login`, `GET /he
 
 The integration test registers `testuser` / `test123456`. In your own runs, register any account via the UI or `POST /api/v1/auth/register`.
 
+## 学习记录页面（Study Records）
+
+「学习记录」页面（路由 `/records`）提供学习数据的统计与回溯能力，与项目「语言学习 + 文本背诵」的特性一致，包含以下模块：
+
+### 顶部汇总卡片
+
+- **已背诵句子数**（绿色）：来自 `SentenceProgress.completed` 的全局聚合
+- **播放记录数**（橙色）：当前用户的 `PlayRecord` 总数
+- **专辑数**（黄色）：有播放记录的专辑数量
+
+### 周 / 月 / 年统计（Tabs 切换）
+
+数据来自后端 `GET /records/stats?granularity=week|month|year&date=YYYY-MM-DD`，统计源为 `PlayRecord.last_played_at` 与 `SentenceProgress.updated_at`。
+
+- **📅 本周视图**（紧凑单行布局）
+  - 周一 ~ 周日 **单行 7 列**显示，每列上方为「星期 + 日期号」，下方依次为当日柱状图与「播放次数 / 媒体数 / 背诵句子数」
+  - 当日列以橙色边框 + 浅橙背景高亮
+  - 顶部汇总一行展示：总播放次数 / 学习媒体数 / 背诵句子数
+  - 支持左右翻页（±7 天），「回到本周」按钮一键回到当前周
+- **🗓️ 本月视图**：12 个月统计卡片网格，按年翻页
+- **📆 年度视图**：最近 5 年统计卡片网格，按 5 年翻页
+
+### 按专辑进度
+
+列出每个专辑的「已学/总数」媒体数与「共听 N 次」，配橙色进度条。
+
+### 播放记录表
+
+按时间倒序列出所有播放记录（媒体名、专辑、播放次数、上次进度、上次播放时间），点击媒体名可跳转播放页。
+
+## Docker / NAS 部署说明
+
+### 镜像构建
+
+- `Dockerfile` 使用 3 阶段构建：`golang:1.26-alpine`（后端）→ `node:22-alpine`（前端）→ `alpine:3.20`（运行时，含 ffmpeg）。
+- GitHub Actions（`.github/workflows/docker.yml`）在 push tag `v*` 时构建 `linux/amd64` + `linux/arm64` 多架构镜像并推送至 `ghcr.io/yaole/echosub:latest`；push `main` 分支构建 `dev` tag。
+- **后端配置文件无需修改**：容器内媒体目录固定为 `/media`（由 `ECHOSUB_MEDIA_DIR=/media` 指定），只需在 `docker-compose.yml` 的 `volumes` 中把宿主机的 NAS 路径挂载到 `/media` 即可。
+
+### NAS 媒体目录映射（docker-compose.yml）
+
+```yaml
+volumes:
+  # ★ 把左侧改为你的 NAS 媒体路径 ★
+  - /mnt/nas/EchoSub:/media      # Linux NFS 挂载点示例
+  # - //192.168.1.10/media/EchoSub:/media   # Windows SMB 示例
+  # - Z:/EchoSub:/media                      # Windows 映射盘示例
+  - echosub-data:/app/data       # SQLite 数据库 + 笔记图片（建议留本地）
+```
+
+> 媒体目录默认读写挂载（上传功能需要写入）；如仅做播放不上传，可追加 `:ro` 只读。
+> 数据库（`/app/data`）建议保留在宿主机本地卷，不要放 NAS，避免 SQLite WAL 在网络文件系统上出现锁问题。
+
 ## License
 
 Private project. See repository settings.

@@ -147,7 +147,91 @@ export default function Records() {
     },
   ]
 
-  // 渲染统计卡片网格（周/月/年共用）
+  // 渲染汇总卡片（周/月/年共用，紧凑一行）
+  const renderSummaryRow = () => (
+    <Row gutter={8} style={{ marginBottom: 12 }}>
+      <Col span={8}>
+        <Card size="small" style={{ textAlign: 'center', borderRadius: 10, padding: '4px 0' }} bodyStyle={{ padding: 8 }}>
+          <Statistic title="🔊 播放次数" value={stats?.total_play ?? 0} valueStyle={{ color: '#FF7A45', fontSize: 18 }} />
+        </Card>
+      </Col>
+      <Col span={8}>
+        <Card size="small" style={{ textAlign: 'center', borderRadius: 10, padding: '4px 0' }} bodyStyle={{ padding: 8 }}>
+          <Statistic title="🎵 学习媒体" value={stats?.total_media ?? 0} valueStyle={{ color: '#1890FF', fontSize: 18 }} />
+        </Card>
+      </Col>
+      <Col span={8}>
+        <Card size="small" style={{ textAlign: 'center', borderRadius: 10, padding: '4px 0' }} bodyStyle={{ padding: 8 }}>
+          <Statistic title="✅ 背诵句子" value={stats?.total_sentence ?? 0} valueStyle={{ color: '#52C41A', fontSize: 18 }} />
+        </Card>
+      </Col>
+    </Row>
+  )
+
+  // 渲染本周视图：周一~周日单行 7 列，每日数据下方展示
+  const renderWeekView = () => {
+    if (statsLoading) {
+      return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+    }
+    if (!stats || stats.stats.length === 0) {
+      return <Empty description="暂无数据" />
+    }
+    const maxPlay = Math.max(...stats.stats.map((s) => s.play_count), 1)
+    const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+    return (
+      <div>
+        {renderSummaryRow()}
+        {/* 单行 7 列：周一~周日，每日数据下方展示 */}
+        <Row gutter={6}>
+          {stats.stats.map((s, i) => {
+            const barHeight = Math.max(4, (s.play_count / maxPlay) * 80)
+            const hasData = s.play_count > 0 || s.sentence_count > 0
+            // 日期中的「日」
+            const dayNum = s.date.split('-')[2]
+            return (
+              <Col key={s.date} flex={1}>
+                <div
+                  style={{
+                    borderRadius: 10,
+                    padding: '8px 4px',
+                    textAlign: 'center',
+                    background: s.is_current ? 'rgba(255,122,69,0.10)' : '#fff',
+                    border: s.is_current ? '2px solid #FF7A45' : '1px solid #f0f0f0',
+                    opacity: hasData ? 1 : 0.55,
+                  }}
+                >
+                  {/* 顶部：星期 + 日期号 */}
+                  <div style={{ fontWeight: 700, fontSize: 13, color: s.is_current ? '#FF7A45' : '#1a1a1a' }}>
+                    {weekdayLabels[i] ?? s.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#999', marginBottom: 6 }}>{dayNum}日</div>
+                  {/* 柱状图 */}
+                  <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', marginBottom: 4 }}>
+                    <div style={{
+                      width: '50%',
+                      height: barHeight,
+                      background: hasData ? 'linear-gradient(180deg, #FF7A45, #FFB37A)' : '#f0f0f0',
+                      borderRadius: '4px 4px 0 0',
+                      transition: 'height 0.3s',
+                    }} />
+                  </div>
+                  {/* 下方每日数据 */}
+                  <div style={{ fontSize: 11, lineHeight: 1.6, color: '#666' }}>
+                    <div>🔊 {s.play_count}</div>
+                    <div>🎵 {s.media_count}</div>
+                    <div>✅ {s.sentence_count}</div>
+                  </div>
+                </div>
+              </Col>
+            )
+          })}
+        </Row>
+      </div>
+    )
+  }
+
+  // 渲染月/年统计网格（紧凑布局）
   const renderStatsGrid = () => {
     if (statsLoading) {
       return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
@@ -155,72 +239,41 @@ export default function Records() {
     if (!stats || stats.stats.length === 0) {
       return <Empty description="暂无数据" />
     }
-    // 找最大值用于柱状图比例
     const maxPlay = Math.max(...stats.stats.map((s) => s.play_count), 1)
 
     return (
       <div>
-        {/* 汇总卡片 */}
-        <Row gutter={12} style={{ marginBottom: 16 }}>
-          <Col xs={8}>
-            <Card size="small" style={{ textAlign: 'center', borderRadius: 12 }}>
-              <Statistic title="🔊 总播放次数" value={stats.total_play} valueStyle={{ color: '#FF7A45', fontSize: 20 }} />
-            </Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small" style={{ textAlign: 'center', borderRadius: 12 }}>
-              <Statistic title="🎵 学习媒体数" value={stats.total_media} valueStyle={{ color: '#1890FF', fontSize: 20 }} />
-            </Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small" style={{ textAlign: 'center', borderRadius: 12 }}>
-              <Statistic title="✅ 背诵句子数" value={stats.total_sentence} valueStyle={{ color: '#52C41A', fontSize: 20 }} />
-            </Card>
-          </Col>
-        </Row>
-
-        {/* 每日/月/年 统计卡片网格 */}
-        <Row gutter={[12, 12]}>
+        {renderSummaryRow()}
+        <Row gutter={[8, 8]}>
           {stats.stats.map((s) => {
-            const barHeight = maxPlay > 0 ? Math.max(4, (s.play_count / maxPlay) * 120) : 4
+            const barHeight = Math.max(4, (s.play_count / maxPlay) * 80)
             const hasData = s.play_count > 0 || s.sentence_count > 0
             return (
-              <Col key={s.date} xs={12} sm={8} md={6} lg={activeTab === 'week' ? 6 : 4} xl={activeTab === 'week' ? 4 : 3}>
+              <Col key={s.date} xs={12} sm={8} md={6} lg={4} xl={3}>
                 <Card
                   size="small"
+                  bodyStyle={{ padding: 10 }}
                   style={{
-                    borderRadius: 12,
+                    borderRadius: 10,
                     textAlign: 'center',
-                    background: s.is_current ? 'rgba(255,122,69,0.08)' : '#fff',
+                    background: s.is_current ? 'rgba(255,122,69,0.10)' : '#fff',
                     border: s.is_current ? '2px solid #FF7A45' : '1px solid #f0f0f0',
                     opacity: hasData ? 1 : 0.6,
                   }}
                 >
-                  <div style={{ fontWeight: 700, color: s.is_current ? '#FF7A45' : '#1a1a1a', fontSize: 14 }}>
+                  <div style={{ fontWeight: 700, color: s.is_current ? '#FF7A45' : '#1a1a1a', fontSize: 13 }}>
                     {s.label}
                   </div>
-                  {s.date !== s.label && (
-                    <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>{s.date}</div>
-                  )}
-                  {/* 柱状图 */}
-                  <div style={{
-                    height: 120,
-                    display: 'flex',
-                    alignItems: 'flex-end',
-                    justifyContent: 'center',
-                    marginBottom: 8,
-                  }}>
+                  <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', margin: '6px 0' }}>
                     <div style={{
-                      width: '60%',
+                      width: '50%',
                       height: barHeight,
-                      background: hasData
-                        ? `linear-gradient(180deg, #FF7A45, #FFB37A)`
-                        : '#f0f0f0',
-                      borderRadius: '6px 6px 0 0',
+                      background: hasData ? 'linear-gradient(180deg, #FF7A45, #FFB37A)' : '#f0f0f0',
+                      borderRadius: '4px 4px 0 0',
                       transition: 'height 0.3s',
                     }} />
                   </div>
-                  <div style={{ fontSize: 12, color: '#666' }}>
+                  <div style={{ fontSize: 11, color: '#666', lineHeight: 1.6 }}>
                     <div>🔊 {s.play_count} 次</div>
                     <div>🎵 {s.media_count} 媒体</div>
                     <div>✅ {s.sentence_count} 句</div>
@@ -292,7 +345,7 @@ export default function Records() {
                     </Space>
                     <Button type="link" onClick={goTodayWeek} style={{ color: '#FF7A45' }}>回到本周</Button>
                   </div>
-                  {renderStatsGrid()}
+                  {renderWeekView()}
                 </div>
               ),
             },

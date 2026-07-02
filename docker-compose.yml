@@ -2,15 +2,25 @@
 # 使用云端镜像 + 数据卷持久化
 #
 # 使用方法：
-#   1. 将 /path/to/your/media 改为你的媒体文件夹实际路径
+#   1. 将下方 volumes 中的 NAS 媒体路径改为你实际的 NAS 共享路径（见注释示例）
 #   2. 修改 ECHOSUB_JWT_SECRET 为一个随机字符串
 #   3. docker compose up -d
 #
-# 媒体目录挂载为读写（上传功能需要写入），如需只读可加 :ro
+# 关于后端配置：
+#   容器内媒体目录固定为 /media（由 ECHOSUB_MEDIA_DIR=/media 指定），
+#   只需在 volumes 中把「宿主机 NAS 路径」挂载到容器的 /media 即可，
+#   后端 config.go / config.yaml 无需任何修改。
+#
+# NAS 路径示例（任选一种与你的 NAS 匹配）：
+#   • Synology / 群晖 DSM（NFS/SMB 挂载到宿主机）:  /volume1/media/EchoSub
+#   • Linux 宿主机 NFS 挂载点:                      /mnt/nas/EchoSub
+#   • Windows Docker Desktop + SMB 映射盘:           //192.168.1.10/media/EchoSub
+#   • Windows 已映射为 Z 盘:                          Z:\EchoSub  → 写作 Z:/EchoSub
 
 services:
   echosub:
     image: ghcr.io/yaole/echosub:latest
+    # 如需本地构建可改用：build: .
     container_name: echosub
     restart: unless-stopped
     ports:
@@ -18,15 +28,16 @@ services:
     environment:
       - ECHOSUB_PORT=8080
       - ECHOSUB_DB_PATH=/app/data/echosub.db
+      # 容器内媒体目录，固定为 /media（与下方挂载点一致）
       - ECHOSUB_MEDIA_DIR=/media
       - ECHOSUB_JWT_SECRET=please-change-this-secret
       - GIN_MODE=release
     volumes:
-      # 媒体目录：将宿主机的媒体文件夹挂载到容器的 /media
-      # 注意：这里用读写模式（不加 :ro），因为上传功能需要写入文件
-      # 如需只读挂载，改为 /path/to/your/media:/media:ro
-      - /path/to/your/media:/media
-      # 数据持久化：SQLite 数据库 + 笔记图片
+      # 媒体目录：将宿主机的 NAS 媒体文件夹挂载到容器的 /media
+      # ★ 请把下面这行左侧改为你实际的 NAS 媒体路径 ★
+      # 读写模式（上传功能需要写入），如需只读可追加 :ro
+      - /mnt/nas/EchoSub:/media
+      # 数据持久化：SQLite 数据库 + 笔记图片（建议保留在宿主机本地，不要放 NAS）
       - echosub-data:/app/data
     # NAS 设备通常无需特殊设备映射；如需硬件解码视频可按需配置
 

@@ -1,10 +1,15 @@
 # ===== Stage 1: 构建后端 =====
-FROM golang:1.23-alpine AS backend-builder
+# 使用 golang:1.26-alpine 匹配 go.mod 声明（go 1.25.0 + toolchain go1.26.4）
+# 避免依赖运行时 toolchain 自动下载（多架构构建时更稳定）
+FROM golang:1.26-alpine AS backend-builder
 
 # 安装 git（go mod 需要）
 RUN apk add --no-cache git
 
 WORKDIR /build
+
+# 关闭 toolchain 自动下载，使用镜像自带的 1.26 工具链
+ENV GOTOOLCHAIN=local
 
 # 先复制 go.mod/go.sum 利用缓存
 COPY backend/go.mod backend/go.sum* ./
