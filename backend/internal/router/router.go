@@ -44,8 +44,12 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			media.GET("/:id/cover", handlers.GetCover())
 			media.GET("/:id/subtitle", handlers.GetSubtitle())
 			media.POST("/:id/tags", handlers.AssignTags())
+			media.PUT("/:id/rename", handlers.RenameMedia(cfg))
+			media.DELETE("/:id", handlers.DeleteMedia(cfg))
 		}
 		authed.GET("/albums", handlers.ListAlbums())
+		authed.PUT("/albums/rename", handlers.RenameAlbum(cfg))
+		authed.DELETE("/albums", handlers.DeleteAlbum(cfg))
 
 		// 标签
 		tags := authed.Group("/tags")
@@ -65,6 +69,8 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			records.PUT("/:mediaId/sentences/:idx", handlers.UpdateSentenceProgress())
 			// 句子收藏（重难点句子）
 			records.POST("/:mediaId/sentences/:idx/favorite", handlers.ToggleFavorite())
+			// 句子播放遍数 +1（自然推进时由前端调用）
+			records.POST("/:mediaId/sentences/:idx/repeat", handlers.IncrementSentenceRepeat())
 		}
 		authed.GET("/progress", handlers.GetProgress())
 

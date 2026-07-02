@@ -7,6 +7,99 @@
 
 ## [Unreleased]
 
+### Fixed
+
+#### 句末停顿修复
+
+- **前端 `MediaPlayer.tsx`**：修复逐句复读模式下「句末停顿 n 秒」不生效的 bug。原逻辑在重复同一句时直接 `el.currentTime = cur.start` 无停顿，仅切换下一句时才停顿。重构后：句末触发时先 `el.pause()` + `setPlaying(false)`，再用 `setTimeout(pauseSeconds * 1000)` 统一处理停顿，停顿结束后根据情况选择「重复当前句」/「跳下一句」/「整体循环重置」/「全部结束」。现在每读完一遍都会停顿 n 秒。
+
+#### 删除接口 404 修正
+
+- **后端 `handlers/delete.go`**：`DeleteAlbum` 在 `os.RemoveAll` 前先 `os.Stat` 检查目录是否存在，不存在时返回 404（原逻辑因 `os.RemoveAll` 对不存在路径返回 nil 而误报成功 200）。
+
+### Added
+
+#### 媒体与专辑删除
+
+- **后端 `handlers/delete.go`**（新建）：
+  - `DELETE /media/:id`：删除单个媒体文件 + 同目录同 basename 的字幕(.srt/.vtt) + 封面图(.jpg/.png/.webp/.gif)，DB 软删除 MediaFile。
+  - `DELETE /albums`：请求体 `{album}`，递归删除磁盘目录（含所有媒体/字幕/封面/子目录），DB 批量软删除该专辑下所有 MediaFile，同步删除 StudyNote 及其图片目录。
+  - 防路径穿越（`filepath.Base(filepath.Clean(album))`）。
+- **前端 `Albums.tsx`**：专辑卡片标题区新增 🗑 删除按钮，二次确认后调用 `mediaApi.deleteAlbum`。
+- **前端 `Home.tsx`**：媒体卡片标题区新增 🗑 删除按钮，二次确认后调用 `mediaApi.remove`。
+- **前端 `api/index.ts`**：新增 `mediaApi.remove(id)` 和 `mediaApi.deleteAlbum(album)`。
+
+#### 用户数据迁移
+
+- 将 `dev.db` 中的 5 个用户（testuser/demo/demo2/demo3/test）连同密码 hash 迁移到当前正在使用的 `echosub.db`，testuser/testuser123456 恢复正常登录。
+
+### 端到端测试验证
+
+通过自动测试脚本验证：
+- ✅ 登录 testuser/testuser123456 成功
+- ✅ 列出 4 个专辑 / 8 个媒体
+- ✅ 删除不存在专辑返回 404（接口校验正确）
+- ✅ 句子听遍数 +1 接口正常
+- ✅ **真实删除媒体**：test.mp3 + test.srt + test.jpg 三个文件全部从磁盘删除
+- ✅ **真实删除专辑**：整个目录递归删除，files_deleted 计数正确
+
+### Added
+
+#### 媒体与专辑重命名
+
+- **后端 `handlers/rename.go`**：
+  - `PUT /media/:id/rename`：重命名单个媒体文件（请求体 `{name}` 不含扩展名，保留原扩展名）。同步重命名同目录下同 basename 的字幕（.srt/.vtt）与封面图（.jpg/.png/.webp/.gif），并更新 DB 的 `path/name/subtitle_path/cover_path`。目标已存在时返回 409。
+  - `PUT /albums/rename`：重命名专辑（请求体 `{album, new_name}`）。先 `os.Rename` 磁盘目录，再批量更新该专辑下所有 `MediaFile` 的 `path/album/subtitle_path/cover_path`（前缀替换），同步更新 `StudyNote.album` 归属。防路径穿越。
+- **后端 `record.go`**：新增 `POST /records/:mediaId/sentences/:idx/repeat` 端点，`SentenceProgress.RepeatCount++`，用于句子播放遍数自动累加。
+- **前端 `Albums.tsx`**：专辑卡片标题区新增 ✎ 重命名按钮，弹 Modal 输入新名（重命名后刷新专辑列表）。
+- **前端 `Home.tsx`**：专辑模式下媒体卡片标题区新增 ✎ 重命名按钮，弹 Modal 提示扩展名保留、字幕/封面同步重命名。
+
+#### 句子播放遍数自动累加
+
+- **前端 `MediaPlayer.tsx`**：新增本地 `localSentences` state（与 prop 同步，用于乐观更新 UI），新增 `incrementSentenceRepeat(idx)` 调用后端 increment API 并乐观更新本地 `repeat_count`。
+- `onTimeUpdate` 在两种模式下触发 +1：
+  - **普通模式**：检测句子索引自然前进（`si > oldIdx`）或播放到末尾（`si === -1`）时，对上一句调用 increment；
+  - **复读模式**：每播放到句末（`t >= cur.end`）时调用 increment（与现有 `sentenceRepeatRef++` 并列）。
+- `markSentenceCompleted` 改为只设置 `completed=true`，不再用目标值覆盖 `repeat_count`，避免与 increment 累加冲突。
+- 字幕行的「听 N 遍」Tag 实时反映最新计数（乐观更新）。
+
+### Changed
+
+#### 专辑封面优先取视频
+
+- **前端 `Albums.tsx`**：加载专辑封面预览时先按 `type=video` 取第一个视频作为封面（MediaCover 会渲染视频首帧），无视频再回退到音频。这样合辑中有视频时封面就是视频画面。
+
+#### 音频专辑按文件夹着色
+
+- **前端 `MediaCover.tsx`**：新增 `colorKey` prop（默认 `media.id`）。传入专辑名时同一专辑内所有音频卡片背景颜色一致，不同专辑颜色不同（基于 key 哈希的浅色 HSL）。
+- **前端 `Albums.tsx`**：专辑卡片传入 `colorKey={a.album}`，使专辑内所有音频封面按专辑统一着色。
+
+#### Player 返回按钮移到标题左侧
+
+- **前端 `Player.tsx`**：顶部布局从「标题 + 右侧返回按钮」改为「返回按钮 + 标题」同行排列，返回按钮在标题左侧（如 `←  00. Alphabet Song.mp3`），标题 `marginRight: auto` 占满剩余空间。
+
+#### 媒体文件/目录删除自动清理
+
+- **后端 scanner.go**：
+  - `handleEvent` 的 `Remove` 分支区分文件 vs 目录删除——文件按 `path` 精确软删除；目录（路径无媒体扩展名）按 `path LIKE 'dir/%'` 前缀批量软删除该目录下所有 `MediaFile`，解决 fsnotify 删整目录时不触发文件级 Remove 事件导致孤儿记录的问题。
+  - `ScanFull` 启动时收集磁盘上所有媒体路径，扫描后调用新增的 `pruneOrphans(diskPaths)` 软删除「数据库有记录但磁盘已不存在」的孤儿媒体，覆盖服务停机期间删除文件/目录的场景。
+
+### Changed
+
+#### 封面随机浅色背景
+
+- **MediaCover.tsx**：无封面（音频兜底 / 视频加载失败）时，背景从固定浅灰 `#f0f2f5` 改为基于 `media.id` 哈希生成的浅色 HSL（亮度 80~92%、饱和度 45~65%），同一媒体始终得到同一种颜色。兜底图标颜色从灰色 `#999` 改为主题蓝 `#1677ff` 更醒目。
+- **Albums.tsx**：专辑无媒体时的兜底背景从蓝色渐变改为基于专辑名生成的同款浅色 HSL；专辑卡片封面右上角新增专辑名 Tag。
+
+#### 专题名移到封面右上角
+
+- **Home.tsx**：媒体卡片的专辑名/子专辑名 Tag 从 `Card.Meta.description` 区域移到 `cover` 区域右上角（与左上角类型 Tag 对称，半透明白色背景增强可读性），下方 description 仅保留自定义紫色标签。`NoteCard` 同样把 `album` Tag 移到封面右上角。
+- **Albums.tsx**：专辑卡片封面右上角新增专辑名 Tag。
+
+#### 字幕 Tab 改名 + 显示每句听遍数
+
+- **MediaPlayer.tsx**：第一个 Tab 文案从「全部字幕」改为「全文」；每句字幕始终显示「听 N 遍」Tag（原逻辑仅 `repeat_count > 0` 时显示，0 遍不显示），未听过用灰色 default Tag、听过用橙色 orange Tag。收藏句子 Tab 同步改为始终显示听遍数。
+
 ### Added
 
 #### 学习页面融入专辑

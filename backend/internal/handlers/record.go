@@ -203,3 +203,31 @@ func ToggleFavorite() gin.HandlerFunc {
 		utils.OK(c, gin.H{"favorited": sp.Favorited})
 	}
 }
+
+// IncrementSentenceRepeat 句子播放遍数 +1。
+// 每当媒体播放越过某句的结尾（自然推进，非跳转）时由前端调用，
+// 用于记录每句实际听过的次数。
+// 路由: POST /records/:mediaId/sentences/:idx/repeat
+func IncrementSentenceRepeat() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := middleware.GetUserID(c)
+		mediaID := c.Param("mediaId")
+		idx := c.Param("idx")
+		var sp models.SentenceProgress
+		result := database.DB.Where("user_id = ? AND media_id = ? AND sentence_index = ?", uid, mediaID, idx).First(&sp)
+		if result.Error != nil {
+			sp = models.SentenceProgress{
+				UserID:        uid,
+				MediaID:       atou(mediaID),
+				SentenceIndex: int(atou(idx)),
+				RepeatCount:   1,
+			}
+			database.DB.Create(&sp)
+		} else {
+			sp.RepeatCount++
+			sp.UpdatedAt = time.Now()
+			database.DB.Save(&sp)
+		}
+		utils.OK(c, gin.H{"repeat_count": sp.RepeatCount})
+	}
+}

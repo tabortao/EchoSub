@@ -1,6 +1,7 @@
 import client from './client'
 import type {
   AuthResponse,
+  MediaFile,
   MediaListResponse,
   SubtitleResponse,
   Album,
@@ -58,7 +59,19 @@ export const mediaApi = {
   subtitle: (id: number) => client.get<ApiResponse<SubtitleResponse>>(`/media/${id}/subtitle`),
   assignTags: (id: number, tagIds: number[]) =>
     client.post<ApiResponse>(`/media/${id}/tags`, { tag_ids: tagIds }),
+  /** 重命名媒体文件（不含扩展名），后端会同步重命名同目录同名的字幕/封面文件 */
+  rename: (id: number, name: string) =>
+    client.put<ApiResponse<{ media: MediaFile; renamed: string[] }>>(`/media/${id}/rename`, { name }),
+  /** 删除单个媒体文件（同步删除同目录同名字幕/封面，DB 软删除） */
+  remove: (id: number) =>
+    client.delete<ApiResponse<{ deleted: boolean; id: number }>>(`/media/${id}`),
   albums: () => client.get<ApiResponse<{ albums: Album[] }>>('/albums'),
+  /** 重命名专辑（磁盘目录 + DB 记录批量更新） */
+  renameAlbum: (album: string, newName: string) =>
+    client.put<ApiResponse>('/albums/rename', { album, new_name: newName }),
+  /** 删除专辑（递归删除磁盘目录 + DB 批量软删除） */
+  deleteAlbum: (album: string) =>
+    client.delete<ApiResponse>('/albums', { data: { album } }),
 }
 
 // ===== 标签 =====
@@ -88,6 +101,9 @@ export const recordApi = {
     }),
   toggleFavorite: (mediaId: number, idx: number) =>
     client.post<ApiResponse<{ favorited: boolean }>>(`/records/${mediaId}/sentences/${idx}/favorite`),
+  /** 句子播放遍数 +1（自然推进越过句末时调用） */
+  incrementRepeat: (mediaId: number, idx: number) =>
+    client.post<ApiResponse<{ repeat_count: number }>>(`/records/${mediaId}/sentences/${idx}/repeat`),
   progress: () => client.get<ApiResponse<ProgressResponse>>('/progress'),
 }
 

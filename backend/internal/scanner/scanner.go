@@ -121,6 +121,10 @@ func (s *Scanner) ScanFull() error {
 	start := time.Now()
 	count := 0
 	root := s.cfg.Media.Dir
+
+	// 收集本次扫描时磁盘上存在的所有媒体文件路径，用于事后比对清理孤儿记录
+	diskPaths := make(map[string]struct{})
+
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // 跳过无法访问的项
@@ -137,13 +141,38 @@ func (s *Scanner) ScanFull() error {
 		} else {
 			count++
 		}
+		diskPaths[path] = struct{}{}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	log.Printf("[INFO] 扫描完成: %d 个媒体文件, 耗时 %s", count, time.Since(start))
+
+	// 清理孤儿记录：磁盘已删除但数据库仍存在的 MediaFile（软删除）
+	// 适用场景：服务停机期间用户删除了文件/目录，watcher 未捕获事件
+	pruned := s.pruneOrphans(diskPaths)
+
+	log.Printf("[INFO] 扫描完成: %d 个媒体文件, 清理 %d 条孤儿记录, 耗时 %s", count, pruned, time.Since(start))
 	return nil
+}
+
+// pruneOrphans 软删除数据库中存在但 diskPaths 集合中不存在的媒体记录。
+// diskPaths 为空时（例如根目录扫描失败）跳过清理，避免误删。
+func (s *Scanner) pruneOrphans(diskPaths map[string]struct{}) int64 {
+	if len(diskPaths) == 0 {
+		return 0
+	}
+	var orphans []string
+	// 查所有未软删除的媒体 path
+	database.DB.Model(&models.MediaFile{}).Where("deleted_at IS NULL").Pluck("path", &orphans)
+	var deleted int64
+	for _, p := range orphans {
+		if _, ok := diskPaths[p]; !ok {
+			res := database.DB.Where("path = ?", p).Delete(&models.MediaFile{})
+			deleted += res.RowsAffected
+		}
+	}
+	return deleted
 }
 
 // upsertMedia 新增或更新媒体记录
@@ -278,8 +307,25 @@ func (s *Scanner) handleEvent(event fsnotify.Event) {
 		}
 	}
 	if event.Op&fsnotify.Remove != 0 {
-		// 从数据库软删除
-		database.DB.Where("path = ?", event.Name).Delete(&models.MediaFile{})
+		// 判断是被删的是目录还是文件：
+		// - 目录：fsnotify 删整目录时通常只发目录本身的 Remove，目录内文件的 Remove 不会触发，
+		//   因此需要批量软删除该目录下所有 MediaFile（path LIKE 'dir/%'），避免孤儿记录。
+		// - 文件：直接按 path 精确软删除。
+		// 由于 Remove 事件发生时 os.Stat 已无法获取信息，这里用「路径是否匹配媒体扩展名」来辅助判断：
+		// 路径有媒体扩展名视为文件删除；否则视为目录删除，做前缀批量清理。
+		isFile, _, _ := s.IsMediaFile(event.Name)
+		if isFile {
+			database.DB.Where("path = ?", event.Name).Delete(&models.MediaFile{})
+			log.Printf("[INFO] 增量删除文件: %s", event.Name)
+		} else {
+			// 目录被删除：前缀匹配该目录下所有媒体记录
+			prefix := event.Name + string(os.PathSeparator)
+			res := database.DB.Where("path LIKE ?", prefix+"%").Delete(&models.MediaFile{})
+			if res.RowsAffected > 0 {
+				log.Printf("[INFO] 增量删除目录 %s: 软删除 %d 条媒体记录", event.Name, res.RowsAffected)
+			}
+			// 同时尝试从 watcher 移除（目录已不存在，Add/Remove 都会失败，忽略即可）
+		}
 	}
 }
 

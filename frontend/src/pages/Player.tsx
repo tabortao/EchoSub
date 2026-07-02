@@ -51,11 +51,12 @@ export default function Player() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
-        <Title level={4} style={{ marginBottom: 0, marginRight: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {/* 顶部：返回按钮在标题左侧 */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} title="返回" />
+        <Title level={4} style={{ marginBottom: 0, marginRight: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {media.name}
         </Title>
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} title="返回" />
       </div>
       <MediaPlayer
         mediaId={media.id}

@@ -50,6 +50,10 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const { loop_count, sentence_repeat, pause_seconds } = useSettingsStore()
   const token = useAuthStore((s) => s.token)
 
+  // 本地字幕状态（用于乐观更新听遍数，与 prop 同步）
+  const [localSentences, setLocalSentences] = useState<Sentence[]>(sentences)
+  useEffect(() => { setLocalSentences(sentences) }, [sentences])
+
   // UI 状态
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
@@ -85,7 +89,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   useEffect(() => { sentenceRepeatTargetRef.current = sentenceRepeat }, [sentenceRepeat])
   useEffect(() => { pauseSecondsRef.current = pauseSeconds }, [pauseSeconds])
   useEffect(() => { loopCountRef.current = loopCount }, [loopCount])
-  useEffect(() => { sentencesRef.current = sentences }, [sentences])
+  useEffect(() => { sentencesRef.current = localSentences }, [localSentences])
   useEffect(() => { currentSentenceIdxRef.current = currentSentenceIdx }, [currentSentenceIdx])
 
   // 从 sentences 初始化收藏集合
@@ -122,11 +126,26 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     return -1
   }, [])
 
-  // 标记句子完成
+  // 句子听遍数 +1：调用后端 increment API，同时乐观更新本地 state。
+  // 触发时机：自然推进越过句末（normal 模式句子切换 / repeat 模式每播放到句末）。
+  const incrementSentenceRepeat = useCallback((idx: number) => {
+    if (idx < 0 || idx >= sentencesRef.current.length) return
+    const s = sentencesRef.current[idx]
+    // 乐观更新本地 state（同时同步 ref，避免节流期间多次触发计数漂移）
+    setLocalSentences((prev) => {
+      const next = prev.map((it, i) => (i === idx ? { ...it, repeat_count: it.repeat_count + 1 } : it))
+      sentencesRef.current = next
+      return next
+    })
+    recordApi.incrementRepeat(mediaId, s.index).catch(() => {})
+  }, [mediaId])
+
+  // 标记句子完成（仅设置 completed=true，不再覆盖 repeat_count；
+  // 实际播放遍数由 incrementSentenceRepeat 累加）
   const markSentenceCompleted = useCallback(async (idx: number) => {
     if (idx < 0 || idx >= sentencesRef.current.length) return
     try {
-      await recordApi.updateSentence(mediaId, idx, true, sentenceRepeatTargetRef.current)
+      await recordApi.updateSentence(mediaId, idx, true)
     } catch {
       // 忽略
     }
@@ -150,6 +169,16 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     // 更新当前句子高亮
     const si = findSentenceIndex(t)
     if (si !== currentSentenceIdxRef.current) {
+      const oldIdx = currentSentenceIdxRef.current
+      // 自然推进越过上一句结尾 → 该句听遍数 +1
+      // （oldIdx >= 0 且 si > oldIdx 或 si === -1 表示播放已越过 oldIdx 的结尾）
+      if (oldIdx >= 0 && (si > oldIdx || si === -1 || si < oldIdx)) {
+        // 注：si < oldIdx 通常是用户跳转或循环重置，不计入；
+        // 这里仅对前进越过 (si > oldIdx) 或播放到末尾 (si === -1) 计数
+        if (si > oldIdx || si === -1) {
+          incrementSentenceRepeat(oldIdx)
+        }
+      }
       setCurrentSentenceIdx(si)
     }
 
@@ -163,44 +192,60 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
           handlingEndRef.current = true
           sentenceRepeatRef.current += 1
           setRepeatCount(sentenceRepeatRef.current)
+          // 每播放到句末 → 该句听遍数 +1（与 normal 模式统一）
+          incrementSentenceRepeat(curIdx)
+          // 暂停播放，准备进入句末停顿
+          el.pause()
+          setPlaying(false)
+          if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
 
-          if (sentenceRepeatRef.current < sentenceRepeatTargetRef.current) {
-            el.currentTime = cur.start
-            handlingEndRef.current = false
-          } else {
+          // 判断下一步动作：继续重复当前句 / 跳到下一句 / 整体循环重置 / 全部结束
+          const willRepeatCurrent = sentenceRepeatRef.current < sentenceRepeatTargetRef.current
+          const nextIdx = curIdx + 1
+          const hasNext = nextIdx < list.length
+          const willOverallLoop = !hasNext && overallLoopRef.current + 1 < loopCountRef.current
+          const allDone = !willRepeatCurrent && !hasNext && !willOverallLoop
+
+          if (allDone) {
+            // 全部完成，无需停顿，直接保存进度结束
             markSentenceCompleted(curIdx)
-            el.pause()
-            setPlaying(false)
-            const nextIdx = curIdx + 1
-            if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
-            pauseTimerRef.current = setTimeout(() => {
-              if (nextIdx < list.length) {
-                sentenceRepeatRef.current = 0
-                setRepeatCount(0)
+            savePosition(t, true)
+            handlingEndRef.current = false
+            return
+          }
+
+          // 句末停顿 n 秒后再继续
+          pauseTimerRef.current = setTimeout(() => {
+            if (willRepeatCurrent) {
+              // 重复当前句：重置到句首继续播放
+              el.currentTime = cur.start
+              el.play().then(() => setPlaying(true)).catch(() => {})
+            } else {
+              // 当前句已听完，标记完成
+              markSentenceCompleted(curIdx)
+              sentenceRepeatRef.current = 0
+              setRepeatCount(0)
+              if (hasNext) {
+                // 进入下一句
                 currentSentenceIdxRef.current = nextIdx
                 setCurrentSentenceIdx(nextIdx)
                 el.currentTime = list[nextIdx].start
                 el.play().then(() => setPlaying(true)).catch(() => {})
               } else {
-                if (overallLoopRef.current + 1 < loopCountRef.current) {
-                  overallLoopRef.current += 1
-                  sentenceRepeatRef.current = 0
-                  setRepeatCount(0)
-                  currentSentenceIdxRef.current = 0
-                  setCurrentSentenceIdx(0)
-                  el.currentTime = 0
-                  el.play().then(() => setPlaying(true)).catch(() => {})
-                } else {
-                  savePosition(t, true)
-                }
+                // 整体循环：回到第 0 句
+                overallLoopRef.current += 1
+                currentSentenceIdxRef.current = 0
+                setCurrentSentenceIdx(0)
+                el.currentTime = 0
+                el.play().then(() => setPlaying(true)).catch(() => {})
               }
-              handlingEndRef.current = false
-            }, pauseSecondsRef.current * 1000)
-          }
+            }
+            handlingEndRef.current = false
+          }, pauseSecondsRef.current * 1000)
         }
       }
     }
-  }, [findSentenceIndex, markSentenceCompleted, savePosition])
+  }, [findSentenceIndex, markSentenceCompleted, savePosition, incrementSentenceRepeat])
 
   // 媒体加载完成
   const onLoadedMetadata = () => {
@@ -280,7 +325,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     if (maskMode) {
       setRevealed((prev) => {
         const next = new Set(prev)
-        const sentIdx = sentences[idx].index
+        const sentIdx = localSentences[idx].index
         if (next.has(sentIdx)) {
           next.delete(sentIdx)
         } else {
@@ -295,10 +340,10 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   // 跳转到指定句子
   const jumpToSentence = (idx: number) => {
     const el = mediaRef.current
-    if (!el || !sentences[idx]) return
+    if (!el || !localSentences[idx]) return
     handlingEndRef.current = false
     if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
-    el.currentTime = sentences[idx].start
+    el.currentTime = localSentences[idx].start
     sentenceRepeatRef.current = 0
     setRepeatCount(0)
     currentSentenceIdxRef.current = idx
@@ -310,7 +355,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
 
   // 切换句子收藏（重难点句子）
   const toggleFavorite = async (idx: number) => {
-    const s = sentences[idx]
+    const s = localSentences[idx]
     if (!s) return
     const next = new Set(favoriteSet)
     let favorited: boolean
@@ -341,7 +386,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
     sentenceRepeatRef.current = 0
     setRepeatCount(0)
-    if (checked && sentences.length === 0) {
+    if (checked && localSentences.length === 0) {
       message.warning('该媒体无字幕文件，逐句复读需要字幕支持')
       setMode('normal')
     }
@@ -354,7 +399,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   }
 
   // 全部揭示/全部遮挡
-  const revealAll = () => setRevealed(new Set(sentences.map((s) => s.index)))
+  const revealAll = () => setRevealed(new Set(localSentences.map((s) => s.index)))
   const hideAll = () => setRevealed(new Set())
 
   // 视频全屏切换（全屏整个容器，保留叠加字幕）
@@ -386,8 +431,8 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   }, [])
 
   const streamUrl = token ? mediaApi.streamUrl(mediaId, token) : ''
-  const hasSubtitle = sentences.length > 0
-  const currentSentence = currentSentenceIdx >= 0 ? sentences[currentSentenceIdx] : null
+  const hasSubtitle = localSentences.length > 0
+  const currentSentence = currentSentenceIdx >= 0 ? localSentences[currentSentenceIdx] : null
   const currentMasked = maskMode && currentSentence ? !revealed.has(currentSentence.index) : false
 
   return (
@@ -468,7 +513,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
         <Text type="secondary">{formatDuration(currentTime)} / {formatDuration(duration)}</Text>
         {mode === 'repeat' && currentSentenceIdx >= 0 && (
           <Tag color="processing">
-            第 {currentSentenceIdx + 1}/{sentences.length} 句 · 重复 {repeatCount}/{sentenceRepeat}
+            第 {currentSentenceIdx + 1}/{localSentences.length} 句 · 重复 {repeatCount}/{sentenceRepeat}
           </Tag>
         )}
       </div>
@@ -524,14 +569,14 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
         )}
       </Space>
 
-      {/* 字幕列表（Tabs：全部字幕 / 收藏句子） */}
+      {/* 字幕列表（Tabs：全文 / 收藏句子） */}
       {hasSubtitle && (
         <Tabs
           defaultActiveKey="all"
           items={[
             {
               key: 'all',
-              label: <span><OrderedListOutlined /> 全部字幕</span>,
+              label: <span><OrderedListOutlined /> 全文</span>,
               children: (
                 <div>
                   <div style={{ marginBottom: 8, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
@@ -552,7 +597,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                     ref={subtitleListRef}
                     style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
                   >
-                    {sentences.map((s, i) => {
+                    {localSentences.map((s, i) => {
                       const masked = maskMode && !revealed.has(s.index)
                       const isFav = favoriteSet.has(s.index)
                       return (
@@ -579,9 +624,8 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                           <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333', flex: 1 }}>
                             {masked ? maskText(s.text) : s.text}
                           </span>
-                          {s.repeat_count > 0 && (
-                            <Tag color="orange" style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
-                          )}
+                          {/* 始终显示听遍数，让用户能看到每句的学习情况 */}
+                          <Tag color={s.repeat_count > 0 ? 'orange' : 'default'} style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
                           {s.completed && <Tag color="success" style={{ margin: 0, flexShrink: 0 }}>已背</Tag>}
                           <Tooltip title={isFav ? '取消收藏' : '收藏重难点'}>
                             <Button
@@ -610,8 +654,8 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                       暂无收藏句子，点击字幕右侧星标收藏重难点
                     </div>
                   ) : (
-                    sentences.filter((s) => favoriteSet.has(s.index)).map((s) => {
-                      const i = sentences.findIndex((x) => x.index === s.index)
+                    localSentences.filter((s) => favoriteSet.has(s.index)).map((s) => {
+                      const i = localSentences.findIndex((x) => x.index === s.index)
                       return (
                         <div
                           key={s.index}
@@ -635,9 +679,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                           <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333', flex: 1 }}>
                             {s.text}
                           </span>
-                          {s.repeat_count > 0 && (
-                            <Tag color="orange" style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
-                          )}
+                          <Tag color={s.repeat_count > 0 ? 'orange' : 'default'} style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
                           <Tooltip title="取消收藏">
                             <Button
                               type="text"

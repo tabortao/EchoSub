@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, message } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -28,6 +28,8 @@ export default function Home() {
   const [albums, setAlbums] = useState<Album[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
+  const [renameMedia, setRenameMedia] = useState<MediaListItem | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const albumFilter = searchParams.get('album') ?? undefined
   const subAlbumFilter = searchParams.get('sub_album') ?? undefined
@@ -121,6 +123,50 @@ export default function Home() {
     } catch {
       message.error('创建失败')
     }
+  }
+
+  // 重命名媒体文件（含扩展名去除、调用 API、刷新列表）
+  const openRenameMedia = (item: MediaListItem) => {
+    const name = item.media.name
+    const dotIdx = name.lastIndexOf('.')
+    setRenameValue(dotIdx > 0 ? name.slice(0, dotIdx) : name)
+    setRenameMedia(item)
+  }
+  const handleRenameMedia = async () => {
+    if (!renameMedia) return
+    const newName = renameValue.trim()
+    if (!newName) {
+      message.warning('名称不能为空')
+      return
+    }
+    try {
+      await mediaApi.rename(renameMedia.media.id, newName)
+      message.success('重命名成功')
+      setRenameMedia(null)
+      await load()
+    } catch (err) {
+      message.error('重命名失败：' + (err as Error).message)
+    }
+  }
+
+  // 删除单个媒体文件（含同名字幕/封面）
+  const handleDeleteMedia = (item: MediaListItem) => {
+    Modal.confirm({
+      title: '⚠️ 删除媒体文件',
+      content: `确定删除「${item.media.name}」吗？该媒体文件及同目录同名的字幕/封面文件将被永久删除，无法恢复。`,
+      okText: '永久删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await mediaApi.remove(item.media.id)
+          message.success('已删除')
+          await load()
+        } catch (err) {
+          message.error('删除失败：' + (err as Error).message)
+        }
+      },
+    })
   }
 
   const showRecent = !albumFilter && !subAlbumFilter && !tagFilter && recentNotes.length > 0
@@ -241,10 +287,18 @@ export default function Home() {
                       <MediaCover media={f.item.media} />
                       <Tag
                         color={f.item.media.type === 'video' ? 'magenta' : 'green'}
-                        style={{ position: 'absolute', top: 8, left: 8, margin: 0 }}
+                        style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.85)' }}
                       >
                         {f.item.media.type === 'video' ? '视频' : '音频'}
                       </Tag>
+                      {/* 专题名移到右上角，节省下方空间 */}
+                      {f.item.media.album && (
+                        <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.85)' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: 80, verticalAlign: 'middle' }}>
+                            {f.item.media.sub_album || f.item.media.album}
+                          </span>
+                        </Tag>
+                      )}
                       <PlayCircleOutlined style={{
                         position: 'absolute',
                         top: '50%',
@@ -259,16 +313,24 @@ export default function Home() {
                 >
                   <Card.Meta
                     title={
-                      <Tooltip title={f.item.media.name}>
-                        <Text ellipsis style={{ maxWidth: '100%' }}>{f.item.media.name}</Text>
-                      </Tooltip>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Tooltip title={f.item.media.name}>
+                          <Text ellipsis style={{ flex: 1, minWidth: 0 }}>{f.item.media.name}</Text>
+                        </Tooltip>
+                        <EditOutlined
+                          onClick={(e) => { e.stopPropagation(); openRenameMedia(f.item) }}
+                          style={{ color: '#1677ff', fontSize: 14, flexShrink: 0 }}
+                          title="重命名"
+                        />
+                        <DeleteOutlined
+                          onClick={(e) => { e.stopPropagation(); handleDeleteMedia(f.item) }}
+                          style={{ color: '#ff4d4f', fontSize: 14, flexShrink: 0 }}
+                          title="删除"
+                        />
+                      </div>
                     }
                     description={
                       <div>
-                        <div style={{ marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                          {f.item.media.album && <Tag color="blue" style={{ marginRight: 0 }}>{f.item.media.album}</Tag>}
-                          {f.item.media.sub_album && <Tag color="cyan" style={{ marginRight: 0 }}>{f.item.media.sub_album}</Tag>}
-                        </div>
                         {f.item.media.tags && f.item.media.tags.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                             {f.item.media.tags.map((t) => (
@@ -307,6 +369,34 @@ export default function Home() {
           {albumFilter && <Tag color="blue">专辑: {albumFilter}</Tag>}
         </Space>
       </Modal>
+
+      {/* 重命名媒体 Modal */}
+      <Modal
+        title="重命名媒体"
+        open={!!renameMedia}
+        onCancel={() => setRenameMedia(null)}
+        onOk={handleRenameMedia}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onPressEnter={handleRenameMedia}
+            autoFocus
+            placeholder="输入新名称（不含扩展名）"
+          />
+          {renameMedia && (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              当前文件：{renameMedia.media.name}
+              <br />
+              扩展名 {renameMedia.media.name.slice(renameMedia.media.name.lastIndexOf('.'))} 将保留，
+              同目录同名字幕/封面文件会同步重命名。
+            </Text>
+          )}
+        </Space>
+      </Modal>
     </div>
   )
 }
@@ -339,6 +429,12 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
             </div>
           )}
           <Tag color="gold" style={{ position: 'absolute', top: 8, left: 8, margin: 0 }}>学习页</Tag>
+          {/* 专题名放右上角 */}
+          <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.85)' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: 80, verticalAlign: 'middle' }}>
+              {note.album}
+            </span>
+          </Tag>
         </div>
       }
     >
@@ -348,7 +444,6 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
             <Text ellipsis style={{ maxWidth: '100%' }}>{note.title}</Text>
           </Tooltip>
         }
-        description={<Tag color="blue">{note.album}</Tag>}
       />
     </Card>
   )
