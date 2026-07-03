@@ -168,10 +168,26 @@ function GridView(props: {
       if (albumFilter) {
         const noteRes = await noteApi.list(albumFilter)
         const notes = noteRes.data.data.notes ?? []
+        // 学习页与媒体共用同一排序键：name -> 标题；file_modified_at -> 更新时间；duration -> 0（笔记无时长，排到媒体之后）
+        const getSortKey = (f: FeedItem): string => {
+          if (sort === 'name') {
+            return f.kind === 'media' ? f.item.media.name : f.note.title
+          }
+          if (sort === 'file_modified_at') {
+            return f.ts
+          }
+          // duration：媒体按 duration，笔记排到末尾
+          return f.kind === 'media' ? String(f.item.media.duration ?? 0).padStart(10, '0') : 'zzz'
+        }
         const noteItems: FeedItem[] = notes.map((n) => ({
           kind: 'note' as const, note: n, ts: n.updated_at,
         }))
-        setFeed([...mediaItems, ...noteItems].sort((a, b) => b.ts.localeCompare(a.ts)))
+        const merged = [...mediaItems, ...noteItems]
+        merged.sort((a, b) => {
+          const cmp = getSortKey(a).localeCompare(getSortKey(b))
+          return order === 'asc' ? cmp : -cmp
+        })
+        setFeed(merged)
       } else {
         setFeed(mediaItems)
       }

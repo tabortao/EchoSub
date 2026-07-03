@@ -78,7 +78,9 @@
 
 #### 专辑升降序排序不生效
 
-- **前端 `pages/Home.tsx`**：修复点击「升序/降序」按钮不刷新列表的问题。根因是 `Home` 的 `order` 状态缺少 setter（`const [order] = useState(...)`），且 `GridView` 内的 `gridOrder` 状态变化未加入 `load` 的依赖数组，导致切换排序方向既无法回到升序、也不会触发重新拉取。改为将 `order`/`setOrder` 提升至 `Home` 并下传，移除冗余的 `gridOrder` 状态与同步 `useEffect`，按钮直接切换 `order` 并即时刷新。
+- **前端 `pages/Home.tsx`**：修复点击「升序/降序」按钮不刷新列表的问题。两处根因：
+  1. `Home` 的 `order` 状态缺少 setter（`const [order] = useState(...)`），且 `GridView` 内的 `gridOrder` 状态变化未加入 `load` 的依赖数组，导致切换排序方向既无法回到升序、也不会触发重新拉取。改为将 `order`/`setOrder` 提升至 `Home` 并下传，移除冗余的 `gridOrder` 状态与同步 `useEffect`，按钮直接切换 `order` 并即时刷新。
+  2. 修复后仍不生效：进入专辑页时 `GridView` 在 `if (albumFilter)` 分支里把媒体和学习页合并后，**无条件**用 `updated_at` 倒序重排，把后端按名称/时长返回的顺序覆盖掉了。改为根据 `sort` 取统一排序键（`name` → 名称/标题；`file_modified_at` → 更新时间；`duration` → 时长，笔记排末尾），并按 `order` 升降序。
 
 #### 学习统计年度翻页失效
 
