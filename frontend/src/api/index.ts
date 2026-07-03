@@ -15,6 +15,7 @@ import type {
   BrowseResponse,
   UploadResult,
   StudyNote,
+  MediaRemark,
   ApiResponse,
 } from '@/types'
 
@@ -80,31 +81,52 @@ export const mediaApi = {
   /** 重命名媒体文件（不含扩展名），后端会同步重命名同目录同名的字幕/封面文件 */
   rename: (id: number, name: string) =>
     client.put<ApiResponse<{ media: MediaFile; renamed: string[] }>>(`/media/${id}/rename`, { name }),
-  /** 删除单个媒体文件（同步删除同目录同名字幕/封面，DB 软删除） */
-  remove: (id: number) =>
-    client.delete<ApiResponse<{ deleted: boolean; id: number }>>(`/media/${id}`),
+  /** 删除单个媒体文件（同步删除同目录同名字幕/封面，DB 软删除）。
+   *  传入 password 时附带 X-Delete-Password 头，由后端校验当前用户密码 */
+  remove: (id: number, password?: string) =>
+    client.delete<ApiResponse<{ deleted: boolean; id: number }>>(`/media/${id}`, {
+      headers: password ? { 'X-Delete-Password': password, 'X-Confirm-Purpose': 'delete' } : undefined,
+    }),
   albums: () => client.get<ApiResponse<{ albums: Album[] }>>('/albums'),
   /** 重命名专辑（磁盘目录 + DB 记录批量更新） */
   renameAlbum: (album: string, newName: string) =>
     client.put<ApiResponse>('/albums/rename', { album, new_name: newName }),
-  /** 删除专辑（递归删除磁盘目录 + DB 批量软删除） */
-  deleteAlbum: (album: string) =>
-    client.delete<ApiResponse>('/albums', { data: { album } }),
+  /** 删除专辑（递归删除磁盘目录 + DB 批量软删除）。可选 password 二次确认 */
+  deleteAlbum: (album: string, password?: string) =>
+    client.delete<ApiResponse>('/albums', {
+      data: { album },
+      headers: password ? { 'X-Delete-Password': password, 'X-Confirm-Purpose': 'delete' } : undefined,
+    }),
   /** 新建目录 */
   mkdir: (path: string) =>
     client.post<{ data: { path: string } }>('/media/mkdir', { path }),
-  /** 删除目录（递归） */
-  deleteDir: (path: string) =>
-    client.delete<ApiResponse>('/media/dir', { params: { path } }),
-  /** 删除文件 */
-  deleteFile: (path: string) =>
-    client.delete<ApiResponse>('/media/file', { params: { path } }),
+  /** 删除目录（递归）。可选 password 二次确认 */
+  deleteDir: (path: string, password?: string) =>
+    client.delete<ApiResponse>('/media/dir', {
+      params: { path },
+      headers: password ? { 'X-Delete-Password': password, 'X-Confirm-Purpose': 'delete' } : undefined,
+    }),
+  /** 删除文件。可选 password 二次确认 */
+  deleteFile: (path: string, password?: string) =>
+    client.delete<ApiResponse>('/media/file', {
+      params: { path },
+      headers: password ? { 'X-Delete-Password': password, 'X-Confirm-Purpose': 'delete' } : undefined,
+    }),
   /** 重命名文件/目录 */
   renamePath: (oldPath: string, newPath: string) =>
     client.put<ApiResponse>('/media/path/rename', { old_path: oldPath, new_path: newPath }),
   /** 移动文件/目录 */
   movePath: (oldPath: string, newPath: string) =>
     client.put<ApiResponse>('/media/path/move', { old_path: oldPath, new_path: newPath }),
+  /** 获取文件备注（不存在时 content 为空、exists=false） */
+  getRemark: (mediaId: number) =>
+    client.get<ApiResponse<MediaRemark>>(`/media/${mediaId}/remark`),
+  /** 新增/更新文件备注（upsert，一个文件一条） */
+  upsertRemark: (mediaId: number, content: string) =>
+    client.put<ApiResponse<MediaRemark>>(`/media/${mediaId}/remark`, { content }),
+  /** 删除文件备注 */
+  deleteRemark: (mediaId: number) =>
+    client.delete<ApiResponse>(`/media/${mediaId}/remark`),
 }
 
 // ===== 标签 =====

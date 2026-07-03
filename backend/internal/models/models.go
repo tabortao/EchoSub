@@ -82,6 +82,18 @@ type StudyNote struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// MediaRemark 文件备注（用户对单个媒体文件的私有 markdown 笔记）。
+// 复合唯一索引 (user_id, media_id) 保证一个文件只有一条备注。
+type MediaRemark struct {
+	ID        uint           `gorm:"primaryKey" json:"id"`
+	UserID    uint           `gorm:"uniqueIndex:idx_user_media;not null" json:"user_id"`
+	MediaID   uint           `gorm:"uniqueIndex:idx_user_media;not null" json:"media_id"`
+	Content   string         `gorm:"type:text" json:"content"` // markdown 原文
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
 // Setting 用户学习偏好
 type Setting struct {
 	ID             uint    `gorm:"primaryKey" json:"id"`

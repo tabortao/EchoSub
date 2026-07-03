@@ -20,6 +20,7 @@ import {
 import { mediaApi } from '@/api'
 import type { BrowseEntry } from '@/types'
 import { formatSize } from '@/utils'
+import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 
 const { Text } = Typography
 const { Dragger } = Upload
@@ -53,6 +54,8 @@ export default function UploadPage() {
   const [moveTarget, setMoveTarget] = useState<BrowseEntry | null>(null)
   const [moveValue, setMoveValue] = useState('')
   const [actioning, setActioning] = useState(false)
+  // 待删除的文件/目录（用于弹出密码确认框）
+  const [deleteTarget, setDeleteTarget] = useState<BrowseEntry | null>(null)
 
   const load = async (p: string) => {
     setLoading(true)
@@ -114,21 +117,32 @@ export default function UploadPage() {
     }
   }
 
-  // ── 删除文件/目录 ──
-  const handleDelete = async (entry: BrowseEntry) => {
+  // ── 删除文件/目录：用户提交密码后真正调用 ──
+  const confirmDelete = async (password: string) => {
+    if (!deleteTarget) return
+    const entry = deleteTarget
     setActioning(true)
     try {
       const targetPath = path ? `${path}/${entry.name}` : entry.name
       if (entry.is_dir) {
-        await mediaApi.deleteDir(targetPath)
+        await mediaApi.deleteDir(targetPath, password)
         message.success('目录已删除')
       } else {
-        await mediaApi.deleteFile(targetPath)
+        await mediaApi.deleteFile(targetPath, password)
         message.success('文件已删除')
       }
+      setDeleteTarget(null)
       load(path)
     } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '删除失败'
+      // 密码错误：保留弹窗让用户重试
+      if (status === 401) {
+        message.error(msg)
+        throw err
+      }
+      // 其他错误：关闭弹窗
+      setDeleteTarget(null)
       message.error(msg)
     } finally {
       setActioning(false)
@@ -246,14 +260,7 @@ export default function UploadPage() {
       icon: <DeleteOutlined />,
       label: <span style={{ color: '#ff4d4f' }}>删除</span>,
       onClick: () => {
-        Modal.confirm({
-          title: `确认删除`,
-          content: `确定要删除「${entry.name}」吗？${entry.is_dir ? '目录及其中所有文件都将被删除。' : '数据库中的学习记录不会被删除。'}`,
-          okText: '删除',
-          okType: 'danger',
-          cancelText: '取消',
-          onOk: () => handleDelete(entry),
-        })
+        setDeleteTarget(entry)
       },
     },
   ]
@@ -449,6 +456,19 @@ export default function UploadPage() {
           输入相对于媒体根目录的目标路径（不需要包含文件名）
         </Text>
       </Modal>
+
+      {/* 删除文件/目录：要求输入登录密码确认 */}
+      <PasswordConfirmModal
+        open={!!deleteTarget}
+        title={`🗑️ 删除${deleteTarget?.is_dir ? '目录' : '文件'}`}
+        description={
+          deleteTarget
+            ? `确定要删除「${deleteTarget.name}」吗？${deleteTarget.is_dir ? '目录及其中所有文件都将被删除。' : '数据库中的学习记录不会被删除。'}`
+            : ''
+        }
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

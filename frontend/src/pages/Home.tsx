@@ -7,6 +7,7 @@ import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import MediaCover from '@/components/MediaCover'
 import EmbyHome from '@/components/EmbyHome'
+import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 import type { MediaListResponse, MediaListItem, Album, StudyNote } from '@/types'
 
 const { Text } = Typography
@@ -150,6 +151,8 @@ function GridView(props: {
   const [newTitle, setNewTitle] = useState('')
   const [renameMedia, setRenameMedia] = useState<MediaListItem | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  // 待删除的媒体（用于弹出密码确认框）
+  const [deleteTarget, setDeleteTarget] = useState<MediaListItem | null>(null)
 
   const currentAlbum = albums.find((a) => a.album === albumFilter)
   const subAlbums = currentAlbum?.sub_albums ?? []
@@ -238,18 +241,28 @@ function GridView(props: {
   }
 
   const handleDeleteMedia = (item: MediaListItem) => {
-    Modal.confirm({
-      title: '🗑️ 删除媒体文件',
-      content: `确定删除「${item.media.name}」吗？该文件及同名的字幕/封面将被永久删除，无法恢复。`,
-      okText: '永久删除', okType: 'danger', cancelText: '取消',
-      onOk: async () => {
-        try {
-          await mediaApi.remove(item.media.id)
-          message.success('已删除')
-          await load()
-        } catch (err) { message.error('删除失败：' + (err as Error).message) }
-      },
-    })
+    setDeleteTarget(item)
+  }
+
+  // 用户在密码弹窗中提交后，真正发起删除请求
+  const confirmDeleteMedia = async (password: string) => {
+    if (!deleteTarget) return
+    try {
+      await mediaApi.remove(deleteTarget.media.id, password)
+      message.success('已删除')
+      setDeleteTarget(null)
+      await load()
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '删除失败'
+      // 密码错误不关闭弹窗，让用户重试
+      if ((err as { response?: { status?: number } })?.response?.status === 401) {
+        message.error(msg)
+        throw err // 让 Modal 保持打开
+      }
+      // 其他错误关闭弹窗
+      setDeleteTarget(null)
+      message.error(msg)
+    }
   }
 
   const buildMediaMenu = (): MenuProps['items'] => [
@@ -420,6 +433,19 @@ function GridView(props: {
           )}
         </Space>
       </Modal>
+
+      {/* 删除媒体：要求输入登录密码确认 */}
+      <PasswordConfirmModal
+        open={!!deleteTarget}
+        title="🗑️ 删除媒体文件"
+        description={
+          deleteTarget
+            ? `确定删除「${deleteTarget.media.name}」吗？该文件及同名的字幕/封面将被永久删除，无法恢复。`
+            : ''
+        }
+        onConfirm={confirmDeleteMedia}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }

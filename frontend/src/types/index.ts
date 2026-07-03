@@ -176,6 +176,15 @@ export interface StudyNote {
   updated_at: string
 }
 
+// 文件备注（用户对单个媒体文件的 markdown 笔记）
+export interface MediaRemark {
+  media_id: number
+  content: string
+  exists: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 // API 统一响应
 export interface ApiResponse<T = unknown> {
   code: number

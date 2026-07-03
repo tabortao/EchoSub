@@ -7,9 +7,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/yaole/EchoSub/backend/internal/config"
 	"github.com/yaole/EchoSub/backend/internal/database"
+	"github.com/yaole/EchoSub/backend/internal/middleware"
 	"github.com/yaole/EchoSub/backend/internal/models"
 	"github.com/yaole/EchoSub/backend/internal/utils"
 )
@@ -85,6 +87,9 @@ func MkdirMedia(cfg *config.Config) gin.HandlerFunc {
 // ────────────────────────────────────────────
 func DeleteDir(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !verifyUserPassword(c) {
+			return
+		}
 		rel := c.Query("path")
 		full, ok := resolvePath(cfg, rel)
 		if !ok {
@@ -120,6 +125,9 @@ func DeleteDir(cfg *config.Config) gin.HandlerFunc {
 // ────────────────────────────────────────────
 func DeleteFile(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !verifyUserPassword(c) {
+			return
+		}
 		rel := c.Query("path")
 		full, ok := resolvePath(cfg, rel)
 		if !ok {
@@ -334,4 +342,28 @@ func recalcMediaAttrs(cfg *config.Config, newPrefix string) {
 			"sub_album": subAlbum,
 		})
 	}
+}
+
+// verifyUserPassword 校验当前用户的登录密码。用于删除等高风险操作的二次确认。
+// 返回 true 表示通过，false 时已直接写 401 响应，调用方应 return。
+func verifyUserPassword(c *gin.Context) bool {
+	password := c.GetHeader("X-Delete-Password")
+	if password == "" {
+		password = c.Query("password")
+	}
+	if password == "" {
+		utils.Fail(c, http.StatusUnauthorized, "请输入登录密码以确认删除")
+		return false
+	}
+	uid := middleware.GetUserID(c)
+	var user models.User
+	if err := database.DB.First(&user, uid).Error; err != nil {
+		utils.Fail(c, http.StatusUnauthorized, "用户不存在")
+		return false
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		utils.Fail(c, http.StatusUnauthorized, "密码错误")
+		return false
+	}
+	return true
 }

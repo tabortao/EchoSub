@@ -13,12 +13,14 @@ import {
   StarFilled,
   MinusOutlined,
   PlusOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons'
 import { mediaApi, recordApi } from '@/api'
 import { useSettingsStore } from '@/store/settings'
 import { useAuthStore } from '@/store/auth'
 import type { Sentence } from '@/types'
 import { formatDuration } from '@/utils'
+import MarkdownEditor from '@/components/MarkdownEditor'
 
 const { Text } = Typography
 
@@ -71,6 +73,9 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const [playbackRate, setPlaybackRate] = useState(1)
   const [favoriteSet, setFavoriteSet] = useState<Set<number>>(new Set()) // 收藏的句子 index 集合
   const [favoritePlayMode, setFavoritePlayMode] = useState(false) // 仅播放收藏句子模式
+  // 文件备注：默认预览态；切换媒体时从后端拉取
+  const [remark, setRemark] = useState('')
+  const [remarkLoaded, setRemarkLoaded] = useState(false)
 
   // 可变状态（不触发渲染）
   const handlingEndRef = useRef(false)
@@ -105,6 +110,33 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     })
     setFavoriteSet(fav)
   }, [sentences])
+
+  // 切换媒体时加载文件备注
+  useEffect(() => {
+    setRemark('')
+    setRemarkLoaded(false)
+    let cancelled = false
+    mediaApi.getRemark(mediaId)
+      .then((res) => {
+        if (cancelled) return
+        setRemark(res.data.data?.content ?? '')
+      })
+      .catch(() => {
+        if (cancelled) return
+        setRemark('')
+      })
+      .finally(() => { if (!cancelled) setRemarkLoaded(true) })
+    return () => { cancelled = true }
+  }, [mediaId])
+
+  // 备注失焦保存
+  const saveRemark = useCallback(async (next: string) => {
+    try {
+      await mediaApi.upsertRemark(mediaId, next)
+    } catch {
+      message.error('备注保存失败')
+    }
+  }, [mediaId])
 
   // 字幕自动滚动：当前句始终在可见范围中央
   useEffect(() => {
@@ -617,11 +649,11 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
         )}
       </Space>
 
-      {/* 字幕列表（Tabs：全文 / 收藏句子） */}
-      {hasSubtitle && (
-        <Tabs
-          defaultActiveKey="all"
-          items={[
+      {/* Tabs：全文 / 收藏句子 / 备注。无字幕时禁用前两个 tab，但备注可访问 */}
+      <Tabs
+        defaultActiveKey={hasSubtitle ? 'all' : 'remark'}
+        items={[
+          ...(hasSubtitle ? [
             {
               key: 'all',
               label: <span><OrderedListOutlined /> 全文</span>,
@@ -780,9 +812,29 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                 </div>
               ),
             },
-          ]}
-        />
-      )}
+          ] : []),
+          {
+            key: 'remark',
+            label: <span><FileTextOutlined /> 备注</span>,
+            children: (
+              <div style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', padding: '0 4px' }}>
+                {remarkLoaded ? (
+                  <MarkdownEditor
+                    value={remark}
+                    onChange={setRemark}
+                    onBlurSave={saveRemark}
+                    placeholder="点击「编辑原文」写下对这个文件的备注... 支持 Markdown。"
+                    defaultEditing={false}
+                    showTTS
+                  />
+                ) : (
+                  <div style={{ textAlign: 'center', color: '#999', padding: 40 }}>加载备注中…</div>
+                )}
+              </div>
+            ),
+          },
+        ]}
+      />
     </div>
   )
 }

@@ -75,7 +75,7 @@ const steps = [
 
 export default function About() {
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto' }}>
+    <div>
       {/* 顶部 Hero 区 */}
       <Card
         style={{

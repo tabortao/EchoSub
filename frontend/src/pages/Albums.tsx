@@ -5,6 +5,7 @@ import { FolderOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant
 import { useNavigate } from 'react-router-dom'
 import { mediaApi } from '@/api'
 import MediaCover from '@/components/MediaCover'
+import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 import type { Album, MediaFile, MediaListResponse } from '@/types'
 
 const { Text } = Typography
@@ -96,23 +97,30 @@ export default function Albums() {
     }
   }
 
+  const [deleteTarget, setDeleteTarget] = useState<Album | null>(null)
+
   const handleDelete = (a: Album) => {
-    Modal.confirm({
-      title: '🗑️ 删除专辑',
-      content: `确定删除专辑「${a.album}」吗？整个文件夹（含音频/视频/字幕/封面）将被永久删除，无法恢复。`,
-      okText: '永久删除',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await mediaApi.deleteAlbum(a.album)
-          message.success('已删除专辑: ' + a.album)
-          await reloadAlbums()
-        } catch (err) {
-          message.error('删除失败：' + (err as Error).message)
-        }
-      },
-    })
+    setDeleteTarget(a)
+  }
+
+  // 用户在密码弹窗中提交后真正执行删除
+  const confirmDeleteAlbum = async (password: string) => {
+    if (!deleteTarget) return
+    try {
+      await mediaApi.deleteAlbum(deleteTarget.album, password)
+      message.success('已删除专辑: ' + deleteTarget.album)
+      setDeleteTarget(null)
+      await reloadAlbums()
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '删除失败'
+      if (status === 401) {
+        message.error(msg)
+        throw err
+      }
+      setDeleteTarget(null)
+      message.error(msg)
+    }
   }
 
   // ⋯ 菜单项：重命名 + 删除
@@ -261,6 +269,19 @@ export default function Albums() {
           size="large"
         />
       </Modal>
+
+      {/* 删除专辑：要求输入登录密码确认 */}
+      <PasswordConfirmModal
+        open={!!deleteTarget}
+        title="🗑️ 删除专辑"
+        description={
+          deleteTarget
+            ? `确定删除专辑「${deleteTarget.album}」吗？整个文件夹（含音频/视频/字幕/封面）将被永久删除，无法恢复。`
+            : ''
+        }
+        onConfirm={confirmDeleteAlbum}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

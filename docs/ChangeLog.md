@@ -90,7 +90,30 @@
 
 - **后端 `handlers/stats.go`**：`getWeekStats` 未将 `base` 归一到本地 0 点。`time.Parse("2006-01-02")` 返回 UTC 0 点、`time.Now()` 带当前时分秒，两者都会让每日统计窗口偏移，使某天的播放/背诵记录错算到相邻天。新增 `time.Date(base.Year(), base.Month(), base.Day(), 0,0,0,0, time.Local)` 归一化，确保按本地时区自然日切分。
 
+#### 关于页面宽度
+
+- **前端 `pages/About.tsx`**：移除顶层 `maxWidth: 960` 限制，与首页/设置页等页面保持同一全宽布局。
+
+#### 删除二次密码确认
+
+- **后端 `handlers/filemanager.go`** / **`handlers/delete.go`**：所有删除端点（`DeleteMedia` / `DeleteDir` / `DeleteFile` / `DeleteAlbum`）统一接入 `verifyUserPassword` 校验。从 `X-Delete-Password` header（兼容 `?password=` query）读取登录密码，bcrypt 校验当前用户密码，失败返回 401。
+- **前端 `components/PasswordConfirmModal.tsx`** ✨新增：通用二次确认 Modal，含密码输入、错误提示、loading 态、密码错误不关闭。
+- **前端 `api/client.ts`**：响应拦截器对带 `X-Confirm-Purpose: delete` 标记的 401 不清 token、不跳登录页（区分 token 失效 vs 密码错误）。
+- **前端 `api/index.ts`**：`mediaApi.remove / deleteDir / deleteFile / deleteAlbum` 接受可选 `password` 参数，自动附带 `X-Delete-Password` 与 `X-Confirm-Purpose` 头。
+- **前端 `pages/Home.tsx` / `pages/Upload.tsx` / `pages/Albums.tsx`**：删除操作改为先弹密码确认框，正确密码才真正调用删除 API；密码错误保留弹窗以便重试。
+
 ### Added
+
+#### 文件备注 Tab
+
+- **后端 `models/models.go`**：新增 `MediaRemark` 模型（`user_id` + `media_id` 复合唯一索引），一个文件一条备注。
+- **后端 `database/database.go`**：`AutoMigrate` 加入 `MediaRemark`。
+- **后端 `handlers/remark.go`** ✨新增：`GET/PUT/DELETE /media/:id/remark` 三个端点，支持 upsert（一个文件一条）。
+- **后端 `router/router.go`**：注册 3 条新路由。
+- **前端 `types/index.ts`**：新增 `MediaRemark` 类型。
+- **前端 `api/index.ts`**：`mediaApi` 新增 `getRemark / upsertRemark / deleteRemark`。
+- **前端 `components/MarkdownEditor.tsx`** ✨新增：通用 Markdown 编辑器（预览/编辑切换 + TTS 朗读 + 失焦保存回调），从 NoteEditor 提取，便于备注与学习页面共用。
+- **前端 `components/MediaPlayer.tsx`**：在「全文 / 收藏句子」之后新增「备注」Tab。默认预览态，点击「编辑原文」进入编辑；失焦自动保存。无字幕时自动定位到备注 Tab，字幕 Tab 仍可点击。
 
 #### favicon + PWA 图标更新
 

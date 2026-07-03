@@ -55,6 +55,10 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			media.POST("/:id/tags", handlers.AssignTags())
 			media.PUT("/:id/rename", handlers.RenameMedia(cfg))
 			media.DELETE("/:id", handlers.DeleteMedia(cfg))
+			// 文件备注（用户对单个媒体的 markdown 笔记）
+			media.GET("/:id/remark", handlers.GetRemark())
+			media.PUT("/:id/remark", handlers.UpsertRemark())
+			media.DELETE("/:id/remark", handlers.DeleteRemark())
 		}
 		authed.GET("/albums", handlers.ListAlbums())
 		authed.PUT("/albums/rename", handlers.RenameAlbum(cfg))

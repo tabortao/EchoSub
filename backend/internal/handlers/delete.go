@@ -25,6 +25,9 @@ var deleteAssociatedExts = map[string]bool{
 // 路由: DELETE /media/:id
 func DeleteMedia(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !verifyUserPassword(c) {
+			return
+		}
 		id := c.Param("id")
 		var m models.MediaFile
 		if err := database.DB.First(&m, id).Error; err != nil {
@@ -77,6 +80,9 @@ type deleteAlbumReq struct {
 // 请求体: { "album": "AlbumName" }
 func DeleteAlbum(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !verifyUserPassword(c) {
+			return
+		}
 		var req deleteAlbumReq
 		if err := c.ShouldBindJSON(&req); err != nil {
 			// 兼容 query 参数
