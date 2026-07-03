@@ -41,9 +41,9 @@ func ListMedia() gin.HandlerFunc {
 				Where("media_tags.tag_id = ?", tagID)
 		}
 
-		// 排序：默认按 file_modified_at 倒序（存入时间）
-		sort := c.DefaultQuery("sort", "file_modified_at")
-		order := c.DefaultQuery("order", "desc")
+		// 排序：默认按名称正序（便于按文件名浏览）
+		sort := c.DefaultQuery("sort", "name")
+		order := c.DefaultQuery("order", "asc")
 		if !isValidOrder(order) {
 			order = "desc"
 		}

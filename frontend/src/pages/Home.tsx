@@ -28,7 +28,7 @@ export default function Home() {
   const tagFilter = searchParams.get('tag_id') ?? undefined
   const [keyword, setKeyword] = useState('')
   const [type, setType] = useState<string | undefined>(undefined)
-  const [sort, setSort] = useState('file_modified_at')
+  const [sort, setSort] = useState('name')
 
   // 是否进入网格视图（任一筛选条件激活时）
   const hasFilter = !!(albumFilter || subAlbumFilter || tagFilter || keyword || type)
@@ -108,8 +108,8 @@ function FilterBar(props: {
             style={{ width: '100%' }} size="large"
             value={sort} onChange={(v) => setSort(v)}
             options={[
-              { value: 'file_modified_at', label: '📅 存入时间' },
               { value: 'name', label: '🔤 名称' },
+              { value: 'file_modified_at', label: '📅 存入时间' },
               { value: 'duration', label: '⏱️ 时长' },
             ]}
           />
@@ -157,7 +157,7 @@ function GridView(props: {
     setLoading(true)
     try {
       const mediaRes = await mediaApi.list({
-        keyword, type, sort, order: 'desc', page: 1, size: 100,
+        keyword, type, sort, order: sort === 'name' ? 'asc' : 'desc', page: 1, size: 100,
         album: albumFilter, sub_album: subAlbumFilter, tag_id: tagFilter,
       })
       const mediaList = (mediaRes.data.data as MediaListResponse).list ?? []

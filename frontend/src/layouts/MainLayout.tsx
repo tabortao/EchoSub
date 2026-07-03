@@ -1,4 +1,4 @@
-import { Layout, Button, Space, Drawer, Tooltip, Avatar, Spin } from 'antd'
+import { Layout, Button, Space, Drawer, Tooltip, Avatar, Spin, Dropdown } from 'antd'
 import {
   HomeOutlined,
   TagOutlined,
@@ -201,18 +201,39 @@ export default function MainLayout() {
                 </Button>
               </Spin>
             </Tooltip>
-            <Tooltip title={user?.username}>
-              {user?.avatar_path ? (
-                <Avatar size={32} src={authApi.avatarUrl(token ?? '')} />
-              ) : (
-                <Avatar size={32} style={{ background: 'linear-gradient(135deg, #FF7A45, #FFB37A)', fontWeight: 600 }}>
-                  {user?.username?.[0]?.toUpperCase() ?? 'U'}
-                </Avatar>
-              )}
-            </Tooltip>
-            <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>
-              {isMobile ? '' : '退出'}
-            </Button>
+            {/* 用户头像下拉菜单：点击头像进入设置页 */}
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: 'settings',
+                    icon: <SettingOutlined />,
+                    label: '设置',
+                    onClick: () => navigate('/settings'),
+                  },
+                  { type: 'divider' },
+                  {
+                    key: 'logout',
+                    icon: <LogoutOutlined />,
+                    label: '退出登录',
+                    onClick: handleLogout,
+                  },
+                ],
+              }}
+              placement="bottomRight"
+            >
+              <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <Tooltip title={user?.username + ' (点击打开菜单)'}>
+                  {user?.avatar_path ? (
+                    <Avatar size={32} src={authApi.avatarUrl(token ?? '')} />
+                  ) : (
+                    <Avatar size={32} style={{ background: 'linear-gradient(135deg, #FF7A45, #FFB37A)', fontWeight: 600 }}>
+                      {user?.username?.[0]?.toUpperCase() ?? 'U'}
+                    </Avatar>
+                  )}
+                </Tooltip>
+              </div>
+            </Dropdown>
           </Space>
         </Header>
         <Content style={{ margin: 0 }}>
