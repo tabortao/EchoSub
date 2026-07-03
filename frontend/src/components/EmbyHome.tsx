@@ -295,7 +295,7 @@ function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void 
         ) : (
           <div style={{
             height: '100%',
-            background: 'linear-gradient(135deg, #FF7A45, #FFB37A)',
+            background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <FolderOutlined style={{ fontSize: 64, color: 'rgba(255,255,255,0.8)' }} />
@@ -345,7 +345,7 @@ function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void 
               <div style={{
                 height: '100%',
                 width: `${playedPct}%`,
-                background: 'linear-gradient(90deg, #FF7A45, #FFB37A)',
+                background: 'linear-gradient(90deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
                 transition: 'width 0.4s',
               }} />
             </div>
@@ -379,7 +379,7 @@ function MediaCard({
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         transition: 'transform 0.2s, box-shadow 0.2s',
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(255,122,69,0.18)' }}
+      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = `0 8px 20px color-mix(in srgb, var(--ant-color-primary) 18%, transparent)` }}
       onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)' }}
     >
       <div style={{ position: 'relative' }}>
@@ -404,7 +404,7 @@ function MediaCard({
         }} />
         {showProgress && progress > 0 && (
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 4, background: 'rgba(0,0,0,0.3)' }}>
-            <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, #FF7A45, #FFB37A)' }} />
+            <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))' }} />
           </div>
         )}
       </div>

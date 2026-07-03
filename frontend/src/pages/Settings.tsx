@@ -10,7 +10,7 @@ import { authApi } from '@/api'
 import { THEMES, type ThemeKey } from '@/theme/themes'
 import type { Settings, User } from '@/types'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 // TTS 语音候选（VoiceCraft 兼容的 Microsoft Edge TTS 音色）
 const TTS_VOICES = [
@@ -69,14 +69,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto' }}>
-      {/* 页面标题 */}
-      <div style={{ marginBottom: 20 }}>
-        <Title level={3} style={{ margin: 0, fontWeight: 700, color: '#1a1a1a' }}>
-          ⚙️ 设置
-        </Title>
-        <Text type="secondary">管理你的学习偏好、外观主题和账户信息</Text>
-      </div>
+    <div>
+      {/* 页面标题由 MainLayout Header 显示，此处不再重复 */}
+      <div style={{ marginBottom: 20 }} />
 
       {/* 外观主题 —— 渐变卡片 + 响应式栅格 */}
       <Card
@@ -198,7 +193,7 @@ export default function SettingsPage() {
             </Col>
             <Col xs={24} md={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600 }}>🚀 朗读语速：<Text strong style={{ color: '#FF7A45' }}>{(form.getFieldValue('tts_speed') ?? 1.0).toFixed(1)}x</Text></span>}
+                label={<span style={{ fontWeight: 600 }}>🚀 朗读语速：<Text strong style={{ color: 'var(--ant-color-primary)' }}>{(form.getFieldValue('tts_speed') ?? 1.0).toFixed(1)}x</Text></span>}
                 name="tts_speed"
                 tooltip="0.5x 慢速朗读适合跟读；1.0x 正常；2.0x 快速浏览"
                 rules={[{ required: true, message: '请设置语速' }]}
@@ -355,7 +350,7 @@ function AccountCard() {
             size={80}
             src={avatarUrl}
             icon={!avatarUrl ? <UserOutlined /> : undefined}
-            style={!avatarUrl ? { background: 'linear-gradient(135deg, #FF7A45, #FFB37A)' } : undefined}
+            style={!avatarUrl ? { background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))' } : undefined}
           >
             {!avatarUrl ? (user?.username?.[0]?.toUpperCase() ?? 'U') : undefined}
           </Avatar>

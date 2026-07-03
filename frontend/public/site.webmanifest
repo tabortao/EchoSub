@@ -1,0 +1,17 @@
+{
+  "name": "EchoSub - 语言学习与课文背诵",
+  "short_name": "EchoSub",
+  "description": "自主托管的语言学习与课文背诵 Web 应用",
+  "icons": [
+    { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "theme_color": "#FF7A45",
+  "background_color": "#FFF9F0",
+  "display": "standalone",
+  "orientation": "any",
+  "start_url": "/",
+  "scope": "/",
+  "lang": "zh-CN"
+}

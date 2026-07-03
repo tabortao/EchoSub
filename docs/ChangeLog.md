@@ -7,6 +7,137 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.4.2] - 2026-07-03
+
+### Added
+
+#### 上传页文件管理
+
+- **后端 `handlers/filemanager.go`** ✨新增：5 个文件管理 API：
+  - `POST /media/mkdir`：新建目录（含路径穿越防护）
+  - `DELETE /media/dir?path=...`：递归删除目录（磁盘 + DB 批量软删除）
+  - `DELETE /media/file?path=...`：删除单个文件（磁盘 + DB 记录 + 关联字幕/封面）
+  - `PUT /media/path/rename`：重命名文件/目录（磁盘 + DB 路径更新 + album/sub_album 重算）
+  - `PUT /media/path/move`：移动文件/目录（磁盘 + DB 路径更新 + album/sub_album 重算）
+- **后端 `router/router.go`**：注册 5 条新路由。
+- **前端 `api/index.ts`**：`mediaApi` 新增 `mkdir / deleteDir / deleteFile / renamePath / movePath` 方法。
+- **前端 `pages/Upload.tsx`**：全面改造：
+  - 每个文件/目录右侧 `⋮` 下拉菜单：重命名、移动到、删除
+  - 目录浏览卡片顶部「新建目录」按钮 + Modal
+  - 重命名 Modal、移动 Modal（输入目标路径）
+  - 删除确认 Modal（区分文件/目录提示）
+
+#### 关于页面
+
+- **前端 `pages/About.tsx`** ✨新增：Hero 区 + 6 张功能卡片 + 5 步使用指南 + 技术栈标签 + 作者信息（tabortao）。
+- **前端 `layouts/MainLayout.tsx`**：侧边栏增加「💡 关于」菜单项。
+- **前端 `router/index.tsx`**：注册 `/about` 路由。
+
+### Fixed
+
+#### 主题切换真正生效
+
+- **前端 `App.tsx`**：移除 `key={theme}` 方案（antd v5 CSS 变量在 key 变化时不会自动更新），改用 `useEffect` + `document.documentElement.style.setProperty('--ant-color-primary', ...)` 直接操作 CSS 变量。
+
+#### 页面标题重复与宽度
+
+- **`backend/config.yaml`**：数据库路径改为绝对路径（防止从不同目录启动时路径解析错误）。
+- **前端 `pages/Settings.tsx`**：移除 `maxWidth: 960` 和重复标题，与其他页面保持一致。
+- **前端 `pages/Records.tsx`** / **`pages/Upload.tsx`**：移除重复标题，由 MainLayout Header 统一显示。
+
+#### Header 用户交互
+
+- **前端 `layouts/MainLayout.tsx`**：头像点击直接跳转 `/settings`；退出登录改为独立 `LogoutOutlined` 图标按钮。
+
+#### 专辑文件默认排序
+
+- **前端 `pages/Home.tsx`**：GridView 默认 `sort = 'name'`，按名称时 `order: 'asc'`。
+- **后端 `handlers/media.go`**：`ListMedia` 默认排序改为 `name ASC`。
+
+## [v0.4.2] - 2026-07-03
+
+### Fixed
+
+#### 主题切换整体配色同步
+
+- **前端 `theme/themes.ts`**：每套主题均开启 `cssVar: { key: 'ant' }`，让 antd v5 自动将 token（colorPrimary、colorBgLayout、borderRadius 等）写入 `:root` 级 CSS 变量（如 `--ant-color-primary`）。
+- **前端 `App.tsx`**：移除 `useEffect` 手动 setProperty 的代码，完全依赖 antd 的 cssVar 机制，确保所有 antd 组件跟随主题切换。
+- **前端 `index.css`**：将卡片 hover 阴影、滚动条颜色从硬编码 `rgba(255,122,69,...)` 改为 `color-mix(in srgb, var(--ant-color-primary) xx%, transparent)`，跟随主题变化。
+- **前端 `layouts/MainLayout.tsx`**：Logo 渐变、Header 边框/阴影、头像渐变背景均改用 `var(--ant-color-primary)` + `color-mix` 替代硬编码橙色。
+- **前端 `components/EmbyHome.tsx`**：专辑卡片进度条、封面占位渐变、hover 阴影跟随主题。
+- **前端 `pages/Records.tsx`**：所有 12 处硬编码 `rgba(255,122,69,...)` / `#FF7A45` / `#FFB37A` 替换为 CSS 变量。
+- **前端 `pages/Settings.tsx` / `pages/Upload.tsx` / `pages/Home.tsx` / `pages/About.tsx`**：剩余硬编码橙色替换为 `var(--ant-color-primary)`。
+
+#### 专辑文件可点击排序
+
+- **前端 `pages/Home.tsx`**：GridView 顶部新增排序工具栏（标签 + 升序/降序切换按钮），点击即可在名称升序/降序间切换，即时刷新列表。
+
+#### 专辑文件名称排序
+
+- **后端 `handlers/media.go`**：`ListMedia` 默认排序保持 `name ASC`（已是正确值），修改已在 v0.4.2 完成。**注：需重启后端让修改生效。**
+
+### Added
+
+#### favicon + PWA 图标更新
+
+- 将 `docs/Reference/favicon/` 下的 7 个图标文件复制到 `frontend/public/`：
+  - `favicon.ico`、`favicon-16x16.png`、`favicon-32x32.png`
+  - `apple-touch-icon.png`（180×180，iOS Safari）
+  - `android-chrome-192x192.png`、`android-chrome-512x512.png`
+  - `site.webmanifest`（更新 name/short_name/theme_color）
+- **前端 `index.html`**：增加 `<link rel="icon">`（ico + 16/32 png）、`<link rel="apple-touch-icon" sizes="180x180">`、`<link rel="manifest" href="/site.webmanifest">`。
+- **前端 `vite.config.ts`**：VitePWA manifest icons 指向 android-chrome-192/512；theme_color 改为 `#FF7A45`。
+
+#### 关于页 GitHub 链接
+
+- **前端 `pages/About.tsx`**：GitHub 链接改为 `https://github.com/tabortao/EchoSub`，颜色跟随主题。
+
+## [v0.4.1] - 2026-07-03
+
+### Fixed
+
+#### 主题切换真正生效
+
+- **前端 `App.tsx`**：移除 `key={theme}` 方案（antd v5 CSS 变量在 `key` 变化时不会自动更新），改为通过 `useEffect` 在 `document.documentElement.style` 上直接 setProperty 写入 `--ant-color-primary` 等 CSS 变量。切换主题时即时生效。
+
+#### 页面标题重复与宽度不一致
+
+- **`backend/config.yaml`**：数据库路径从相对路径 `data/echosub.db` 改为绝对路径 `D:/Code/Go/EchoSub/backend/data/echosub.db`，避免从不同目录启动时路径解析错误。
+- **前端 `pages/Settings.tsx`**：移除页面内部 `maxWidth: 960` 和重复标题「⚙️ 设置」，与其他页面保持一致的宽度和 MainLayout 标题显示。
+- **前端 `pages/Records.tsx`**：移除重复标题「📊 学习记录」，由 MainLayout Header 统一显示。
+- **前端 `pages/Upload.tsx`**：移除重复标题「⬆️ 上传文件」，由 MainLayout Header 统一显示。
+
+#### Header 用户交互优化
+
+- **前端 `layouts/MainLayout.tsx`**：用户头像改为点击直接跳转 `/settings`；退出登录改为独立的 `LogoutOutlined` 图标按钮（在头像右侧），不再需要下拉菜单。移除 Dropdown 依赖。
+
+### Added
+
+#### 关于页面
+
+- **前端 `pages/About.tsx`** ✨新增：关于页面，包含：
+  - Hero 区（项目名、版本号、简介、标签）
+  - 核心功能 6 张彩色卡片（逐句复读、TTS 朗读、专辑管理、标签系统、拖拽上传、学习记录）
+  - 使用方法 5 步指南
+  - 技术栈标签云
+  - 作者信息（tabortao）
+- **前端 `layouts/MainLayout.tsx`**：侧边栏菜单增加「💡 关于」入口，路由 `/about`。
+- **前端 `router/index.tsx`**：注册 `GET /about` 路由。
+
+#### 设置页面美化与响应式设计
+
+- **前端 `pages/Settings.tsx`**：全面美化：
+  - 外观主题卡片：更大尺寸、悬停上浮动画、选中态晕影
+  - 学习偏好表单：双列响应式栅格（`xs={24} md={12}`），手机单列、桌面双列
+  - 账户管理：头像区卡片化、密码表单双列布局
+  - 说明区：6 个功能标签三列栅格（`xs={24} sm={12} lg={8}`）
+  - 双列响应式栅格（`Col xs={24} md={12}`），手机端单列、桌面端双列
+
+#### 专辑文件默认排序
+
+- **前端 `pages/Home.tsx`**：GridView 默认 `sort = 'name'`；按名称排序时 `order: 'asc'`（其他排序保持 `desc`）。
+- **后端 `handlers/media.go`**：`ListMedia` 默认排序从 `file_modified_at DESC` 改为 `name ASC`。
+
 ## [v0.4.0] - 2026-07-03
 
 ### Added

@@ -1,4 +1,4 @@
-import { Layout, Button, Space, Drawer, Tooltip, Avatar, Spin, Dropdown } from 'antd'
+import { Layout, Button, Space, Drawer, Tooltip, Avatar, Spin } from 'antd'
 import {
   HomeOutlined,
   TagOutlined,
@@ -9,6 +9,7 @@ import {
   MenuOutlined,
   UploadOutlined,
   ReloadOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -38,6 +39,7 @@ const menuItems: MenuItemCfg[] = [
   { key: '/upload', icon: <UploadOutlined />, label: '上传', color: '#722ED1', emoji: '⬆️' },
   { key: '/records', icon: <HistoryOutlined />, label: '学习记录', color: '#EB2F96', emoji: '📊' },
   { key: '/settings', icon: <SettingOutlined />, label: '设置', color: '#13C2C2', emoji: '⚙️' },
+  { key: '/about', icon: <InfoCircleOutlined />, label: '关于', color: '#FAAD14', emoji: '💡' },
 ]
 
 export default function MainLayout() {
@@ -112,27 +114,27 @@ export default function MainLayout() {
 
   const renderSider = (showLogoText: boolean) => (
     <>
-      {/* Logo 区域：彩色音频图标 + 渐变文字 */}
+      {/* Logo 区域：彩色音频图标 + 渐变文字（跟随主题色） */}
       <div style={{
         height: 64,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        borderBottom: '1px solid #fff0e6',
+        borderBottom: `1px solid color-mix(in srgb, var(--ant-color-primary) 12%, transparent)`,
       }}>
         <div style={{
           width: 36, height: 36, borderRadius: 10,
-          background: 'linear-gradient(135deg, #FF7A45, #FFB37A)',
+          background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(255,122,69,0.3)',
+          boxShadow: `0 2px 8px color-mix(in srgb, var(--ant-color-primary) 30%, transparent)`,
         }}>
           <AudioOutlined style={{ fontSize: 20, color: '#fff' }} />
         </div>
         {showLogoText && (
           <span style={{
             fontSize: 20, fontWeight: 800,
-            background: 'linear-gradient(135deg, #FF7A45, #FFB37A)',
+            background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
           }}>EchoSub</span>
@@ -164,7 +166,7 @@ export default function MainLayout() {
           collapsed={collapsed}
           onCollapse={setCollapsed}
           theme="light"
-          style={{ background: '#fff', borderRight: '1px solid #fff0e6' }}
+          style={{ background: '#fff', borderRight: `1px solid color-mix(in srgb, var(--ant-color-primary) 12%, transparent)` }}
         >
           {renderSider(!collapsed)}
         </Sider>
@@ -176,8 +178,8 @@ export default function MainLayout() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: '1px solid #fff0e6',
-          boxShadow: '0 1px 4px rgba(255,122,69,0.04)',
+          borderBottom: `1px solid color-mix(in srgb, var(--ant-color-primary) 12%, transparent)`,
+          boxShadow: `0 1px 4px color-mix(in srgb, var(--ant-color-primary) 4%, transparent)`,
         }}>
           {isMobile ? (
             <Button type="text" icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
@@ -201,39 +203,27 @@ export default function MainLayout() {
                 </Button>
               </Spin>
             </Tooltip>
-            {/* 用户头像下拉菜单：点击头像进入设置页 */}
-            <Dropdown
-              menu={{
-                items: [
-                  {
-                    key: 'settings',
-                    icon: <SettingOutlined />,
-                    label: '设置',
-                    onClick: () => navigate('/settings'),
-                  },
-                  { type: 'divider' },
-                  {
-                    key: 'logout',
-                    icon: <LogoutOutlined />,
-                    label: '退出登录',
-                    onClick: handleLogout,
-                  },
-                ],
-              }}
-              placement="bottomRight"
-            >
-              <div style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                <Tooltip title={user?.username + ' (点击打开菜单)'}>
-                  {user?.avatar_path ? (
-                    <Avatar size={32} src={authApi.avatarUrl(token ?? '')} />
-                  ) : (
-                    <Avatar size={32} style={{ background: 'linear-gradient(135deg, #FF7A45, #FFB37A)', fontWeight: 600 }}>
-                      {user?.username?.[0]?.toUpperCase() ?? 'U'}
-                    </Avatar>
-                  )}
-                </Tooltip>
+            {/* 用户头像：点击直接进入设置页 */}
+            <Tooltip title={user?.username + ' - 点击打开设置'}>
+              <div
+                onClick={() => navigate('/settings')}
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              >
+                {user?.avatar_path ? (
+                  <Avatar size={32} src={authApi.avatarUrl(token ?? '')} />
+                ) : (
+                  <Avatar size={32} style={{ background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))', fontWeight: 600 }}>
+                    {user?.username?.[0]?.toUpperCase() ?? 'U'}
+                  </Avatar>
+                )}
               </div>
-            </Dropdown>
+            </Tooltip>
+            {/* 退出登录按钮：独立图标 */}
+            <Tooltip title="退出登录">
+              <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>
+                {isMobile ? '' : '退出'}
+              </Button>
+            </Tooltip>
           </Space>
         </Header>
         <Content style={{ margin: 0 }}>

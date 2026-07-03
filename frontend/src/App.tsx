@@ -8,12 +8,8 @@ import { getThemeConfig } from '@/theme/themes'
 export default function App() {
   const theme = useSettingsStore((s) => s.theme)
   return (
-    // key={theme} 强制 ConfigProvider 在主题切换时重新挂载，确保 antd CSS 变量正确更新
-    <ConfigProvider
-      key={theme}
-      locale={zhCN}
-      theme={getThemeConfig(theme)}
-    >
+    // 主题切换完全由 antd cssVar 机制驱动（themes.ts 中每套主题均配置了 cssVar: { key: 'ant' }）
+    <ConfigProvider locale={zhCN} theme={getThemeConfig(theme)}>
       <RouterProvider router={router} />
     </ConfigProvider>
   )

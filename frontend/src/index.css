@@ -46,16 +46,16 @@ h1 { font-size: 28px; margin: 16px 0; }
 h2 { font-size: 22px; margin: 0 0 8px; }
 p { margin: 0; }
 
-/* ===== 卡片 hover 上浮动画（小学生喜欢动态反馈） ===== */
+/* ===== 卡片 hover 上浮动画 —— 跟随主题色 ===== */
 .ant-card {
   transition: transform 0.25s ease, box-shadow 0.25s ease !important;
 }
 .ant-card-hoverable:hover {
   transform: translateY(-4px) !important;
-  box-shadow: 0 8px 24px rgba(255,122,69,0.15) !important;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ant-color-primary) 18%, transparent) !important;
 }
 
-/* ===== 滚动条美化 ===== */
+/* ===== 滚动条美化 —— 跟随主题色 ===== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -64,11 +64,11 @@ p { margin: 0; }
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255,122,69,0.25);
+  background: color-mix(in srgb, var(--ant-color-primary) 25%, transparent);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,122,69,0.45);
+  background: color-mix(in srgb, var(--ant-color-primary) 45%, transparent);
 }
 
 /* ===== 按钮 hover 微缩放（触觉反馈） ===== */

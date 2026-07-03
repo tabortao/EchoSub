@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Row, Col, Table, Progress, Spin, Typography, Tag, Tabs, Button, Space, message, Alert, ConfigProvider } from 'antd'
+import { Card, Row, Col, Table, Progress, Spin, Tag, Tabs, Button, Space, message, Alert, ConfigProvider, Typography } from 'antd'
 import { CheckCircleOutlined, PlayCircleOutlined, FolderOutlined, LeftOutlined, RightOutlined, ReloadOutlined, FireOutlined, TrophyOutlined } from '@ant-design/icons'
 import { recordApi } from '@/api'
 import type { ProgressResponse, PlayRecord, StudyStatsResponse } from '@/types'
 import { formatDuration, formatRelative } from '@/utils'
 import { useNavigate } from 'react-router-dom'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 // 格式化日期为 YYYY-MM-DD（本地时区）
 function formatDate(d: Date): string {
@@ -172,12 +172,12 @@ export default function Records() {
     <Row gutter={[10, 10]} style={{ marginBottom: 16 }}>
       <Col span={8}>
         <div style={{
-          background: 'linear-gradient(135deg, rgba(255,122,69,0.08), rgba(255,122,69,0.18))',
+          background: 'linear-gradient(135deg, color-mix(in srgb, var(--ant-color-primary) 8%, transparent), color-mix(in srgb, var(--ant-color-primary) 18%, transparent))',
           borderRadius: 14, padding: '12px 8px', textAlign: 'center',
-          border: '1px solid rgba(255,122,69,0.2)',
+          border: '1px solid color-mix(in srgb, var(--ant-color-primary) 20%, transparent)',
         }}>
           <div style={{ fontSize: 20 }}>🔊</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#FF7A45', lineHeight: 1.2 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ant-color-primary)', lineHeight: 1.2 }}>
             {stats?.total_play ?? 0}
           </div>
           <div style={{ fontSize: 11, color: '#8c8c8c' }}>播放次数</div>
@@ -245,12 +245,12 @@ export default function Records() {
                     padding: '10px 6px',
                     textAlign: 'center',
                     background: s.is_current
-                      ? 'linear-gradient(135deg, rgba(255,122,69,0.12), rgba(255,179,122,0.20))'
+                      ? 'linear-gradient(135deg, color-mix(in srgb, var(--ant-color-primary) 12%, transparent), color-mix(in srgb, var(--ant-color-primary) 20%, transparent))'
                       : hasData
                         ? 'linear-gradient(180deg, #fff, #fef9f5)'
                         : '#fafafa',
-                    border: s.is_current ? '2px solid #FF7A45' : '1px solid #f0f0f0',
-                    boxShadow: s.is_current ? '0 4px 12px rgba(255,122,69,0.15)' : 'none',
+                    border: s.is_current ? '2px solid var(--ant-color-primary)' : '1px solid #f0f0f0',
+                    boxShadow: s.is_current ? `0 4px 12px color-mix(in srgb, var(--ant-color-primary) 15%, transparent)` : 'none',
                     opacity: hasData ? 1 : 0.5,
                     transition: 'all 0.2s',
                   }}
@@ -258,12 +258,12 @@ export default function Records() {
                   {/* 顶部：星期 + 日期号 */}
                   <div style={{
                     fontWeight: 700, fontSize: 13,
-                    color: s.is_current ? '#FF7A45' : '#595959',
+                    color: s.is_current ? 'var(--ant-color-primary)' : '#595959',
                   }}>
                     {weekdayLabels[i] ?? s.label}
                   </div>
                   <div style={{
-                    fontSize: 11, color: s.is_current ? '#FF7A45' : '#999',
+                    fontSize: 11, color: s.is_current ? 'var(--ant-color-primary)' : '#999',
                     marginBottom: 8, fontWeight: s.is_current ? 700 : 400,
                   }}>
                     {dayNum}日
@@ -274,11 +274,11 @@ export default function Records() {
                       width: '55%',
                       height: barHeight,
                       background: hasData
-                        ? 'linear-gradient(180deg, #FF7A45, #FFB37A)'
+                        ? 'linear-gradient(180deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))'
                         : '#e8e8e8',
                       borderRadius: '6px 6px 0 0',
                       transition: 'height 0.4s ease',
-                      boxShadow: hasData ? '0 2px 6px rgba(255,122,69,0.25)' : 'none',
+                      boxShadow: hasData ? `0 2px 6px color-mix(in srgb, var(--ant-color-primary) 25%, transparent)` : 'none',
                     }} />
                   </div>
                   {/* 下方每日数据 */}
@@ -325,18 +325,18 @@ export default function Records() {
                     borderRadius: 14,
                     textAlign: 'center',
                     background: s.is_current
-                      ? 'linear-gradient(135deg, rgba(255,122,69,0.10), rgba(255,179,122,0.18))'
+                      ? `linear-gradient(135deg, color-mix(in srgb, var(--ant-color-primary) 10%, transparent), color-mix(in srgb, var(--ant-color-primary) 18%, transparent))`
                       : hasData
-                        ? 'linear-gradient(180deg, #fff, #fef9f5)'
+                        ? `linear-gradient(180deg, #fff, color-mix(in srgb, var(--ant-color-primary) 4%, #fff))`
                         : '#fafafa',
-                    border: s.is_current ? '2px solid #FF7A45' : '1px solid #f0f0f0',
-                    boxShadow: s.is_current ? '0 4px 12px rgba(255,122,69,0.12)' : 'none',
+                    border: s.is_current ? `2px solid var(--ant-color-primary)` : '1px solid #f0f0f0',
+                    boxShadow: s.is_current ? `0 4px 12px color-mix(in srgb, var(--ant-color-primary) 12%, transparent)` : 'none',
                     opacity: hasData ? 1 : 0.55,
                     padding: 12,
                     transition: 'all 0.2s',
                   }}
                 >
-                  <div style={{ fontWeight: 700, color: s.is_current ? '#FF7A45' : '#1a1a1a', fontSize: 13 }}>
+                  <div style={{ fontWeight: 700, color: s.is_current ? 'var(--ant-color-primary)' : '#1a1a1a', fontSize: 13 }}>
                     {s.label}
                   </div>
                   <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', margin: '8px 0' }}>
@@ -344,11 +344,11 @@ export default function Records() {
                       width: '55%',
                       height: barHeight,
                       background: hasData
-                        ? 'linear-gradient(180deg, #FF7A45, #FFB37A)'
+                        ? 'linear-gradient(180deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))'
                         : '#e8e8e8',
                       borderRadius: '6px 6px 0 0',
                       transition: 'height 0.4s ease',
-                      boxShadow: hasData ? '0 2px 6px rgba(255,122,69,0.2)' : 'none',
+                      boxShadow: hasData ? `0 2px 6px color-mix(in srgb, var(--ant-color-primary) 20%, transparent)` : 'none',
                     }} />
                   </div>
                   <div style={{ fontSize: 11, color: '#666', lineHeight: 1.7 }}>
@@ -367,7 +367,7 @@ export default function Records() {
 
   return (
     <div>
-      <Title level={4} style={{ color: '#1a1a1a' }}>📊 学习记录</Title>
+      {/* 页面标题由 MainLayout Header 显示，此处不再重复 */}
 
       {/* 加载错误提示 + 重试 */}
       {loadError && (
@@ -415,7 +415,7 @@ export default function Records() {
             styles={{ body: { padding: '20px 24px' } }}
             cover={(
               <div style={{
-                background: 'linear-gradient(135deg, #FF7A45 0%, #FFB37A 100%)',
+                background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
                 padding: '18px 24px 28px',
                 position: 'relative',
                 overflow: 'hidden',
@@ -483,7 +483,7 @@ export default function Records() {
                       <Text strong style={{ fontSize: 16 }}>{weekRangeStr}</Text>
                       <Button icon={<RightOutlined />} onClick={nextWeek} shape="circle" disabled={weekDate >= formatDate(new Date())} />
                     </Space>
-                    <Button type="link" onClick={goTodayWeek} style={{ color: '#FF7A45' }}>回到本周</Button>
+                    <Button type="link" onClick={goTodayWeek} style={{ color: 'var(--ant-color-primary)' }}>回到本周</Button>
                   </div>
                   {renderWeekView()}
                 </div>
@@ -539,7 +539,7 @@ export default function Records() {
                 key={a.album}
                 style={{
                   marginBottom: 14, padding: '10px 14px', borderRadius: 12,
-                  background: 'linear-gradient(90deg, rgba(255,122,69,0.04), transparent)',
+                  background: `linear-gradient(90deg, color-mix(in srgb, var(--ant-color-primary) 4%, transparent), transparent)`,
                   border: '1px solid #fff0e6',
                 }}
               >
@@ -548,13 +548,13 @@ export default function Records() {
                     📂 {a.album}
                   </span>
                   <span style={{ color: '#8c8c8c', fontSize: 12 }}>
-                    已学 <Text strong style={{ color: '#FF7A45' }}>{a.played}</Text>/{a.total} · 共听 {a.total_played} 次
+                    已学 <Text strong style={{ color: 'var(--ant-color-primary)' }}>{a.played}</Text>/{a.total} · 共听 {a.total_played} 次
                   </span>
                 </div>
                 <Progress
                   percent={pct}
                   size="small"
-                  strokeColor={{ from: '#FF7A45', to: '#FFB37A' }}
+                  strokeColor={{ from: 'var(--ant-color-primary)', to: 'var(--ant-color-primary, #FFB37A)' }}
                   trailColor="#fff0e6"
                   format={(p) => <span style={{ fontSize: 11, color: '#8c8c8c' }}>{p}%</span>}
                 />
@@ -575,7 +575,7 @@ export default function Records() {
         </Card>
       ) : (
         <Card
-          title={<span><PlayCircleOutlined style={{ color: '#FF7A45', marginRight: 8 }} />播放记录</span>}
+          title={<span><PlayCircleOutlined style={{ color: 'var(--ant-color-primary)', marginRight: 8 }} />播放记录</span>}
           style={{ borderRadius: 18, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
           styles={{ header: { borderBottom: '1px solid #fff0e6', padding: '14px 20px' } }}
         >
@@ -583,7 +583,7 @@ export default function Records() {
             theme={{
               components: {
                 Table: {
-                  rowHoverBg: 'rgba(255,122,69,0.04)',
+                  rowHoverBg: `color-mix(in srgb, var(--ant-color-primary) 4%, transparent)`,
                 },
               },
             }}

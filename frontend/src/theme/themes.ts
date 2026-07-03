@@ -1,6 +1,10 @@
 /**
  * 界面主题定义 —— 小学生审美风格。
- * 每套主题包含 Ant Design token 覆写，由 App.tsx 中的 ConfigProvider 动态应用。
+ *
+ * 关键机制：每套主题均开启 `cssVar: { key: 'ant' }`，使得 antd v5 将 token
+ * 以 CSS 变量（如 --ant-color-primary）形式写入到文档根节点（或容器）。
+ * 所有页面凡需跟随主题切换的地方，均通过 var(--ant-*) 引用这些变量，
+ * 而不是硬编码颜色。
  *
  * 主题标识与后端 Setting.Theme 字段对应：
  * - default: 暖阳橙（默认）
@@ -12,6 +16,16 @@ import type { ThemeConfig } from 'antd'
 
 export type ThemeKey = 'default' | 'green' | 'purple' | 'blue'
 
+// ── 渐变色的辅助：为每个主题的 primary 提供同色系的浅色 ──
+// 用于渐变填充区域（如专辑封面底色、统计卡片等）
+const lighten = (hex: string, amt: number): string => {
+  const n = parseInt(hex.replace('#', ''), 16)
+  const r = Math.min(255, ((n >> 16) & 0xff) + amt)
+  const g = Math.min(255, ((n >> 8) & 0xff) + amt)
+  const b = Math.min(255, (n & 0xff) + amt)
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`
+}
+
 export interface ThemeMeta {
   key: ThemeKey
   /** 展示名称 */
@@ -20,9 +34,14 @@ export interface ThemeMeta {
   emoji: string
   /** 主色（用于色块预览） */
   primary: string
+  /** 主色浅色（用于渐变） */
+  primaryLight: string
   /** antd 完整 token 覆写 */
   config: ThemeConfig
 }
+
+// cssVar key 统一为 'ant' —— antd v5 会自动将 token 映射到 --ant-* 变量
+const cssVar = { key: 'ant' }
 
 export const THEMES: Record<ThemeKey, ThemeMeta> = {
   default: {
@@ -30,7 +49,9 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     label: '暖阳橙',
     emoji: '🌞',
     primary: '#FF7A45',
+    primaryLight: lighten('#FF7A45', 40),
     config: {
+      cssVar,
       token: {
         colorPrimary: '#FF7A45',
         colorLink: '#FF7A45',
@@ -61,7 +82,9 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     label: '清新绿野',
     emoji: '🌿',
     primary: '#52C41A',
+    primaryLight: lighten('#52C41A', 40),
     config: {
+      cssVar,
       token: {
         colorPrimary: '#52C41A',
         colorLink: '#52C41A',
@@ -92,7 +115,9 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     label: '梦幻紫蓝',
     emoji: '💜',
     primary: '#722ED1',
+    primaryLight: lighten('#722ED1', 40),
     config: {
+      cssVar,
       token: {
         colorPrimary: '#722ED1',
         colorLink: '#722ED1',
@@ -123,7 +148,9 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
     label: '天空蓝',
     emoji: '🌊',
     primary: '#1890FF',
+    primaryLight: lighten('#1890FF', 40),
     config: {
+      cssVar,
       token: {
         colorPrimary: '#1890FF',
         colorLink: '#1890FF',
@@ -155,4 +182,10 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
 export function getThemeConfig(key: string | undefined): ThemeConfig {
   const k = (key && key in THEMES ? key : 'default') as ThemeKey
   return THEMES[k].config
+}
+
+/** 获取当前主题元数据 */
+export function getThemeMeta(key: string | undefined): ThemeMeta {
+  const k = (key && key in THEMES ? key : 'default') as ThemeKey
+  return THEMES[k]
 }

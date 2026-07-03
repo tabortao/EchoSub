@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Card, Breadcrumb, List, Tag, Upload, Progress, message, Typography, Space, Button, Empty, Spin } from 'antd'
+import {
+  Card, Breadcrumb, List, Tag, Upload, Progress, message, Typography, Space, Button, Empty, Spin,
+  Modal, Input, Dropdown, type MenuProps,
+} from 'antd'
 import type { UploadFile } from 'antd'
 import {
   UploadOutlined,
@@ -8,12 +11,17 @@ import {
   InboxOutlined,
   ReloadOutlined,
   HomeOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  FolderAddOutlined,
+  ExportOutlined,
+  MoreOutlined,
 } from '@ant-design/icons'
 import { mediaApi } from '@/api'
 import type { BrowseEntry } from '@/types'
 import { formatSize } from '@/utils'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { Dragger } = Upload
 
 // 文件扩展名 → emoji 图标
@@ -35,6 +43,17 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0)
   const [fileList, setFileList] = useState<UploadFile[]>([])
 
+  // 文件管理弹窗
+  const [mkdirOpen, setMkdirOpen] = useState(false)
+  const [mkdirValue, setMkdirValue] = useState('')
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<BrowseEntry | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [moveTarget, setMoveTarget] = useState<BrowseEntry | null>(null)
+  const [moveValue, setMoveValue] = useState('')
+  const [actioning, setActioning] = useState(false)
+
   const load = async (p: string) => {
     setLoading(true)
     try {
@@ -53,7 +72,6 @@ export default function UploadPage() {
     load('')
   }, [])
 
-  // path 统一用 / 分隔（后端已归一化）
   const pathSegments = path ? path.split('/').filter(Boolean) : []
 
   const enterDir = (name: string) => {
@@ -72,6 +90,107 @@ export default function UploadPage() {
     load(pathSegments.slice(0, idx + 1).join('/'))
   }
 
+  // ── 新建目录 ──
+  const openMkdir = () => {
+    setMkdirValue('')
+    setMkdirOpen(true)
+  }
+  const handleMkdir = async () => {
+    const name = mkdirValue.trim()
+    if (!name) { message.warning('请输入目录名'); return }
+    setActioning(true)
+    try {
+      const newPath = path ? `${path}/${name}` : name
+      await mediaApi.mkdir(newPath)
+      message.success('目录已创建')
+      setMkdirOpen(false)
+      setMkdirValue('')
+      load(path)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '创建失败'
+      message.error(msg)
+    } finally {
+      setActioning(false)
+    }
+  }
+
+  // ── 删除文件/目录 ──
+  const handleDelete = async (entry: BrowseEntry) => {
+    setActioning(true)
+    try {
+      const targetPath = path ? `${path}/${entry.name}` : entry.name
+      if (entry.is_dir) {
+        await mediaApi.deleteDir(targetPath)
+        message.success('目录已删除')
+      } else {
+        await mediaApi.deleteFile(targetPath)
+        message.success('文件已删除')
+      }
+      load(path)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '删除失败'
+      message.error(msg)
+    } finally {
+      setActioning(false)
+    }
+  }
+
+  // ── 重命名 ──
+  const openRename = (entry: BrowseEntry) => {
+    setRenameTarget(entry)
+    setRenameValue(entry.name)
+    setRenameOpen(true)
+  }
+  const handleRename = async () => {
+    if (!renameTarget) return
+    const newName = renameValue.trim()
+    if (!newName) return
+    if (newName === renameTarget.name) { setRenameOpen(false); return }
+    setActioning(true)
+    try {
+      const oldPath = path ? `${path}/${renameTarget.name}` : renameTarget.name
+      const newPath = path ? `${path}/${newName}` : newName
+      await mediaApi.renamePath(oldPath, newPath)
+      message.success('重命名成功')
+      setRenameOpen(false)
+      setRenameTarget(null)
+      load(path)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '重命名失败'
+      message.error(msg)
+    } finally {
+      setActioning(false)
+    }
+  }
+
+  // ── 移动 ──
+  const openMove = (entry: BrowseEntry) => {
+    setMoveTarget(entry)
+    setMoveValue('')
+    setMoveOpen(true)
+  }
+  const handleMove = async () => {
+    if (!moveTarget) return
+    const dest = moveValue.trim()
+    if (!dest) return
+    setActioning(true)
+    try {
+      const oldPath = path ? `${path}/${moveTarget.name}` : moveTarget.name
+      const newPath = `${dest}/${moveTarget.name}`
+      await mediaApi.movePath(oldPath, newPath)
+      message.success('移动成功')
+      setMoveOpen(false)
+      setMoveTarget(null)
+      load(path)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '移动失败'
+      message.error(msg)
+    } finally {
+      setActioning(false)
+    }
+  }
+
+  // ── 上传 ──
   const handleUpload = async () => {
     const realFiles = fileList
       .map((f) => f.originFileObj)
@@ -100,7 +219,6 @@ export default function UploadPage() {
     }
   }
 
-  // 面包屑 items（antd v5 用 items prop 替代 Breadcrumb.Item 子组件）
   const breadcrumbItems = [
     { title: <a onClick={() => load('')}><HomeOutlined /> 根目录</a> },
     ...pathSegments.map((seg, idx) => ({
@@ -108,12 +226,40 @@ export default function UploadPage() {
     })),
   ]
 
+  // 为每个条目生成下拉菜单
+  const entryMenu = (entry: BrowseEntry): MenuProps['items'] => [
+    {
+      key: 'rename',
+      icon: <EditOutlined />,
+      label: '重命名',
+      onClick: () => openRename(entry),
+    },
+    {
+      key: 'move',
+      icon: <ExportOutlined />,
+      label: '移动到...',
+      onClick: () => openMove(entry),
+    },
+    { type: 'divider' },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined />,
+      label: <span style={{ color: '#ff4d4f' }}>删除</span>,
+      onClick: () => {
+        Modal.confirm({
+          title: `确认删除`,
+          content: `确定要删除「${entry.name}」吗？${entry.is_dir ? '目录及其中所有文件都将被删除。' : '数据库中的学习记录不会被删除。'}`,
+          okText: '删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => handleDelete(entry),
+        })
+      },
+    },
+  ]
+
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16, color: '#1a1a1a' }}>
-        ⬆️ 上传文件
-      </Title>
-
       {/* 目录浏览 */}
       <Card
         size="small"
@@ -127,7 +273,12 @@ export default function UploadPage() {
             )}
           </Space>
         }
-        extra={<Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => load(path)}>刷新</Button>}
+        extra={
+          <Space>
+            <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => load(path)}>刷新</Button>
+            <Button size="small" type="primary" icon={<FolderAddOutlined />} onClick={openMkdir}>新建目录</Button>
+          </Space>
+        }
         style={{ marginBottom: 16 }}
       >
         <Breadcrumb items={breadcrumbItems} style={{ marginBottom: 12 }} />
@@ -145,20 +296,27 @@ export default function UploadPage() {
                 style={{ cursor: item.is_dir ? 'pointer' : 'default', padding: '8px 12px', borderRadius: 8 }}
                 onClick={() => item.is_dir && enterDir(item.name)}
               >
-                <Space>
-                  {item.is_dir ? (
-                    <FolderOutlined style={{ color: '#1890FF', fontSize: 18 }} />
-                  ) : (
-                    <span style={{ fontSize: 16 }}>{fileEmoji(item.name)}</span>
-                  )}
-                  <Text style={{ color: item.is_dir ? '#1890FF' : '#333', fontWeight: item.is_dir ? 600 : 400 }}>{item.name}</Text>
-                  {!item.is_dir && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {formatSize(item.size)}
-                    </Text>
-                  )}
-                </Space>
-                {item.is_dir && <Tag color="blue" style={{ borderRadius: 8 }}>📁 文件夹</Tag>}
+                <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8 }}>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {item.is_dir ? (
+                      <FolderOutlined style={{ color: '#1890FF', fontSize: 18 }} />
+                    ) : (
+                      <span style={{ fontSize: 16 }}>{fileEmoji(item.name)}</span>
+                    )}
+                    <Text style={{ color: item.is_dir ? '#1890FF' : '#333', fontWeight: item.is_dir ? 600 : 400 }}>{item.name}</Text>
+                    {!item.is_dir && (
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {formatSize(item.size)}
+                      </Text>
+                    )}
+                  </div>
+                  <Tag color={item.is_dir ? 'blue' : 'default'} style={{ borderRadius: 8, margin: 0 }}>
+                    {item.is_dir ? '📁 文件夹' : '📄 文件'}
+                  </Tag>
+                  <Dropdown menu={{ items: entryMenu(item) }} trigger={['click']} placement="bottomRight">
+                    <Button type="text" size="small" icon={<MoreOutlined />} onClick={(e) => e.stopPropagation()} />
+                  </Dropdown>
+                </div>
               </List.Item>
             )}
           />
@@ -192,7 +350,7 @@ export default function UploadPage() {
           style={{ marginBottom: 16 }}
         >
           <p className="ant-upload-drag-icon">
-            <InboxOutlined style={{ color: '#FF7A45' }} />
+            <InboxOutlined style={{ color: 'var(--ant-color-primary)' }} />
           </p>
           <p className="ant-upload-text">点击或拖拽文件到此处</p>
           <p className="ant-upload-hint">支持多文件上传，同名文件将自动跳过</p>
@@ -226,6 +384,71 @@ export default function UploadPage() {
           ✨ 上传完成后文件会自动被扫描入库，可在首页查看。
         </Text>
       </Card>
+
+      {/* 新建目录弹窗 */}
+      <Modal
+        title="新建目录"
+        open={mkdirOpen}
+        onOk={handleMkdir}
+        onCancel={() => setMkdirOpen(false)}
+        okText="创建"
+        cancelText="取消"
+        confirmLoading={actioning}
+      >
+        <Input
+          placeholder="请输入目录名"
+          value={mkdirValue}
+          onChange={(e) => setMkdirValue(e.target.value)}
+          onPressEnter={handleMkdir}
+          autoFocus
+          size="large"
+        />
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+          将在当前目录下创建子目录
+        </Text>
+      </Modal>
+
+      {/* 重命名弹窗 */}
+      <Modal
+        title="重命名"
+        open={renameOpen}
+        onOk={handleRename}
+        onCancel={() => { setRenameOpen(false); setRenameTarget(null) }}
+        okText="确定"
+        cancelText="取消"
+        confirmLoading={actioning}
+      >
+        <Input
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onPressEnter={handleRename}
+          autoFocus
+          size="large"
+        />
+      </Modal>
+
+      {/* 移动弹窗 */}
+      <Modal
+        title={`移动到...${moveTarget ? ` (${moveTarget.name})` : ''}`}
+        open={moveOpen}
+        onOk={handleMove}
+        onCancel={() => { setMoveOpen(false); setMoveTarget(null) }}
+        okText="移动"
+        cancelText="取消"
+        confirmLoading={actioning}
+      >
+        <Input
+          placeholder="输入目标目录的相对路径，如：English/Unit1"
+          value={moveValue}
+          onChange={(e) => setMoveValue(e.target.value)}
+          onPressEnter={handleMove}
+          autoFocus
+          size="large"
+        />
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+          输入相对于媒体根目录的目标路径（不需要包含文件名）
+        </Text>
+      </Modal>
     </div>
   )
 }

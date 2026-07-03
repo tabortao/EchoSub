@@ -90,6 +90,21 @@ export const mediaApi = {
   /** 删除专辑（递归删除磁盘目录 + DB 批量软删除） */
   deleteAlbum: (album: string) =>
     client.delete<ApiResponse>('/albums', { data: { album } }),
+  /** 新建目录 */
+  mkdir: (path: string) =>
+    client.post<{ data: { path: string } }>('/media/mkdir', { path }),
+  /** 删除目录（递归） */
+  deleteDir: (path: string) =>
+    client.delete<ApiResponse>('/media/dir', { params: { path } }),
+  /** 删除文件 */
+  deleteFile: (path: string) =>
+    client.delete<ApiResponse>('/media/file', { params: { path } }),
+  /** 重命名文件/目录 */
+  renamePath: (oldPath: string, newPath: string) =>
+    client.put<ApiResponse>('/media/path/rename', { old_path: oldPath, new_path: newPath }),
+  /** 移动文件/目录 */
+  movePath: (oldPath: string, newPath: string) =>
+    client.put<ApiResponse>('/media/path/move', { old_path: oldPath, new_path: newPath }),
 }
 
 // ===== 标签 =====

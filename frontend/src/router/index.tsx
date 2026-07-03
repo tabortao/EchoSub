@@ -6,6 +6,7 @@ import Albums from '@/pages/Albums'
 import Tags from '@/pages/Tags'
 import Records from '@/pages/Records'
 import Settings from '@/pages/Settings'
+import About from '@/pages/About'
 import Player from '@/pages/Player'
 import Upload from '@/pages/Upload'
 import StudyNotes from '@/pages/StudyNotes'
@@ -41,6 +42,7 @@ const routes: RouteObject[] = [
       { path: 'notes/:id', element: <NoteEditorPage /> },
       { path: 'records', element: <Records /> },
       { path: 'settings', element: <Settings /> },
+      { path: 'about', element: <About /> },
       { path: 'play/:id', element: <Player /> },
     ],
   },

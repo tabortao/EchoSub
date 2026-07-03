@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message, Tabs } from 'antd'
 import type { MenuProps } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -29,6 +29,7 @@ export default function Home() {
   const [keyword, setKeyword] = useState('')
   const [type, setType] = useState<string | undefined>(undefined)
   const [sort, setSort] = useState('name')
+  const [order] = useState<'asc' | 'desc'>('asc')
 
   // 是否进入网格视图（任一筛选条件激活时）
   const hasFilter = !!(albumFilter || subAlbumFilter || tagFilter || keyword || type)
@@ -51,7 +52,7 @@ export default function Home() {
       {/* 视图切换：有筛选时显示网格，否则显示 emby 横向滚动布局 */}
       {hasFilter ? (
         <GridView
-          keyword={keyword} type={type} sort={sort}
+          keyword={keyword} type={type} sort={sort} order={order}
           albumFilter={albumFilter} subAlbumFilter={subAlbumFilter} tagFilter={tagFilter}
           locationKey={location.key}
           token={token}
@@ -88,7 +89,7 @@ function FilterBar(props: {
       <Row gutter={[12, 12]}>
         <Col xs={24} md={12} lg={10} xl={8}>
           <Input
-            prefix={<SearchOutlined style={{ color: '#FF7A45' }} />}
+            prefix={<SearchOutlined style={{ color: 'var(--ant-color-primary)' }} />}
             placeholder="搜索媒体名称"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
@@ -134,14 +135,14 @@ function FilterBar(props: {
  * 网格视图：按筛选条件拉取媒体 + 学习页面，混排展示。
  */
 function GridView(props: {
-  keyword: string; type?: string; sort: string
+  keyword: string; type?: string; sort: string; order: 'asc' | 'desc'
   albumFilter?: string; subAlbumFilter?: string; tagFilter?: string
   locationKey: string
   token: string
   navigate: ReturnType<typeof useNavigate>
   searchParams: URLSearchParams; setSearchParams: (next: URLSearchParams) => void
 }) {
-  const { keyword, type, sort, albumFilter, subAlbumFilter, tagFilter, locationKey, token, navigate } = props
+  const { keyword, type, sort, order, albumFilter, subAlbumFilter, tagFilter, locationKey, token, navigate } = props
   const [loading, setLoading] = useState(true)
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [albums, setAlbums] = useState<Album[]>([])
@@ -157,7 +158,7 @@ function GridView(props: {
     setLoading(true)
     try {
       const mediaRes = await mediaApi.list({
-        keyword, type, sort, order: sort === 'name' ? 'asc' : 'desc', page: 1, size: 100,
+        keyword, type, sort, order: gridOrder, page: 1, size: 100,
         album: albumFilter, sub_album: subAlbumFilter, tag_id: tagFilter,
       })
       const mediaList = (mediaRes.data.data as MediaListResponse).list ?? []
@@ -189,7 +190,7 @@ function GridView(props: {
     const t = setTimeout(load, 300)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, type, sort, albumFilter, subAlbumFilter, tagFilter, locationKey])
+  }, [keyword, type, sort, order, albumFilter, subAlbumFilter, tagFilter, locationKey])
 
   const handleCreateNote = async () => {
     if (!albumFilter) return
@@ -245,8 +246,33 @@ function GridView(props: {
     else if (key === 'delete') handleDeleteMedia(item)
   }
 
+  // 升序/降序切换（名称排序时有效）
+  const toggleOrder = () => {
+    const next = order === 'asc' ? 'desc' : 'asc'
+    setGridOrder(next)
+  }
+  const [gridOrder, setGridOrder] = useState<'asc' | 'desc'>(order)
+  // 同步外部 order 变化
+  useEffect(() => { setGridOrder(order) }, [order])
+
+  const currentSortLabel = sort === 'name' ? '名称' : (sort === 'file_modified_at' ? '存入时间' : '时长')
+
   return (
     <>
+      {/* 排序工具栏 */}
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Text type="secondary" style={{ fontSize: 13 }}>排序：</Text>
+        <Tag color={sort === 'name' ? 'orange' : 'default'} style={{ borderRadius: 8 }}>{currentSortLabel}</Tag>
+        <Button
+          size="small"
+          type={sort === 'name' ? 'primary' : 'default'}
+          icon={gridOrder === 'asc' ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
+          onClick={toggleOrder}
+        >
+          {gridOrder === 'asc' ? '升序 ↑' : '降序 ↓'}
+        </Button>
+      </div>
+
       {/* 专辑详情下的工具栏补充：子专辑 Tabs（季）+ 新建学习页面 */}
       {albumFilter && (
         <div style={{ marginBottom: 16 }}>
