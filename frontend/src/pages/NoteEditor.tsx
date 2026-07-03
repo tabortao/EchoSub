@@ -13,6 +13,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
+import { useSettingsStore } from '@/store/settings'
 import { markdownToPlainText } from '@/utils'
 import type { StudyNote } from '@/types'
 
@@ -21,8 +22,9 @@ const { TextArea } = Input
 
 // VoiceCraft TTS 端点（免费公开服务，兼容 OpenAI TTS 格式）
 const TTS_ENDPOINT = 'https://tts.wangwangit.com/v1/audio/speech'
-// 英语学习场景默认英文女声
-const TTS_VOICE = 'en-US-JennyNeural'
+// 默认音色/语速兜底值（settings 未加载时使用，与后端默认值一致）
+const FALLBACK_TTS_VOICE = 'en-US-JennyNeural'
+const FALLBACK_TTS_SPEED = 1.0
 
 /**
  * 学习页面编辑器（独立路由页 /notes/:id）。
@@ -115,6 +117,9 @@ function NoteEditor({ note, token, onBack, onDelete }: NoteEditorProps) {
   const [ttsLoading, setTtsLoading] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // 从全局设置读取 TTS 默认音色与语速
+  const ttsVoice = useSettingsStore((s) => s.tts_voice) || FALLBACK_TTS_VOICE
+  const ttsSpeed = useSettingsStore((s) => s.tts_speed) || FALLBACK_TTS_SPEED
 
   // 标题/内容修改后保存
   const save = async (data: { title?: string; content?: string }) => {
@@ -173,8 +178,8 @@ function NoteEditor({ note, token, onBack, onDelete }: NoteEditorProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           input: text,
-          voice: TTS_VOICE,
-          speed: 1.0,
+          voice: ttsVoice,
+          speed: ttsSpeed,
           pitch: '0',
           style: 'general',
         }),

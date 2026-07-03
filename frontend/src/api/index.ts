@@ -1,6 +1,7 @@
 import client from './client'
 import type {
   AuthResponse,
+  User,
   MediaFile,
   MediaListResponse,
   SubtitleResponse,
@@ -23,7 +24,23 @@ export const authApi = {
     client.post<ApiResponse<AuthResponse>>('/auth/register', { username, password }),
   login: (username: string, password: string) =>
     client.post<ApiResponse<AuthResponse>>('/auth/login', { username, password }),
-  me: () => client.get<ApiResponse>('/auth/me'),
+  me: () => client.get<ApiResponse<User>>('/auth/me'),
+  /** 修改密码（需验证旧密码） */
+  changePassword: (oldPassword: string, newPassword: string) =>
+    client.put<ApiResponse>('/auth/password', { old_password: oldPassword, new_password: newPassword }),
+  /** 修改用户名 */
+  updateProfile: (username: string) =>
+    client.put<ApiResponse<{ user: User; old_username: string }>>('/auth/profile', { username }),
+  /** 上传头像 */
+  uploadAvatar: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return client.post<ApiResponse<{ user: User }>>('/auth/avatar', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  /** 当前用户头像 URL（需拼接 token） */
+  avatarUrl: (token: string) => `/api/v1/auth/avatar?token=${encodeURIComponent(token)}`,
 }
 
 // ===== 媒体 =====

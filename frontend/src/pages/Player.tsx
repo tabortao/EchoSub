@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Spin, Button, Typography, message } from 'antd'
-import { ArrowLeftOutlined } from '@ant-design/icons'
+import { Spin, Button, Typography, message, Tooltip } from 'antd'
+import { ArrowLeftOutlined, StepBackwardOutlined, StepForwardOutlined } from '@ant-design/icons'
 import { mediaApi } from '@/api'
-import type { MediaFile, Sentence, MediaListItem } from '@/types'
+import type { MediaFile, Sentence, MediaListItem, MediaListResponse } from '@/types'
 import MediaPlayer from '@/components/MediaPlayer'
 
 const { Title } = Typography
 
+/**
+ * 播放器页面：加载单个媒体 + 字幕，并提供同专辑内上一个/下一个切换。
+ * 切换按钮基于当前媒体所在专辑的媒体列表（按存入时间排序）计算相邻项。
+ */
 export default function Player() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -15,6 +19,7 @@ export default function Player() {
   const [media, setMedia] = useState<MediaFile | null>(null)
   const [sentences, setSentences] = useState<Sentence[]>([])
   const [record, setRecord] = useState<MediaListItem | null>(null)
+  const [siblingIds, setSiblingIds] = useState<{ prev?: number; next?: number }>({})
 
   useEffect(() => {
     if (!id) return
@@ -31,6 +36,8 @@ export default function Player() {
         if (subRes) {
           setSentences(subRes.data.data.sentences ?? [])
         }
+        // 拉取同专辑媒体列表，计算上一个/下一个
+        await loadSiblings(d.media)
       } catch (err: unknown) {
         message.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '加载失败')
         navigate('/')
@@ -39,7 +46,35 @@ export default function Player() {
       }
     }
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, navigate])
+
+  // 加载同专辑的媒体列表，找出当前媒体的前后相邻项
+  const loadSiblings = async (m: MediaFile) => {
+    if (!m.album) {
+      setSiblingIds({})
+      return
+    }
+    try {
+      const res = await mediaApi.list({
+        album: m.album,
+        sub_album: m.sub_album ?? undefined,
+        sort: 'file_modified_at',
+        order: 'asc',
+        page: 1,
+        size: 200,
+      })
+      const list = (res.data.data as MediaListResponse).list ?? []
+      const ids = list.map((item) => item.media.id)
+      const idx = ids.indexOf(m.id)
+      setSiblingIds({
+        prev: idx > 0 ? ids[idx - 1] : undefined,
+        next: idx >= 0 && idx < ids.length - 1 ? ids[idx + 1] : undefined,
+      })
+    } catch {
+      setSiblingIds({})
+    }
+  }
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
@@ -49,14 +84,39 @@ export default function Player() {
     return null
   }
 
+  const goTo = (targetId: number | undefined) => {
+    if (targetId) navigate(`/play/${targetId}`, { replace: true })
+  }
+
   return (
     <div>
-      {/* 顶部：返回按钮在标题左侧 */}
+      {/* 顶部：返回 + 标题 + 上一个/下一个切换 */}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} title="返回" />
         <Title level={4} style={{ marginBottom: 0, marginRight: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {media.name}
         </Title>
+        {/* 同专辑内切换上一个/下一个学习内容 */}
+        {(siblingIds.prev || siblingIds.next) && (
+          <>
+            <Tooltip title={siblingIds.prev ? '上一个' : '已是第一个'}>
+              <Button
+                type="text"
+                icon={<StepBackwardOutlined />}
+                disabled={!siblingIds.prev}
+                onClick={() => goTo(siblingIds.prev)}
+              />
+            </Tooltip>
+            <Tooltip title={siblingIds.next ? '下一个' : '已是最后一个'}>
+              <Button
+                type="text"
+                icon={<StepForwardOutlined />}
+                disabled={!siblingIds.next}
+                onClick={() => goTo(siblingIds.next)}
+              />
+            </Tooltip>
+          </>
+        )}
       </div>
       <MediaPlayer
         mediaId={media.id}

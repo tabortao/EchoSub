@@ -90,17 +90,42 @@ export default function Login() {
         rules={[
           { required: true, message: '请输入用户名' },
           { min: 3, message: '至少 3 个字符' },
+          { max: 64, message: '最多 64 个字符' },
+          {
+            pattern: /^[a-zA-Z0-9_]+$/,
+            message: '仅允许字母、数字、下划线',
+          },
         ]}
+        extra={isRegister ? '3-64 字符，仅字母/数字/下划线' : undefined}
       >
         <Input placeholder="用户名" autoComplete="username" />
       </Form.Item>
       <Form.Item
         label="密码"
         name="password"
-        rules={[
-          { required: true, message: '请输入密码' },
-          { min: 6, message: '至少 6 个字符' },
-        ]}
+        rules={
+          isRegister
+            ? [
+                { required: true, message: '请输入密码' },
+                { min: 8, message: '至少 8 个字符' },
+                { max: 64, message: '最多 64 个字符' },
+                {
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve()
+                    const hasLetter = /[a-zA-Z]/.test(value)
+                    const hasDigit = /\d/.test(value)
+                    if (!hasLetter || !hasDigit) {
+                      return Promise.reject(new Error('需同时包含字母和数字'))
+                    }
+                    return Promise.resolve()
+                  },
+                },
+              ]
+            : [
+                { required: true, message: '请输入密码' },
+              ]
+        }
+        extra={isRegister ? '8-64 字符，需同时包含字母和数字' : undefined}
       >
         <Input.Password placeholder="密码" autoComplete={isRegister ? 'new-password' : 'current-password'} />
       </Form.Item>

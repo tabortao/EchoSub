@@ -11,6 +11,7 @@ type User struct {
 	ID           uint           `gorm:"primaryKey" json:"id"`
 	Username     string         `gorm:"uniqueIndex;size:64;not null" json:"username"`
 	PasswordHash string         `gorm:"size:255;not null" json:"-"`
+	AvatarPath   *string        `gorm:"size:1024" json:"avatar_path"` // 用户头像文件相对路径
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
@@ -83,11 +84,13 @@ type StudyNote struct {
 
 // Setting 用户学习偏好
 type Setting struct {
-	ID             uint  `gorm:"primaryKey" json:"id"`
-	UserID         uint  `gorm:"uniqueIndex;not null" json:"user_id"`
-	LoopCount      int   `json:"loop_count"`       // 整体循环次数
-	SentenceRepeat int   `json:"sentence_repeat"`  // 逐句重复次数
-	PauseSeconds   float64 `json:"pause_seconds"`  // 句末停顿秒数
+	ID             uint    `gorm:"primaryKey" json:"id"`
+	UserID         uint    `gorm:"uniqueIndex;not null" json:"user_id"`
+	LoopCount      int     `json:"loop_count"`       // 整体循环次数
+	SentenceRepeat int     `json:"sentence_repeat"`  // 逐句重复次数
+	PauseSeconds   float64 `json:"pause_seconds"`    // 句末停顿秒数
+	TTSVoice       string  `gorm:"size:64" json:"tts_voice"`     // TTS 默认语音
+	TTSSpeed       float64 `json:"tts_speed"`        // TTS 默认语速（0.5-2.0）
 }
 
 // TableName 显式指定表名（避免复数问题）

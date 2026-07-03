@@ -3,6 +3,7 @@
 export interface User {
   id: number
   username: string
+  avatar_path: string | null
   created_at?: string
 }
 
@@ -116,6 +117,8 @@ export interface Settings {
   loop_count: number
   sentence_repeat: number
   pause_seconds: number
+  tts_voice: string
+  tts_speed: number
 }
 
 export interface AlbumProgress {

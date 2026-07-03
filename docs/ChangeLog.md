@@ -7,6 +7,55 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.3.0] - 2026-07-03
+
+### Added
+
+#### 用户账户管理（修改密码 / 修改用户名 / 上传头像）
+
+- **后端 `handlers/auth.go`**：
+  - 新增 `validateUsername` / `validatePassword` 校验函数：用户名 `^[a-zA-Z0-9_]{3,64}$`，密码 8-64 字符且须同时包含字母和数字。**仅注册与修改时强制校验，不影响已注册用户登录**。
+  - `PUT /auth/password`：修改密码，需验证旧密码，新密码不能与旧密码相同，须满足强度要求。
+  - `PUT /auth/profile`：修改用户名，校验格式与唯一性（排除自身），返回新用户信息与旧用户名。
+  - `POST /auth/avatar`：上传头像（jpg/png/webp/gif，≤2MB），存储到 `data/avatars/<uid>/avatar.<ext>`，覆盖旧头像，更新 `User.AvatarPath`。
+  - `GET /auth/avatar`：返回当前登录用户头像文件（支持 `?token=` 查询鉴权，与媒体流一致）。
+  - `userToJSON` 统一返回 `{id, username, avatar_path, created_at}`。
+- **后端 `models/models.go`**：`User` 新增 `AvatarPath *string` 字段（AutoMigrate 自动加列）。
+- **后端 `router/router.go`**：注册 `PUT /auth/password`、`PUT /auth/profile`、`POST /auth/avatar`、`GET /auth/avatar` 路由。
+- **前端 `api/index.ts`**：`authApi` 新增 `changePassword` / `updateProfile` / `uploadAvatar` / `avatarUrl` 方法。
+- **前端 `store/auth.ts`**：新增 `updateUser(user)` 方法，修改用户名/头像后同步更新 localStorage 与 state，保留现有 token。
+- **前端 `pages/Settings.tsx`**：新增「账户管理」卡片——头像预览 + Upload 更换按钮（96px 圆形头像，有图片显示图片，无则首字母渐变占位）、用户名修改表单（带格式校验与 extra 提示）、密码修改表单（旧密码 + 新密码 + 确认密码，含字母+数字强度校验与两次一致性校验）。
+- **前端 `pages/Login.tsx`**：注册表单加强校验——用户名 pattern `^[a-zA-Z0-9_]+$` + extra「3-64 字符，仅字母/数字/下划线」；密码 min 8 + 自定义字母数字校验 + extra「8-64 字符，需同时包含字母和数字」。登录表单保持简单 required 校验。
+- **前端 `layouts/MainLayout.tsx`**：Header 头像支持图片显示——`user.avatar_path` 存在时渲染 `<Avatar src={authApi.avatarUrl(token)} />`，否则渲染首字母渐变头像。
+
+#### TTS 默认设置
+
+- **后端 `handlers/settings.go`**：`settingsReq` 新增 `TTSVoice` / `TTSSpeed` 字段；`GetSettings` 返回 TTS 默认值（`en-US-JennyNeural` / `1.0`），旧数据兜底补全；`UpdateSettings` 校验 `TTSSpeed` 范围 0.5-2.0。
+- **后端 `models/models.go`**：`Setting` 新增 `TTSVoice string` / `TTSSpeed float64` 字段。
+- **前端 `store/settings.ts`**：DEFAULTS 新增 `tts_voice: 'en-US-JennyNeural'` / `tts_speed: 1.0`。
+- **前端 `types/index.ts`**：`Settings` 接口新增 `tts_voice: string` / `tts_speed: number`。
+- **前端 `pages/Settings.tsx`**：学习偏好卡片新增「TTS 朗读默认设置」分区——语音下拉选择（9 种 Edge TTS 音色：美式/英式/澳式/中文男女声）+ 语速 Slider（0.5-2.0，0.1 步进，带刻度标记与实时倍数显示）。
+- **前端 `pages/NoteEditor.tsx`**：TTS 朗读不再使用硬编码 `TTS_VOICE` 常量，改为从 `useSettingsStore` 读取 `tts_voice` / `tts_speed`，未加载时兜底 `en-US-JennyNeural` / `1.0`。
+
+#### Emby 风格首页布局
+
+- **前端 `components/EmbyHome.tsx`（新建）**：Emby 风格横向滚动首页组件。
+  - **「继续学习」行**：并行拉取 `recordApi.list()`（最近播放记录，按 `last_played_at DESC`）与 `noteApi.list()`（最近学习页面），去重合并后按时间倒序取前 15 条，媒体与学习页面混排。媒体卡片底部显示橙色进度条（`last_position / duration`）。
+  - **「我的专辑」行**：学习 Emby「My Media」设计，每个专辑仅显示**一个封面入口卡片**（不再在首页平铺全部内容）。封面选择优先级：① 最近播放的视频 → ② 专辑内第一个视频 → ③ 最近播放的任意媒体 → ④ 第一个媒体。点击封面进入专辑详情页（网格视图）查看全部内容。卡片为 220×330 竖向海报，底部黑色渐变叠层显示专辑名 + 项数 + 「🎬 含视频」+ 最近播放时间，悬停时上浮放大 + 淡入「进入专辑」播放图标提示。
+  - **「独立资源」行**：未归入专辑的散落文件仍以媒体卡片形式横向滚动展示。
+  - **媒体海报卡片**：180px 宽竖向卡片，封面 240px 高（复用 MediaCover），类型角标（🎬视频/🎵音频）+ 播放次数角标 + 悬停播放图标 + 标题 + 相对时间/专辑名。
+- **前端 `pages/Home.tsx`**：重构为视图切换——无筛选条件时渲染 `<EmbyHome>`（emby 横向滚动布局），有筛选条件（album/sub_album/tag_id/keyword/type）时渲染 `<GridView>`（专辑详情网格视图，含搜索栏、子专辑筛选、重命名/删除/**新建学习页面**按钮）。点击专辑封面通过 `setSearchParams({album})` 切换到网格视图。
+- **前端 `layouts/MainLayout.tsx`**：侧边栏移除「专辑」菜单项（`/albums` 路由保留，专辑改为首页封面入口展示）。
+
+#### 播放器上一个/下一个切换
+
+- **前端 `pages/Player.tsx`**：加载媒体后并行拉取同专辑（含子专辑）媒体列表（`mediaApi.list({album, sub_album, sort:'file_modified_at', order:'asc'})`），计算当前媒体的前后相邻 ID。标题右侧新增 ⏮ / ⏭ 按钮（`StepBackwardOutlined` / `StepForwardOutlined`），disabled 态 + Tooltip 提示「已是第一个/最后一个」，点击 `navigate(/play/:id, {replace:true})` 切换。
+
+### Changed
+
+- **`README.md`**：全文翻译为中文版，保留 Markdown 结构、代码命令与技术术语不变。
+- **前端 `pages/Settings.tsx`**：页面标题从「学习偏好设置」改为「设置」；说明卡片新增 TTS 与账户安全条目。
+
 ## [v0.2.0] - 2026-07-03
 
 ### Added

@@ -5,6 +5,7 @@ interface AuthState {
   user: User | null
   token: string | null
   setAuth: (user: User, token: string) => void
+  updateUser: (user: User) => void
   logout: () => void
   hydrate: () => void
 }
@@ -16,6 +17,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem('echosub_token', token)
     localStorage.setItem('echosub_user', JSON.stringify(user))
     set({ user, token })
+  },
+  // 更新用户信息（修改用户名/头像后调用），保留现有 token
+  updateUser: (user) => {
+    localStorage.setItem('echosub_user', JSON.stringify(user))
+    set({ user })
   },
   logout: () => {
     localStorage.removeItem('echosub_token')

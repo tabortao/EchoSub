@@ -1,7 +1,6 @@
 import { Layout, Button, Space, Drawer, Tooltip, Avatar } from 'antd'
 import {
   HomeOutlined,
-  FolderOutlined,
   TagOutlined,
   HistoryOutlined,
   SettingOutlined,
@@ -14,6 +13,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useAuthStore } from '@/store/auth'
 import { useSettingsStore } from '@/store/settings'
+import { authApi } from '@/api'
 import { Grid } from 'antd'
 
 const { Sider, Content, Header } = Layout
@@ -28,9 +28,9 @@ interface MenuItemCfg {
   emoji: string
 }
 
+// 侧边栏取消「专辑」入口，专辑改为首页按行展示（emby 风格）
 const menuItems: MenuItemCfg[] = [
   { key: '/', icon: <HomeOutlined />, label: '首页', color: '#FF7A45', emoji: '🏠' },
-  { key: '/albums', icon: <FolderOutlined />, label: '专辑', color: '#1890FF', emoji: '📂' },
   { key: '/tags', icon: <TagOutlined />, label: '标签', color: '#52C41A', emoji: '🏷️' },
   { key: '/upload', icon: <UploadOutlined />, label: '上传', color: '#722ED1', emoji: '⬆️' },
   { key: '/records', icon: <HistoryOutlined />, label: '学习记录', color: '#EB2F96', emoji: '📊' },
@@ -40,7 +40,7 @@ const menuItems: MenuItemCfg[] = [
 export default function MainLayout() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  const { user, token, logout } = useAuthStore()
   const loadSettings = useSettingsStore((s) => s.load)
   const screens = useBreakpoint()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -173,9 +173,13 @@ export default function MainLayout() {
           )}
           <Space>
             <Tooltip title={user?.username}>
-              <Avatar size={32} style={{ background: 'linear-gradient(135deg, #FF7A45, #FFB37A)', fontWeight: 600 }}>
-                {user?.username?.[0]?.toUpperCase() ?? 'U'}
-              </Avatar>
+              {user?.avatar_path ? (
+                <Avatar size={32} src={authApi.avatarUrl(token ?? '')} />
+              ) : (
+                <Avatar size={32} style={{ background: 'linear-gradient(135deg, #FF7A45, #FFB37A)', fontWeight: 600 }}>
+                  {user?.username?.[0]?.toUpperCase() ?? 'U'}
+                </Avatar>
+              )}
             </Tooltip>
             <Button type="text" icon={<LogoutOutlined />} onClick={handleLogout}>
               {isMobile ? '' : '退出'}

@@ -1,88 +1,88 @@
 # EchoSub
 
-A self-hosted web app for language learning and text recitation. Drop your video/audio + subtitle files into a watched folder (e.g. on a NAS), and EchoSub auto-discovers them, groups them into albums, and provides a sentence-repeat player with configurable pause, loop, and per-sentence progress tracking.
+一个用于语言学习和文本背诵的自托管 Web 应用。将你的视频/音频 + 字幕文件放入被监听的文件夹（例如 NAS 上），EchoSub 会自动发现它们、按专辑分组，并提供一个支持可配置暂停、循环和逐句进度跟踪的逐句复读播放器。
 
-[中文功能需求](docs/需求文档.md) | [Changelog](docs/ChangeLog.md)
+[中文功能需求](docs/需求文档.md) | [更新日志](docs/ChangeLog.md)
 
-## Features
+## 功能特性
 
-- **Auto scan & watch**: Full sweep on boot + `fsnotify` live watcher for incremental updates.
-- **Album grouping**: First path segment under the media root becomes the album name.
-- **Subtitle parsing**: SRT / WebVTT, unified `Sentence{Index, Start, End, Text}`. Handles UTF-8 BOM, CRLF, `HH:MM:SS,mmm` / `MM:SS,mmm` / `SS,mmm` timestamps.
-- **Sentence-repeat player**: Repeat each sentence M times → pause K seconds → next sentence; overall loop N times.
-- **Per-sentence progress**: Mark sentences completed, track repeat counts, aggregate by album/tag.
-- **Tags**: User-scoped CRUD, attach to media (overwrite semantics).
-- **JWT auth**: bcrypt password hashing, `golang-jwt/jwt/v5`.
-- **Streaming**: HTTP Range support for media files.
-- **Single binary**: Backend serves the built SPA, one port (default `8080`).
+- **自动扫描与监听**：启动时全量扫描 + `fsnotify` 实时监听器进行增量更新。
+- **专辑分组**：媒体根目录下的第一层路径段作为专辑名。
+- **字幕解析**：支持 SRT / WebVTT，统一为 `Sentence{Index, Start, End, Text}` 结构。处理 UTF-8 BOM、CRLF、`HH:MM:SS,mmm` / `MM:SS,mmm` / `SS,mmm` 时间戳格式。
+- **逐句复读播放器**：每句重复 M 次 → 暂停 K 秒 → 下一句；整体循环 N 次。
+- **逐句进度跟踪**：标记句子完成状态、跟踪重复次数、按专辑/标签聚合统计。
+- **标签管理**：用户级别的增删改查，可附加到媒体（覆盖语义）。
+- **JWT 认证**：bcrypt 密码哈希，使用 `golang-jwt/jwt/v5`。
+- **流式播放**：媒体文件支持 HTTP Range 请求。
+- **单二进制部署**：后端直接托管已构建的 SPA，单端口运行（默认 `8080`）。
 
-## Tech Stack
+## 技术栈
 
-| Layer    | Stack |
+| 层级     | 技术栈 |
 |----------|-------|
-| Backend  | Go 1.26 · Gin · GORM · SQLite (`glebarez/sqlite`, CGO-free) · JWT · fsnotify |
-| Frontend | React 19 · TypeScript 6 · Vite 8 · Ant Design 6 · zustand · axios · react-router-dom 7 |
-| Infra    | Docker multi-stage build · docker-compose · GitHub Actions (GHCR multi-arch) |
+| 后端     | Go 1.26 · Gin · GORM · SQLite (`glebarez/sqlite`, CGO-free) · JWT · fsnotify |
+| 前端     | React 19 · TypeScript 6 · Vite 8 · Ant Design 6 · zustand · axios · react-router-dom 7 |
+| 基础设施 | Docker 多阶段构建 · docker-compose · GitHub Actions (GHCR 多架构) |
 
-## Directory Layout
+## 目录结构
 
 ```
 EchoSub/
-├── backend/                # Go backend
-│   ├── cmd/server/         # Entrypoint (main.go)
+├── backend/                # Go 后端
+│   ├── cmd/server/         # 入口程序 (main.go)
 │   ├── internal/
-│   │   ├── config/         # Config loader (env > yaml > defaults)
-│   │   ├── database/       # GORM + SQLite bootstrap
-│   │   ├── handlers/       # HTTP handlers (auth/media/tag/record/scan/settings)
-│   │   ├── middleware/     # JWT auth + CORS
-│   │   ├── models/         # GORM models
-│   │   ├── router/         # Route registration
-│   │   ├── scanner/        # Media scanner + fsnotify watcher
-│   │   └── utils/          # Response helpers
-│   ├── pkg/subtitle/       # SRT/VTT parser (+ tests)
+│   │   ├── config/         # 配置加载器 (env > yaml > 默认值)
+│   │   ├── database/       # GORM + SQLite 初始化
+│   │   ├── handlers/       # HTTP 处理器 (auth/media/tag/record/scan/settings)
+│   │   ├── middleware/     # JWT 认证 + CORS
+│   │   ├── models/         # GORM 数据模型
+│   │   ├── router/         # 路由注册
+│   │   ├── scanner/        # 媒体扫描器 + fsnotify 监听器
+│   │   └── utils/          # 响应辅助工具
+│   ├── pkg/subtitle/       # SRT/VTT 解析器 (含测试)
 │   ├── config.example.yaml
 │   └── go.mod
-├── frontend/               # React SPA
+├── frontend/               # React 单页应用
 │   ├── src/
-│   │   ├── api/            # axios client + API modules
-│   │   ├── components/     # MediaPlayer
-│   │   ├── layouts/        # MainLayout
+│   │   ├── api/            # axios 客户端 + API 模块
+│   │   ├── components/     # MediaPlayer 媒体播放器
+│   │   ├── layouts/        # MainLayout 主布局
 │   │   ├── pages/          # Home/Albums/Tags/Records/Settings/Player/Login
-│   │   ├── router/         # ProtectedRoute
-│   │   ├── store/          # zustand (auth/settings)
-│   │   ├── types/          # TS definitions
-│   │   └── utils/          # format helpers
-│   └── vite.config.ts      # @ alias + /api proxy → :8080
-├── test-media/             # Sample media for local testing
-├── docs/                   # Requirements + Changelog
-├── Dockerfile              # 3-stage build
-├── docker-compose.yml      # NAS deployment
-└── .github/workflows/      # CI
+│   │   ├── router/         # ProtectedRoute 路由守卫
+│   │   ├── store/          # zustand 状态管理 (auth/settings)
+│   │   ├── types/          # TS 类型定义
+│   │   └── utils/          # 格式化辅助工具
+│   └── vite.config.ts      # @ 别名 + /api 代理 → :8080
+├── test-media/             # 本地测试用示例媒体
+├── docs/                   # 需求文档 + 更新日志
+├── Dockerfile              # 3 阶段构建
+├── docker-compose.yml      # NAS 部署配置
+└── .github/workflows/      # CI 持续集成
 ```
 
-## Prerequisites
+## 前置要求
 
-- **Go** ≥ 1.26 (CGO not required)
-- **Node.js** ≥ 20 + **pnpm** (or npm/yarn)
-- **PowerShell** or any shell
-- *(optional)* **Docker** for containerized deployment
+- **Go** ≥ 1.26（无需 CGO）
+- **Node.js** ≥ 20 + **pnpm**（或 npm/yarn）
+- **PowerShell** 或任意 Shell
+- *（可选）* **Docker** 用于容器化部署
 
-> China network: set `GOPROXY=https://goproxy.cn,direct` for faster Go module downloads.
+> 中国大陆网络环境：设置 `GOPROXY=https://goproxy.cn,direct` 可加速 Go 模块下载。
 
-## Quick Start (Development)
+## 快速开始（开发模式）
 
-### 1. Backend
+### 1. 后端
 
 ```powershell
 cd backend
-copy config.example.yaml config.yaml   # then edit media.dir if needed
+copy config.example.yaml config.yaml   # 然后按需修改 media.dir
 go mod download
 go run ./cmd/server
 ```
 
-The server listens on `http://localhost:8080`.
+服务器监听 `http://localhost:8080`。
 
-Override any setting via env vars (prefix `ECHOSUB_`):
+通过环境变量覆盖任意配置（前缀 `ECHOSUB_`）：
 
 ```powershell
 $env:ECHOSUB_MEDIA_DIR = "D:\Code\Go\EchoSub\test-media"
@@ -90,84 +90,84 @@ $env:ECHOSUB_JWT_SECRET = "dev-secret"
 go run ./cmd/server
 ```
 
-### 2. Frontend (dev server with HMR)
+### 2. 前端（带 HMR 热更新的开发服务器）
 
 ```powershell
 cd frontend
 pnpm install
-pnpm dev。
+pnpm dev
 ```
 
-Vite dev server runs on `http://localhost:5173` and proxies `/api` → `http://localhost:8080`.
+Vite 开发服务器运行在 `http://localhost:5173`，并将 `/api` 代理到 `http://localhost:8080`。
 
-Open `http://localhost:5173`, register a new account, and start using the app.
+打开 `http://localhost:5173`，注册新账号即可开始使用。
 
-## Configuration
+## 配置说明
 
-| Env var                | yaml path              | Default                      | Description                |
+| 环境变量               | yaml 路径             | 默认值                       | 描述                       |
 |------------------------|------------------------|------------------------------|----------------------------|
-| `ECHOSUB_PORT`         | `server.port`          | `8080`                       | HTTP port                  |
-| `ECHOSUB_DB_PATH`      | `database.path`        | `data/echosub.db`            | SQLite file path           |
-| `ECHOSUB_JWT_SECRET`   | `jwt.secret`           | `change-me-in-production`    | JWT signing secret         |
-| `ECHOSUB_MEDIA_DIR`    | `media.dir`            | `/media`                     | Media root directory       |
+| `ECHOSUB_PORT`         | `server.port`          | `8080`                       | HTTP 端口                  |
+| `ECHOSUB_DB_PATH`      | `database.path`        | `data/echosub.db`            | SQLite 文件路径            |
+| `ECHOSUB_JWT_SECRET`   | `jwt.secret`           | `change-me-in-production`    | JWT 签名密钥               |
+| `ECHOSUB_MEDIA_DIR`    | `media.dir`            | `/media`                     | 媒体根目录                 |
 
-Supported extensions: video `.mp4/.mkv/.mov/.webm/.avi`, audio `.mp3/.m4a/.aac/.wav/.flac/.ogg`, subtitle `.srt/.vtt`.
+支持的文件扩展名：视频 `.mp4/.mkv/.mov/.webm/.avi`，音频 `.mp3/.m4a/.aac/.wav/.flac/.ogg`，字幕 `.srt/.vtt`。
 
-## How to Test
+## 测试方法
 
-### Unit Tests (Go)
+### 单元测试（Go）
 
 ```powershell
 cd backend
 go test ./... -v
 ```
 
-Covers the subtitle parser (SRT basic/CRLF/BOM/empty, VTT basic/short-format, timestamp parsing, duration formatting).
+覆盖字幕解析器（SRT 基础/CRLF/BOM/空文件、VTT 基础/短格式、时间戳解析、时长格式化）。
 
-### API Integration Test (end-to-end)
+### API 集成测试（端到端）
 
-A self-contained PowerShell script that boots the backend against an in-memory test DB and exercises the full auth → scan → media → subtitle → record → progress flow.
+一个自包含的 PowerShell 脚本，会启动后端（使用内存测试数据库）并完整走通 认证 → 扫描 → 媒体 → 字幕 → 记录 → 进度 流程。
 
 ```powershell
-# From repo root
+# 在仓库根目录执行
 .\scripts\test-api.ps1
 ```
 
-Run it manually step-by-step instead — see [scripts/test-api.ps1](scripts/test-api.ps1).
+也可以手动逐步执行 —— 详见 [scripts/test-api.ps1](scripts/test-api.ps1)。
 
-### Frontend Build Verification
+### 前端构建验证
 
 ```powershell
 cd frontend
 pnpm build      # tsc -b && vite build
 ```
 
-A clean build proves type-safety across the SPA.
+干净的构建可证明整个 SPA 的类型安全性。
 
-## Production Build
+## 生产构建
 
-### Single binary (serves SPA + API on one port)
+### 单二进制（同一端口同时提供 SPA + API 服务）
 
 ```powershell
-# Build frontend
+# 构建前端
 cd frontend
 pnpm install
-pnpm build           # outputs to frontend/dist
+pnpm build           # 输出到 frontend/dist
 
-# Build backend (it will pick up frontend/dist at runtime)
+# 构建后端（运行时会自动加载 frontend/dist）
 cd ../backend
 go build -o echosub.exe ./cmd/server
 ```
 
-Run from the **repo root** so `frontend/dist` is discoverable:
+请从**仓库根目录**运行，以便找到 `frontend/dist`：
 
 ```powershell
-cd ..   # repo root
+cd ..   # 仓库根目录
 $env:ECHOSUB_MEDIA_DIR = "D:\path\to\media"
 .\backend\echosub.exe
 ```
 
-Open `http://localhost:8080`.
+打开 `http://localhost:8080`。
 
 ### Docker
 
@@ -180,48 +180,48 @@ docker run -p 8080:8080 `
   echosub
 ```
 
-### NAS deployment via docker-compose
+### 通过 docker-compose 部署到 NAS
 
-Edit `docker-compose.yml` to point `/path/to/your/media` to your NAS share, then:
+编辑 `docker-compose.yml`，将 `/path/to/your/media` 指向你的 NAS 共享路径，然后：
 
 ```powershell
 docker compose up -d
 ```
 
-Pre-built multi-arch images (`linux/amd64`, `linux/arm64`) are pushed to `ghcr.io/yaole/echosub:latest` on every tag via GitHub Actions.
+GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`linux/arm64`）并推送到 `ghcr.io/yaole/echosub:latest`。
 
-## API Overview
+## API 概览
 
-All under `/api/v1`. Public: `POST /auth/register`, `POST /auth/login`, `GET /health`. Others require `Authorization: Bearer <jwt>`.
+所有接口均位于 `/api/v1` 下。公开接口：`POST /auth/register`、`POST /auth/login`、`GET /health`。其他接口需要 `Authorization: Bearer <jwt>` 请求头。
 
-| Method | Path                              | Description                          |
+| Method | Path                              | 描述                                  |
 |--------|-----------------------------------|--------------------------------------|
-| POST   | `/auth/register`                  | Register, returns JWT                |
-| POST   | `/auth/login`                     | Login, returns JWT                   |
-| GET    | `/auth/me`                        | Current user                         |
-| GET    | `/media`                          | List (album/type/keyword/tag/sort)   |
-| GET    | `/media/:id`                      | Media detail + play record           |
-| GET    | `/media/:id/stream`               | Stream (HTTP Range)                  |
-| GET    | `/media/:id/subtitle`             | Parsed sentences + progress          |
-| GET    | `/albums`                         | Album list with counts               |
-| POST   | `/scan/trigger`                   | Trigger full rescan                  |
-| GET    | `/scan/status`                    | Scanner status                       |
-| GET    | `/tags`                           | List tags                            |
-| POST   | `/tags`                           | Create tag                           |
-| PUT    | `/tags/:id`                       | Update tag                           |
-| DELETE | `/tags/:id`                       | Delete tag                           |
-| POST   | `/media/:id/tags`                 | Assign tags (overwrite)              |
-| PUT    | `/records/:mediaId`               | Upsert play record                   |
-| GET    | `/records`                        | List play records                    |
-| GET    | `/records/:mediaId`               | Get one play record                  |
-| PUT    | `/records/:mediaId/sentences/:idx`| Upsert sentence progress             |
-| GET    | `/progress`                       | Aggregated progress (album/tag)      |
-| GET    | `/settings`                       | Get user settings                    |
-| PUT    | `/settings`                       | Update user settings                 |
+| POST   | `/auth/register`                  | 注册，返回 JWT                        |
+| POST   | `/auth/login`                     | 登录，返回 JWT                        |
+| GET    | `/auth/me`                        | 获取当前用户信息                      |
+| GET    | `/media`                          | 列表（支持 album/type/keyword/tag/sort 筛选） |
+| GET    | `/media/:id`                      | 媒体详情 + 播放记录                   |
+| GET    | `/media/:id/stream`               | 流式播放（支持 HTTP Range）           |
+| GET    | `/media/:id/subtitle`             | 已解析句子 + 进度                     |
+| GET    | `/albums`                         | 专辑列表（含数量统计）                |
+| POST   | `/scan/trigger`                   | 触发全量重新扫描                      |
+| GET    | `/scan/status`                    | 扫描器状态                            |
+| GET    | `/tags`                           | 标签列表                              |
+| POST   | `/tags`                           | 创建标签                              |
+| PUT    | `/tags/:id`                       | 更新标签                              |
+| DELETE | `/tags/:id`                       | 删除标签                              |
+| POST   | `/media/:id/tags`                 | 分配标签（覆盖式）                    |
+| PUT    | `/records/:mediaId`               | 新增或更新播放记录                    |
+| GET    | `/records`                        | 播放记录列表                          |
+| GET    | `/records/:mediaId`               | 获取单条播放记录                      |
+| PUT    | `/records/:mediaId/sentences/:idx`| 新增或更新句子进度                    |
+| GET    | `/progress`                       | 聚合进度（按专辑/标签）               |
+| GET    | `/settings`                       | 获取用户设置                          |
+| PUT    | `/settings`                       | 更新用户设置                          |
 
-## Default Test Account
+## 默认测试账号
 
-The integration test registers `testuser` / `test123456`. In your own runs, register any account via the UI or `POST /api/v1/auth/register`.
+集成测试会注册 `testuser` / `test123456`。在你自己的运行环境中，可通过 UI 或 `POST /api/v1/auth/register` 注册任意账号。
 
 ## 学习记录页面（Study Records）
 
@@ -277,4 +277,4 @@ volumes:
 
 ## License
 
-Private project. See repository settings.
+私有项目。详见仓库设置。

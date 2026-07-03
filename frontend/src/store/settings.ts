@@ -12,6 +12,8 @@ const DEFAULTS: Settings = {
   loop_count: 3,
   sentence_repeat: 3,
   pause_seconds: 1.5,
+  tts_voice: 'en-US-JennyNeural',
+  tts_speed: 1.0,
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({

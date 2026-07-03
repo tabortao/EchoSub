@@ -6,11 +6,12 @@ import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import MediaCover from '@/components/MediaCover'
+import EmbyHome from '@/components/EmbyHome'
 import type { MediaListResponse, MediaListItem, Album, StudyNote } from '@/types'
 
-const { Text, Title } = Typography
+const { Text } = Typography
 
-// 首页/专辑详情页混排数据项：媒体或学习页面，统一按时间戳排序
+// 网格视图混排数据项：媒体或学习页面，统一按时间戳排序
 type FeedItem =
   | { kind: 'media'; item: MediaListItem; ts: string }
   | { kind: 'note'; note: StudyNote; ts: string }
@@ -20,21 +21,134 @@ export default function Home() {
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const token = useAuthStore((s) => s.token) ?? ''
-  const [loading, setLoading] = useState(true)
-  const [feed, setFeed] = useState<FeedItem[]>([])
-  const [recentNotes, setRecentNotes] = useState<StudyNote[]>([])
+
+  // 筛选条件
+  const albumFilter = searchParams.get('album') ?? undefined
+  const subAlbumFilter = searchParams.get('sub_album') ?? undefined
+  const tagFilter = searchParams.get('tag_id') ?? undefined
   const [keyword, setKeyword] = useState('')
   const [type, setType] = useState<string | undefined>(undefined)
   const [sort, setSort] = useState('file_modified_at')
+
+  // 是否进入网格视图（任一筛选条件激活时）
+  const hasFilter = !!(albumFilter || subAlbumFilter || tagFilter || keyword || type)
+
+  return (
+    <div>
+      {/* 顶部工具栏：搜索 + 类型 + 排序（仅在有筛选时显示） */}
+      {hasFilter && (
+        <FilterBar
+          keyword={keyword} setKeyword={setKeyword}
+          type={type} setType={setType}
+          sort={sort} setSort={setSort}
+          albumFilter={albumFilter} subAlbumFilter={subAlbumFilter}
+          tagFilter={tagFilter}
+          searchParams={searchParams} setSearchParams={setSearchParams}
+          onClear={() => { setSearchParams({}); setKeyword(''); setType(undefined) }}
+        />
+      )}
+
+      {/* 视图切换：有筛选时显示网格，否则显示 emby 横向滚动布局 */}
+      {hasFilter ? (
+        <GridView
+          keyword={keyword} type={type} sort={sort}
+          albumFilter={albumFilter} subAlbumFilter={subAlbumFilter} tagFilter={tagFilter}
+          locationKey={location.key}
+          token={token}
+          navigate={navigate}
+          searchParams={searchParams} setSearchParams={setSearchParams}
+        />
+      ) : (
+        <EmbyHome
+          onPlayMedia={(id) => navigate(`/play/${id}`)}
+          onOpenNote={(id) => navigate(`/notes/${id}`)}
+          onOpenAlbum={(album) => setSearchParams({ album })}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * 顶部筛选栏：搜索框、类型、排序、清除。
+ * 子专辑筛选由 GridView 内部渲染（需要专辑数据）。
+ */
+function FilterBar(props: {
+  keyword: string; setKeyword: (v: string) => void
+  type: string | undefined; setType: (v: string | undefined) => void
+  sort: string; setSort: (v: string) => void
+  albumFilter?: string; subAlbumFilter?: string; tagFilter?: string
+  searchParams: URLSearchParams; setSearchParams: (next: URLSearchParams) => void
+  onClear: () => void
+}) {
+  const { keyword, setKeyword, type, setType, sort, setSort, albumFilter, subAlbumFilter, tagFilter,
+    searchParams, setSearchParams, onClear } = props
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} md={12} lg={10} xl={8}>
+          <Input
+            prefix={<SearchOutlined style={{ color: '#FF7A45' }} />}
+            placeholder="搜索媒体名称"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            allowClear
+            size="large"
+          />
+        </Col>
+        <Col xs={12} md={4} lg={3}>
+          <Select
+            placeholder="类型" allowClear style={{ width: '100%' }}
+            value={type} onChange={(v) => setType(v)} size="large"
+            options={[{ value: 'video', label: '🎬 视频' }, { value: 'audio', label: '🎵 音频' }]}
+          />
+        </Col>
+        <Col xs={12} md={4} lg={3}>
+          <Select
+            style={{ width: '100%' }} size="large"
+            value={sort} onChange={(v) => setSort(v)}
+            options={[
+              { value: 'file_modified_at', label: '📅 存入时间' },
+              { value: 'name', label: '🔤 名称' },
+              { value: 'duration', label: '⏱️ 时长' },
+            ]}
+          />
+        </Col>
+      </Row>
+      {(albumFilter || subAlbumFilter || tagFilter) && (
+        <Space wrap style={{ marginTop: 12 }}>
+          <span style={{ color: '#8c8c8c' }}>当前筛选：</span>
+          {albumFilter && <Tag color="orange" closable onClose={onClear} style={{ borderRadius: 8 }}>📂 {albumFilter}</Tag>}
+          {subAlbumFilter && <Tag color="cyan" closable onClose={() => {
+            const next = new URLSearchParams(searchParams); next.delete('sub_album'); setSearchParams(next)
+          }} style={{ borderRadius: 8 }}>📁 {subAlbumFilter}</Tag>}
+          {tagFilter && <Tag color="purple" closable onClose={onClear} style={{ borderRadius: 8 }}>🏷️ 标签筛选</Tag>}
+          <Button type="link" size="small" icon={<CloseCircleOutlined />} onClick={onClear}>清除</Button>
+        </Space>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 网格视图：按筛选条件拉取媒体 + 学习页面，混排展示。
+ */
+function GridView(props: {
+  keyword: string; type?: string; sort: string
+  albumFilter?: string; subAlbumFilter?: string; tagFilter?: string
+  locationKey: string
+  token: string
+  navigate: ReturnType<typeof useNavigate>
+  searchParams: URLSearchParams; setSearchParams: (next: URLSearchParams) => void
+}) {
+  const { keyword, type, sort, albumFilter, subAlbumFilter, tagFilter, locationKey, token, navigate } = props
+  const [loading, setLoading] = useState(true)
+  const [feed, setFeed] = useState<FeedItem[]>([])
   const [albums, setAlbums] = useState<Album[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [renameMedia, setRenameMedia] = useState<MediaListItem | null>(null)
   const [renameValue, setRenameValue] = useState('')
-
-  const albumFilter = searchParams.get('album') ?? undefined
-  const subAlbumFilter = searchParams.get('sub_album') ?? undefined
-  const tagFilter = searchParams.get('tag_id') ?? undefined
 
   const currentAlbum = albums.find((a) => a.album === albumFilter)
   const subAlbums = currentAlbum?.sub_albums ?? []
@@ -56,8 +170,7 @@ export default function Home() {
         const noteItems: FeedItem[] = notes.map((n) => ({
           kind: 'note' as const, note: n, ts: n.updated_at,
         }))
-        const merged = [...mediaItems, ...noteItems].sort((a, b) => b.ts.localeCompare(a.ts))
-        setFeed(merged)
+        setFeed([...mediaItems, ...noteItems].sort((a, b) => b.ts.localeCompare(a.ts)))
       } else {
         setFeed(mediaItems)
       }
@@ -73,17 +186,10 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (albumFilter) { setRecentNotes([]); return }
-    noteApi.list().then((res) => setRecentNotes((res.data.data.notes ?? []).slice(0, 6))).catch(() => {})
-  }, [albumFilter, location.key])
-
-  useEffect(() => {
     const t = setTimeout(load, 300)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, type, sort, albumFilter, subAlbumFilter, tagFilter, location.key])
-
-  const clearFilter = () => setSearchParams({})
+  }, [keyword, type, sort, albumFilter, subAlbumFilter, tagFilter, locationKey])
 
   const handleCreateNote = async () => {
     if (!albumFilter) return
@@ -91,8 +197,7 @@ export default function Home() {
     try {
       const res = await noteApi.create(albumFilter, newTitle.trim())
       message.success('已创建')
-      setCreateOpen(false)
-      setNewTitle('')
+      setCreateOpen(false); setNewTitle('')
       navigate(`/notes/${res.data.data.id}`)
     } catch { message.error('创建失败') }
   }
@@ -130,7 +235,6 @@ export default function Home() {
     })
   }
 
-  // ⋯ 菜单：重命名 + 删除（收进下拉菜单避免误触）
   const buildMediaMenu = (): MenuProps['items'] => [
     { key: 'rename', label: '✏️ 重命名', icon: <EditOutlined /> },
     { type: 'divider' },
@@ -141,102 +245,33 @@ export default function Home() {
     else if (key === 'delete') handleDeleteMedia(item)
   }
 
-  const showRecent = !albumFilter && !subAlbumFilter && !tagFilter && recentNotes.length > 0
-
   return (
-    <div>
-      {/* 筛选栏 */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={12} lg={10} xl={8}>
-          <Input
-            prefix={<SearchOutlined style={{ color: '#FF7A45' }} />}
-            placeholder="搜索媒体名称"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            allowClear
-            size="large"
-          />
-        </Col>
-        <Col xs={12} md={4} lg={3}>
-          <Select
-            placeholder="类型" allowClear style={{ width: '100%' }}
-            value={type} onChange={(v) => setType(v)} size="large"
-            options={[{ value: 'video', label: '🎬 视频' }, { value: 'audio', label: '🎵 音频' }]}
-          />
-        </Col>
-        {albumFilter && subAlbums.length > 0 && (
-          <Col xs={12} md={4} lg={3}>
+    <>
+      {/* 专辑详情下的工具栏补充：子专辑筛选 + 新建学习页面 */}
+      {albumFilter && (
+        <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {subAlbums.length > 0 && (
             <Select
-              placeholder="子专辑" allowClear style={{ width: '100%' }}
-              value={subAlbumFilter} size="large"
+              placeholder="子专辑" allowClear style={{ width: 180 }}
+              value={subAlbumFilter} size="middle"
               onChange={(v) => {
-                const next = new URLSearchParams(searchParams)
+                const next = new URLSearchParams(props.searchParams)
                 if (v) next.set('sub_album', v); else next.delete('sub_album')
-                setSearchParams(next)
+                props.setSearchParams(next)
               }}
               options={subAlbums.map((s) => ({ value: s.sub_album, label: `${s.sub_album} (${s.count})` }))}
             />
-          </Col>
-        )}
-        <Col xs={12} md={4} lg={3}>
-          <Select
-            style={{ width: '100%' }} size="large"
-            value={sort} onChange={(v) => setSort(v)}
-            options={[
-              { value: 'file_modified_at', label: '📅 存入时间' },
-              { value: 'name', label: '🔤 名称' },
-              { value: 'duration', label: '⏱️ 时长' },
-            ]}
-          />
-        </Col>
-        {albumFilter && (
-          <Col xs={24} md={6} lg={4}>
-            <Button type="primary" icon={<PlusOutlined />} block size="large" onClick={() => setCreateOpen(true)}>
-              新建学习页面
-            </Button>
-          </Col>
-        )}
-      </Row>
-
-      {/* 当前筛选 */}
-      {(albumFilter || subAlbumFilter || tagFilter) && (
-        <div style={{ marginBottom: 16 }}>
-          <Space wrap>
-            <span style={{ color: '#8c8c8c' }}>当前筛选：</span>
-            {albumFilter && <Tag color="orange" closable onClose={clearFilter} style={{ borderRadius: 8 }}>📂 {albumFilter}</Tag>}
-            {subAlbumFilter && <Tag color="cyan" closable onClose={() => {
-              const next = new URLSearchParams(searchParams)
-              next.delete('sub_album')
-              setSearchParams(next)
-            }} style={{ borderRadius: 8 }}>📁 {subAlbumFilter}</Tag>}
-            {tagFilter && <Tag color="purple" closable onClose={clearFilter} style={{ borderRadius: 8 }}>🏷️ 标签筛选</Tag>}
-            <Button type="link" size="small" icon={<CloseCircleOutlined />} onClick={clearFilter}>清除</Button>
-          </Space>
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+            新建学习页面
+          </Button>
         </div>
       )}
 
-      {/* 最近学习页面区块 */}
-      {showRecent && (
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Title level={5} style={{ margin: 0, fontWeight: 700, color: '#1a1a1a' }}>📝 最近学习页面</Title>
-            <Button type="link" onClick={() => navigate('/notes')} style={{ color: '#FF7A45' }}>查看全部 →</Button>
-          </div>
-          <Row gutter={[16, 16]}>
-            {recentNotes.map((n) => (
-              <Col xs={24} sm={12} md={8} lg={6} xl={6} xxl={4} key={`rn-${n.id}`}>
-                <NoteCard note={n} token={token} onClick={() => navigate(`/notes/${n.id}`)} />
-              </Col>
-            ))}
-          </Row>
-        </div>
-      )}
-
-      {/* 内容网格 */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
       ) : feed.length === 0 ? (
-        <Empty description="🎁 暂无内容，把文件放入媒体目录或创建学习页面吧~" />
+        <Empty description="🎁 没有匹配的内容" />
       ) : (
         <Row gutter={[16, 16]}>
           {feed.map((f) => (
@@ -254,13 +289,6 @@ export default function Home() {
                       >
                         {f.item.media.type === 'video' ? '🎬 视频' : '🎵 音频'}
                       </Tag>
-                      {f.item.media.album && (
-                        <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: 80, verticalAlign: 'middle' }}>
-                            {f.item.media.sub_album || f.item.media.album}
-                          </span>
-                        </Tag>
-                      )}
                       <PlayCircleOutlined style={{
                         position: 'absolute', top: '50%', left: '50%',
                         transform: 'translate(-50%, -50%)',
@@ -307,7 +335,6 @@ export default function Home() {
         </Row>
       )}
 
-      {/* 新建学习页面 Modal */}
       <Modal title="📝 新建学习页面" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={handleCreateNote} okText="创建" cancelText="取消">
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input placeholder="标题" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onPressEnter={handleCreateNote} size="large" autoFocus />
@@ -315,7 +342,6 @@ export default function Home() {
         </Space>
       </Modal>
 
-      {/* 重命名媒体 Modal */}
       <Modal title="✏️ 重命名媒体" open={!!renameMedia} onCancel={() => setRenameMedia(null)} onOk={handleRenameMedia} okText="确定" cancelText="取消">
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onPressEnter={handleRenameMedia} autoFocus size="large" placeholder="输入新名称（不含扩展名）" />
@@ -327,11 +353,11 @@ export default function Home() {
           )}
         </Space>
       </Modal>
-    </div>
+    </>
   )
 }
 
-// 学习页面卡片（混排 + 最近区块共用）
+// 学习页面卡片（网格视图用）
 function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; onClick: () => void }) {
   const hasImg = note.images && note.images.length > 0
   return (

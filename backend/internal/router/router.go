@@ -32,6 +32,10 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 	authed.Use(middleware.AuthRequired(cfg))
 	{
 		authed.GET("/auth/me", handlers.Me())
+		authed.PUT("/auth/password", handlers.ChangePassword())
+		authed.PUT("/auth/profile", handlers.UpdateProfile())
+		authed.POST("/auth/avatar", handlers.UploadAvatar(cfg))
+		authed.GET("/auth/avatar", handlers.ServeAvatar(cfg))
 
 		// 媒体
 		media := authed.Group("/media")
