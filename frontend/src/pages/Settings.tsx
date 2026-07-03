@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
   Card, Form, InputNumber, Button, message, Spin, Typography, Divider,
-  Input, Avatar, Upload, Slider, Select, Space,
+  Input, Avatar, Upload, Slider, Select, Space, Row, Col,
 } from 'antd'
-import { UserOutlined, LockOutlined, PictureOutlined } from '@ant-design/icons'
+import { UserOutlined, LockOutlined, PictureOutlined, CheckOutlined } from '@ant-design/icons'
 import { useSettingsStore } from '@/store/settings'
 import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/api'
+import { THEMES, type ThemeKey } from '@/theme/themes'
 import type { Settings, User } from '@/types'
 
 const { Title, Text } = Typography
@@ -25,7 +26,7 @@ const TTS_VOICES = [
 ]
 
 export default function SettingsPage() {
-  const { loaded, load, update, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed } = useSettingsStore()
+  const { loaded, load, update, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme } = useSettingsStore()
   const [form] = Form.useForm<Settings>()
   const [saving, setSaving] = useState(false)
 
@@ -35,9 +36,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (loaded) {
-      form.setFieldsValue({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed })
+      form.setFieldsValue({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme })
     }
-  }, [loaded, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, form])
+  }, [loaded, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme, form])
 
   const handleSave = async () => {
     try {
@@ -57,9 +58,64 @@ export default function SettingsPage() {
     return <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
   }
 
+  const handleThemeChange = async (key: ThemeKey) => {
+    if (key === theme) return
+    try {
+      await update({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme: key })
+      message.success(`已切换到「${THEMES[key].label}」主题`)
+    } catch {
+      message.error('主题切换失败')
+    }
+  }
+
   return (
     <div>
       <Title level={4}>设置</Title>
+
+      {/* 外观主题 */}
+      <Card title="🎨 外观主题" style={{ marginBottom: 16 }}>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>选择你喜欢的界面风格</Text>
+        <Row gutter={[12, 12]}>
+          {(Object.keys(THEMES) as ThemeKey[]).map((key) => {
+            const t = THEMES[key]
+            const active = (theme ?? 'default') === key
+            return (
+              <Col key={key} xs={12} sm={6}>
+                <div
+                  onClick={() => handleThemeChange(key)}
+                  style={{
+                    cursor: 'pointer',
+                    borderRadius: 14,
+                    border: active ? `3px solid ${t.primary}` : '3px solid transparent',
+                    background: `linear-gradient(135deg, ${t.primary}18, ${t.config.token?.colorBgLayout ?? '#fff'})`,
+                    padding: 16,
+                    textAlign: 'center',
+                    position: 'relative',
+                    transition: 'all 0.2s',
+                    boxShadow: active ? `0 4px 16px ${t.primary}40` : '0 2px 8px rgba(0,0,0,0.04)',
+                  }}
+                >
+                  {active && (
+                    <div style={{
+                      position: 'absolute', top: 8, right: 8,
+                      width: 22, height: 22, borderRadius: '50%',
+                      background: t.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <CheckOutlined style={{ color: '#fff', fontSize: 12 }} />
+                    </div>
+                  )}
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>{t.emoji}</div>
+                  <div style={{ fontWeight: 600, color: '#1a1a1a', fontSize: 13 }}>{t.label}</div>
+                  <div style={{
+                    width: 40, height: 8, borderRadius: 4, margin: '8px auto 0',
+                    background: `linear-gradient(90deg, ${t.primary}, ${t.primary}80)`,
+                  }} />
+                </div>
+              </Col>
+            )
+          })}
+        </Row>
+      </Card>
 
       {/* 学习偏好 + TTS 设置（统一持久化到后端 settings 表） */}
       <Card title="📚 学习偏好 & TTS 朗读" style={{ marginBottom: 16 }}>

@@ -76,3 +76,11 @@ p { margin: 0; }
   transform: scale(0.97);
   transition: transform 0.1s;
 }
+
+/* ===== 学习记录页表格斑马纹 ===== */
+.ant-table-wrapper .ant-table-tbody > tr.row-even > td {
+  background: var(--row-even-bg, #fff) !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr.row-odd > td {
+  background: var(--row-odd-bg, #fef9f5) !important;
+}

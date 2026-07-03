@@ -91,6 +91,7 @@ type Setting struct {
 	PauseSeconds   float64 `json:"pause_seconds"`    // 句末停顿秒数
 	TTSVoice       string  `gorm:"size:64" json:"tts_voice"`     // TTS 默认语音
 	TTSSpeed       float64 `json:"tts_speed"`        // TTS 默认语速（0.5-2.0）
+	Theme          string  `gorm:"size:32;default:'default'" json:"theme"` // 界面主题标识
 }
 
 // TableName 显式指定表名（避免复数问题）

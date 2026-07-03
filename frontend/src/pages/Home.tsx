@@ -313,6 +313,11 @@ function GridView(props: {
                       >
                         {f.item.media.type === 'video' ? '🎬 视频' : '🎵 音频'}
                       </Tag>
+                      {f.item.play_count > 0 && (
+                        <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 8 }}>
+                          ▶ {f.item.play_count}
+                        </Tag>
+                      )}
                       <PlayCircleOutlined style={{
                         position: 'absolute', top: '50%', left: '50%',
                         transform: 'translate(-50%, -50%)',

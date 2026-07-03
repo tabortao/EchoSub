@@ -88,6 +88,8 @@ go run ./cmd/server
 $env:ECHOSUB_MEDIA_DIR = "D:\Code\Go\EchoSub\test-media"
 $env:ECHOSUB_JWT_SECRET = "dev-secret"
 go run ./cmd/server
+# 关闭已运行的实例
+Get-NetTCPConnection -LocalPort 8080 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
 ```
 
 ### 2. 前端（带 HMR 热更新的开发服务器）

@@ -11,18 +11,27 @@ import (
 	"github.com/yaole/EchoSub/backend/internal/utils"
 )
 
-// settingsReq 学习偏好 + TTS 设置
+// settingsReq 学习偏好 + TTS 设置 + 主题
 type settingsReq struct {
 	LoopCount      int     `json:"loop_count"`
 	SentenceRepeat int     `json:"sentence_repeat"`
 	PauseSeconds   float64 `json:"pause_seconds"`
 	TTSVoice       string  `json:"tts_voice"`
 	TTSSpeed       float64 `json:"tts_speed"`
+	Theme          string  `json:"theme"`
 }
 
 // 默认 TTS 语音
 const defaultTTSVoice = "en-US-JennyNeural"
 const defaultTTSSpeed = 1.0
+
+// 合法主题集合（避免任意字符串入库）
+var validThemes = map[string]bool{
+	"default": true,
+	"green":   true,
+	"purple":  true,
+	"blue":    true,
+}
 
 // GetSettings 获取当前用户的学习偏好
 func GetSettings() gin.HandlerFunc {
@@ -37,15 +46,19 @@ func GetSettings() gin.HandlerFunc {
 				"pause_seconds":   1.5,
 				"tts_voice":       defaultTTSVoice,
 				"tts_speed":       defaultTTSSpeed,
+				"theme":           "default",
 			})
 			return
 		}
-		// 兜底：旧数据可能没有 TTS 字段
+		// 兜底：旧数据可能没有 TTS / Theme 字段
 		if s.TTSVoice == "" {
 			s.TTSVoice = defaultTTSVoice
 		}
 		if s.TTSSpeed == 0 {
 			s.TTSSpeed = defaultTTSSpeed
+		}
+		if s.Theme == "" || !validThemes[s.Theme] {
+			s.Theme = "default"
 		}
 		utils.OK(c, s)
 	}
@@ -67,6 +80,10 @@ func UpdateSettings() gin.HandlerFunc {
 		if req.TTSSpeed < 0.5 || req.TTSSpeed > 2.0 {
 			req.TTSSpeed = defaultTTSSpeed
 		}
+		// Theme 兜底：非法值回退 default
+		if !validThemes[req.Theme] {
+			req.Theme = "default"
+		}
 		var s models.Setting
 		result := database.DB.Where("user_id = ?", uid).First(&s)
 		if result.Error != nil {
@@ -77,6 +94,7 @@ func UpdateSettings() gin.HandlerFunc {
 				PauseSeconds:   req.PauseSeconds,
 				TTSVoice:       req.TTSVoice,
 				TTSSpeed:       req.TTSSpeed,
+				Theme:          req.Theme,
 			}
 			database.DB.Create(&s)
 		} else {
@@ -85,6 +103,7 @@ func UpdateSettings() gin.HandlerFunc {
 			s.PauseSeconds = req.PauseSeconds
 			s.TTSVoice = req.TTSVoice
 			s.TTSSpeed = req.TTSSpeed
+			s.Theme = req.Theme
 			database.DB.Save(&s)
 		}
 		utils.OK(c, s)

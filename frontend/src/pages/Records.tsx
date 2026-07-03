@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Row, Col, Statistic, Table, Progress, Spin, Typography, Empty, Tag, Tabs, Button, Space, message, Alert } from 'antd'
-import { CheckCircleOutlined, PlayCircleOutlined, FolderOutlined, LeftOutlined, RightOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Card, Row, Col, Table, Progress, Spin, Typography, Tag, Tabs, Button, Space, message, Alert, ConfigProvider } from 'antd'
+import { CheckCircleOutlined, PlayCircleOutlined, FolderOutlined, LeftOutlined, RightOutlined, ReloadOutlined, FireOutlined, TrophyOutlined } from '@ant-design/icons'
 import { recordApi } from '@/api'
 import type { ProgressResponse, PlayRecord, StudyStatsResponse } from '@/types'
 import { formatDuration, formatRelative } from '@/utils'
@@ -167,23 +167,47 @@ export default function Records() {
     },
   ]
 
-  // 渲染汇总卡片（周/月/年共用，紧凑一行）
+  // 渲染汇总卡片（周/月/年共用，渐变背景）
   const renderSummaryRow = () => (
-    <Row gutter={8} style={{ marginBottom: 12 }}>
+    <Row gutter={[10, 10]} style={{ marginBottom: 16 }}>
       <Col span={8}>
-        <Card size="small" style={{ textAlign: 'center', borderRadius: 10, padding: '4px 0' }} bodyStyle={{ padding: 8 }}>
-          <Statistic title="🔊 播放次数" value={stats?.total_play ?? 0} valueStyle={{ color: '#FF7A45', fontSize: 18 }} />
-        </Card>
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(255,122,69,0.08), rgba(255,122,69,0.18))',
+          borderRadius: 14, padding: '12px 8px', textAlign: 'center',
+          border: '1px solid rgba(255,122,69,0.2)',
+        }}>
+          <div style={{ fontSize: 20 }}>🔊</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#FF7A45', lineHeight: 1.2 }}>
+            {stats?.total_play ?? 0}
+          </div>
+          <div style={{ fontSize: 11, color: '#8c8c8c' }}>播放次数</div>
+        </div>
       </Col>
       <Col span={8}>
-        <Card size="small" style={{ textAlign: 'center', borderRadius: 10, padding: '4px 0' }} bodyStyle={{ padding: 8 }}>
-          <Statistic title="🎵 学习媒体" value={stats?.total_media ?? 0} valueStyle={{ color: '#1890FF', fontSize: 18 }} />
-        </Card>
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(24,144,255,0.08), rgba(24,144,255,0.18))',
+          borderRadius: 14, padding: '12px 8px', textAlign: 'center',
+          border: '1px solid rgba(24,144,255,0.2)',
+        }}>
+          <div style={{ fontSize: 20 }}>🎵</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#1890FF', lineHeight: 1.2 }}>
+            {stats?.total_media ?? 0}
+          </div>
+          <div style={{ fontSize: 11, color: '#8c8c8c' }}>学习媒体</div>
+        </div>
       </Col>
       <Col span={8}>
-        <Card size="small" style={{ textAlign: 'center', borderRadius: 10, padding: '4px 0' }} bodyStyle={{ padding: 8 }}>
-          <Statistic title="✅ 背诵句子" value={stats?.total_sentence ?? 0} valueStyle={{ color: '#52C41A', fontSize: 18 }} />
-        </Card>
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(82,196,26,0.08), rgba(82,196,26,0.18))',
+          borderRadius: 14, padding: '12px 8px', textAlign: 'center',
+          border: '1px solid rgba(82,196,26,0.2)',
+        }}>
+          <div style={{ fontSize: 20 }}>✅</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#52C41A', lineHeight: 1.2 }}>
+            {stats?.total_sentence ?? 0}
+          </div>
+          <div style={{ fontSize: 11, color: '#8c8c8c' }}>背诵句子</div>
+        </div>
       </Col>
     </Row>
   )
@@ -194,7 +218,12 @@ export default function Records() {
       return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
     }
     if (!stats || stats.stats.length === 0) {
-      return <Empty description="暂无数据" />
+      return (
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>📊</div>
+          <div style={{ color: '#999' }}>本周还没有学习记录哦，快去播放吧~</div>
+        </div>
+      )
     }
     const maxPlay = Math.max(...stats.stats.map((s) => s.play_count), 1)
     const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
@@ -203,41 +232,57 @@ export default function Records() {
       <div>
         {renderSummaryRow()}
         {/* 单行 7 列：周一~周日，每日数据下方展示 */}
-        <Row gutter={6}>
+        <Row gutter={[8, 8]}>
           {stats.stats.map((s, i) => {
-            const barHeight = Math.max(4, (s.play_count / maxPlay) * 80)
+            const barHeight = Math.max(6, (s.play_count / maxPlay) * 80)
             const hasData = s.play_count > 0 || s.sentence_count > 0
-            // 日期中的「日」
             const dayNum = s.date.split('-')[2]
             return (
               <Col key={s.date} flex={1}>
                 <div
                   style={{
-                    borderRadius: 10,
-                    padding: '8px 4px',
+                    borderRadius: 14,
+                    padding: '10px 6px',
                     textAlign: 'center',
-                    background: s.is_current ? 'rgba(255,122,69,0.10)' : '#fff',
+                    background: s.is_current
+                      ? 'linear-gradient(135deg, rgba(255,122,69,0.12), rgba(255,179,122,0.20))'
+                      : hasData
+                        ? 'linear-gradient(180deg, #fff, #fef9f5)'
+                        : '#fafafa',
                     border: s.is_current ? '2px solid #FF7A45' : '1px solid #f0f0f0',
-                    opacity: hasData ? 1 : 0.55,
+                    boxShadow: s.is_current ? '0 4px 12px rgba(255,122,69,0.15)' : 'none',
+                    opacity: hasData ? 1 : 0.5,
+                    transition: 'all 0.2s',
                   }}
                 >
                   {/* 顶部：星期 + 日期号 */}
-                  <div style={{ fontWeight: 700, fontSize: 13, color: s.is_current ? '#FF7A45' : '#1a1a1a' }}>
+                  <div style={{
+                    fontWeight: 700, fontSize: 13,
+                    color: s.is_current ? '#FF7A45' : '#595959',
+                  }}>
                     {weekdayLabels[i] ?? s.label}
                   </div>
-                  <div style={{ fontSize: 11, color: '#999', marginBottom: 6 }}>{dayNum}日</div>
+                  <div style={{
+                    fontSize: 11, color: s.is_current ? '#FF7A45' : '#999',
+                    marginBottom: 8, fontWeight: s.is_current ? 700 : 400,
+                  }}>
+                    {dayNum}日
+                  </div>
                   {/* 柱状图 */}
-                  <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', marginBottom: 4 }}>
+                  <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', marginBottom: 6 }}>
                     <div style={{
-                      width: '50%',
+                      width: '55%',
                       height: barHeight,
-                      background: hasData ? 'linear-gradient(180deg, #FF7A45, #FFB37A)' : '#f0f0f0',
-                      borderRadius: '4px 4px 0 0',
-                      transition: 'height 0.3s',
+                      background: hasData
+                        ? 'linear-gradient(180deg, #FF7A45, #FFB37A)'
+                        : '#e8e8e8',
+                      borderRadius: '6px 6px 0 0',
+                      transition: 'height 0.4s ease',
+                      boxShadow: hasData ? '0 2px 6px rgba(255,122,69,0.25)' : 'none',
                     }} />
                   </div>
                   {/* 下方每日数据 */}
-                  <div style={{ fontSize: 11, lineHeight: 1.6, color: '#666' }}>
+                  <div style={{ fontSize: 11, lineHeight: 1.7, color: '#666' }}>
                     <div>🔊 {s.play_count}</div>
                     <div>🎵 {s.media_count}</div>
                     <div>✅ {s.sentence_count}</div>
@@ -257,48 +302,61 @@ export default function Records() {
       return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
     }
     if (!stats || stats.stats.length === 0) {
-      return <Empty description="暂无数据" />
+      return (
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 8 }}>📈</div>
+          <div style={{ color: '#999' }}>该时间段暂无学习记录~</div>
+        </div>
+      )
     }
     const maxPlay = Math.max(...stats.stats.map((s) => s.play_count), 1)
 
     return (
       <div>
         {renderSummaryRow()}
-        <Row gutter={[8, 8]}>
+        <Row gutter={[10, 10]}>
           {stats.stats.map((s) => {
-            const barHeight = Math.max(4, (s.play_count / maxPlay) * 80)
+            const barHeight = Math.max(6, (s.play_count / maxPlay) * 80)
             const hasData = s.play_count > 0 || s.sentence_count > 0
             return (
               <Col key={s.date} xs={12} sm={8} md={6} lg={4} xl={3}>
-                <Card
-                  size="small"
-                  bodyStyle={{ padding: 10 }}
+                <div
                   style={{
-                    borderRadius: 10,
+                    borderRadius: 14,
                     textAlign: 'center',
-                    background: s.is_current ? 'rgba(255,122,69,0.10)' : '#fff',
+                    background: s.is_current
+                      ? 'linear-gradient(135deg, rgba(255,122,69,0.10), rgba(255,179,122,0.18))'
+                      : hasData
+                        ? 'linear-gradient(180deg, #fff, #fef9f5)'
+                        : '#fafafa',
                     border: s.is_current ? '2px solid #FF7A45' : '1px solid #f0f0f0',
-                    opacity: hasData ? 1 : 0.6,
+                    boxShadow: s.is_current ? '0 4px 12px rgba(255,122,69,0.12)' : 'none',
+                    opacity: hasData ? 1 : 0.55,
+                    padding: 12,
+                    transition: 'all 0.2s',
                   }}
                 >
                   <div style={{ fontWeight: 700, color: s.is_current ? '#FF7A45' : '#1a1a1a', fontSize: 13 }}>
                     {s.label}
                   </div>
-                  <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', margin: '6px 0' }}>
+                  <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', margin: '8px 0' }}>
                     <div style={{
-                      width: '50%',
+                      width: '55%',
                       height: barHeight,
-                      background: hasData ? 'linear-gradient(180deg, #FF7A45, #FFB37A)' : '#f0f0f0',
-                      borderRadius: '4px 4px 0 0',
-                      transition: 'height 0.3s',
+                      background: hasData
+                        ? 'linear-gradient(180deg, #FF7A45, #FFB37A)'
+                        : '#e8e8e8',
+                      borderRadius: '6px 6px 0 0',
+                      transition: 'height 0.4s ease',
+                      boxShadow: hasData ? '0 2px 6px rgba(255,122,69,0.2)' : 'none',
                     }} />
                   </div>
-                  <div style={{ fontSize: 11, color: '#666', lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 11, color: '#666', lineHeight: 1.7 }}>
                     <div>🔊 {s.play_count} 次</div>
                     <div>🎵 {s.media_count} 媒体</div>
                     <div>✅ {s.sentence_count} 句</div>
                   </div>
-                </Card>
+                </div>
               </Col>
             )
           })}
@@ -322,36 +380,87 @@ export default function Records() {
         />
       )}
 
-      {/* 汇总统计卡片 */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      {/* 汇总统计卡片 —— 渐变背景 + 图标装饰 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
         <Col xs={24} sm={8}>
-          <Card style={{ borderRadius: 16 }}>
-            <Statistic
-              title="已背诵句子数"
-              value={progress?.completed_sentences ?? 0}
-              prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
-              valueStyle={{ color: '#52c41a' }}
-            />
+          <Card
+            style={{ borderRadius: 18, overflow: 'hidden', border: 'none' }}
+            styles={{ body: { padding: '20px 24px' } }}
+            cover={(
+              <div style={{
+                background: 'linear-gradient(135deg, #52C41A 0%, #73D13D 100%)',
+                padding: '18px 24px 28px',
+                position: 'relative',
+                overflow: 'hidden',
+              }}>
+                <div style={{ position: 'absolute', top: -10, right: -10, fontSize: 72, opacity: 0.18 }}>✅</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CheckCircleOutlined style={{ fontSize: 22, color: '#fff' }} />
+                  <span style={{ color: '#fff', fontSize: 14, fontWeight: 600, opacity: 0.95 }}>已背诵句子</span>
+                </div>
+                <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginTop: 4, lineHeight: 1.1 }}>
+                  {progress?.completed_sentences ?? 0}
+                </div>
+              </div>
+            )}
+          >
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+              每句都是进步的脚印 🌟
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={8}>
-          <Card style={{ borderRadius: 16 }}>
-            <Statistic
-              title="播放记录数"
-              value={records.length}
-              prefix={<PlayCircleOutlined style={{ color: '#FF7A45' }} />}
-              valueStyle={{ color: '#FF7A45' }}
-            />
+          <Card
+            style={{ borderRadius: 18, overflow: 'hidden', border: 'none' }}
+            styles={{ body: { padding: '20px 24px' } }}
+            cover={(
+              <div style={{
+                background: 'linear-gradient(135deg, #FF7A45 0%, #FFB37A 100%)',
+                padding: '18px 24px 28px',
+                position: 'relative',
+                overflow: 'hidden',
+              }}>
+                <div style={{ position: 'absolute', top: -10, right: -10, fontSize: 72, opacity: 0.18 }}>🎵</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <FireOutlined style={{ fontSize: 22, color: '#fff' }} />
+                  <span style={{ color: '#fff', fontSize: 14, fontWeight: 600, opacity: 0.95 }}>播放记录</span>
+                </div>
+                <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginTop: 4, lineHeight: 1.1 }}>
+                  {records.length}
+                </div>
+              </div>
+            )}
+          >
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+              坚持就是胜利 🔥
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={8}>
-          <Card style={{ borderRadius: 16 }}>
-            <Statistic
-              title="专辑数"
-              value={progress?.albums?.length ?? 0}
-              prefix={<FolderOutlined style={{ color: '#FAAD14' }} />}
-              valueStyle={{ color: '#FAAD14' }}
-            />
+          <Card
+            style={{ borderRadius: 18, overflow: 'hidden', border: 'none' }}
+            styles={{ body: { padding: '20px 24px' } }}
+            cover={(
+              <div style={{
+                background: 'linear-gradient(135deg, #FAAD14 0%, #FFC53D 100%)',
+                padding: '18px 24px 28px',
+                position: 'relative',
+                overflow: 'hidden',
+              }}>
+                <div style={{ position: 'absolute', top: -10, right: -10, fontSize: 72, opacity: 0.18 }}>📂</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <TrophyOutlined style={{ fontSize: 22, color: '#fff' }} />
+                  <span style={{ color: '#fff', fontSize: 14, fontWeight: 600, opacity: 0.95 }}>学习专辑</span>
+                </div>
+                <div style={{ fontSize: 36, fontWeight: 800, color: '#fff', marginTop: 4, lineHeight: 1.1 }}>
+                  {progress?.albums?.length ?? 0}
+                </div>
+              </div>
+            )}
+          >
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+              知识的宝藏 📚
+            </div>
           </Card>
         </Col>
       </Row>
@@ -418,33 +527,80 @@ export default function Records() {
 
       {/* 按专辑进度 */}
       {progress && progress.albums.length > 0 && (
-        <Card title="📁 按专辑进度" style={{ marginBottom: 16, borderRadius: 16 }}>
-          {progress.albums.map((a) => (
-            <div key={a.album} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontWeight: 600 }}>{a.album}</span>
-                <span style={{ color: '#888' }}>
-                  已学 {a.played}/{a.total} · 共听 {a.total_played} 次
-                </span>
+        <Card
+          title={<span><FolderOutlined style={{ color: '#FAAD14', marginRight: 8 }} />按专辑进度</span>}
+          style={{ marginBottom: 20, borderRadius: 18, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+          styles={{ header: { borderBottom: '1px solid #fff0e6', padding: '14px 20px' } }}
+        >
+          {progress.albums.map((a) => {
+            const pct = a.total > 0 ? Math.round((a.played / a.total) * 100) : 0
+            return (
+              <div
+                key={a.album}
+                style={{
+                  marginBottom: 14, padding: '10px 14px', borderRadius: 12,
+                  background: 'linear-gradient(90deg, rgba(255,122,69,0.04), transparent)',
+                  border: '1px solid #fff0e6',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, color: '#1a1a1a', fontSize: 14 }}>
+                    📂 {a.album}
+                  </span>
+                  <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+                    已学 <Text strong style={{ color: '#FF7A45' }}>{a.played}</Text>/{a.total} · 共听 {a.total_played} 次
+                  </span>
+                </div>
+                <Progress
+                  percent={pct}
+                  size="small"
+                  strokeColor={{ from: '#FF7A45', to: '#FFB37A' }}
+                  trailColor="#fff0e6"
+                  format={(p) => <span style={{ fontSize: 11, color: '#8c8c8c' }}>{p}%</span>}
+                />
               </div>
-              <Progress percent={a.total > 0 ? Math.round((a.played / a.total) * 100) : 0} size="small" strokeColor="#FF7A45" />
-            </div>
-          ))}
+            )
+          })}
         </Card>
       )}
 
       {/* 播放记录表 */}
       {records.length === 0 ? (
-        <Empty description="暂无播放记录" />
+        <Card style={{ borderRadius: 18, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+          <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🎧</div>
+            <div style={{ color: '#999', fontSize: 14 }}>还没有播放记录哦~</div>
+            <div style={{ color: '#bbb', fontSize: 12, marginTop: 4 }}>去首页播放一个媒体文件吧</div>
+          </div>
+        </Card>
       ) : (
-        <Card title="🎵 播放记录" style={{ borderRadius: 16 }}>
-          <Table
-            columns={columns}
-            dataSource={records}
-            rowKey="id"
-            pagination={{ pageSize: 20 }}
-            size="middle"
-          />
+        <Card
+          title={<span><PlayCircleOutlined style={{ color: '#FF7A45', marginRight: 8 }} />播放记录</span>}
+          style={{ borderRadius: 18, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+          styles={{ header: { borderBottom: '1px solid #fff0e6', padding: '14px 20px' } }}
+        >
+          <ConfigProvider
+            theme={{
+              components: {
+                Table: {
+                  rowHoverBg: 'rgba(255,122,69,0.04)',
+                },
+              },
+            }}
+          >
+            <Table
+              columns={columns}
+              dataSource={records}
+              rowKey="id"
+              pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条记录` }}
+              size="middle"
+              rowClassName={(_, index) => (index % 2 === 0 ? 'row-even' : 'row-odd')}
+              style={{
+                '--row-even-bg': '#fff',
+                '--row-odd-bg': '#fef9f5',
+              } as React.CSSProperties}
+            />
+          </ConfigProvider>
         </Card>
       )}
     </div>

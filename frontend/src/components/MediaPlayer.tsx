@@ -70,6 +70,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [playbackRate, setPlaybackRate] = useState(1)
   const [favoriteSet, setFavoriteSet] = useState<Set<number>>(new Set()) // 收藏的句子 index 集合
+  const [favoritePlayMode, setFavoritePlayMode] = useState(false) // 仅播放收藏句子模式
 
   // 可变状态（不触发渲染）
   const handlingEndRef = useRef(false)
@@ -83,6 +84,8 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   const loopCountRef = useRef(1)
   const sentencesRef = useRef<Sentence[]>(sentences)
   const currentSentenceIdxRef = useRef(-1)
+  const favoritePlayModeRef = useRef(false)
+  const favoriteSetRef = useRef<Set<number>>(new Set())
 
   // 同步 ref
   useEffect(() => { modeRef.current = mode }, [mode])
@@ -91,6 +94,8 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   useEffect(() => { loopCountRef.current = loopCount }, [loopCount])
   useEffect(() => { sentencesRef.current = localSentences }, [localSentences])
   useEffect(() => { currentSentenceIdxRef.current = currentSentenceIdx }, [currentSentenceIdx])
+  useEffect(() => { favoritePlayModeRef.current = favoritePlayMode }, [favoritePlayMode])
+  useEffect(() => { favoriteSetRef.current = favoriteSet }, [favoriteSet])
 
   // 从 sentences 初始化收藏集合
   useEffect(() => {
@@ -208,6 +213,8 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
 
           if (allDone) {
             // 全部完成，无需停顿，直接保存进度结束
+            // 修复：最后一遍重复也需要计数 repeat_count
+            incrementSentenceRepeat(curIdx)
             markSentenceCompleted(curIdx)
             savePosition(t, true)
             handlingEndRef.current = false
@@ -225,8 +232,41 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
               markSentenceCompleted(curIdx)
               sentenceRepeatRef.current = 0
               setRepeatCount(0)
-              if (hasNext) {
-                // 进入下一句
+
+              // 收藏播放模式：下一句目标从收藏集合中取
+              if (favoritePlayModeRef.current && favoriteSetRef.current.size > 0) {
+                const favSorted = Array.from(favoriteSetRef.current).sort((a, b) => a - b)
+                const curSenteIdx = list[curIdx].index
+                const nextFav = favSorted.find((idx) => idx > curSenteIdx)
+                if (nextFav != null) {
+                  const nextLocalIdx = list.findIndex((s) => s.index === nextFav)
+                  if (nextLocalIdx >= 0) {
+                    currentSentenceIdxRef.current = nextLocalIdx
+                    setCurrentSentenceIdx(nextLocalIdx)
+                    el.currentTime = list[nextLocalIdx].start
+                    el.play().then(() => setPlaying(true)).catch(() => {})
+                  }
+                } else {
+                  // 没有更多收藏句 → 整体循环回第一句收藏句，或结束
+                  const canLoop = overallLoopRef.current + 1 < loopCountRef.current
+                  if (canLoop && favSorted.length > 0) {
+                    overallLoopRef.current += 1
+                    const firstFav = favSorted[0]
+                    const firstLocalIdx = list.findIndex((s) => s.index === firstFav)
+                    if (firstLocalIdx >= 0) {
+                      currentSentenceIdxRef.current = firstLocalIdx
+                      setCurrentSentenceIdx(firstLocalIdx)
+                      el.currentTime = list[firstLocalIdx].start
+                      el.play().then(() => setPlaying(true)).catch(() => {})
+                    }
+                  } else {
+                    setPlaying(false)
+                    savePosition(el.currentTime, true)
+                    message.success('收藏句子播放完成')
+                  }
+                }
+              } else if (hasNext) {
+                // 普通模式：进入下一句
                 currentSentenceIdxRef.current = nextIdx
                 setCurrentSentenceIdx(nextIdx)
                 el.currentTime = list[nextIdx].start
@@ -309,6 +349,14 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     if (modeRef.current === 'repeat') return
     const el = mediaRef.current
     if (!el) return
+
+    // 修复：最后一句播放到媒体末尾时，timeupdate 可能没有机会在 t >= end 时触发，
+    // 导致该句的 repeat_count 未被计数。在 ended 事件中补计最后一句。
+    const lastIdx = currentSentenceIdxRef.current
+    if (lastIdx >= 0 && lastIdx < sentencesRef.current.length) {
+      incrementSentenceRepeat(lastIdx)
+    }
+
     if (overallLoopRef.current + 1 < loopCountRef.current) {
       overallLoopRef.current += 1
       el.currentTime = 0
@@ -646,9 +694,45 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
               key: 'fav',
               label: <span><StarFilled style={{ color: '#faad14' }} /> 收藏句子 {favoriteSet.size > 0 && <Tag color="orange" style={{ marginLeft: 4 }}>{favoriteSet.size}</Tag>}</span>,
               children: (
-                <div
-                  style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
-                >
+                <div>
+                  {/* 收藏播放控制栏 */}
+                  {favoriteSet.size > 0 && (
+                    <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Button
+                        type={favoritePlayMode ? 'primary' : 'default'}
+                        icon={favoritePlayMode ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                        size="small"
+                        onClick={() => {
+                          const next = !favoritePlayMode
+                          setFavoritePlayMode(next)
+                          if (next) {
+                            // 进入收藏播放模式：自动切到 repeat 模式，并跳到第一句收藏句
+                            if (modeRef.current !== 'repeat') setMode('repeat')
+                            const favSorted = Array.from(favoriteSet).sort((a, b) => a - b)
+                            const firstFav = favSorted[0]
+                            const firstLocalIdx = localSentences.findIndex((s) => s.index === firstFav)
+                            if (firstLocalIdx >= 0) {
+                              jumpToSentence(firstLocalIdx)
+                              message.success('已开始按收藏列表播放')
+                            }
+                          } else {
+                            message.info('已退出收藏播放模式')
+                          }
+                        }}
+                      >
+                        {favoritePlayMode ? '停止收藏播放' : '▶ 播放收藏'}
+                      </Button>
+                      {favoritePlayMode && (
+                        <Tag color="orange">收藏播放中…</Tag>
+                      )}
+                      <span style={{ color: '#999', fontSize: 12 }}>
+                        按收藏顺序逐句播放，播完自动跳下一句收藏
+                      </span>
+                    </div>
+                  )}
+                  <div
+                    style={{ maxHeight: 'calc(100vh - 470px)', minHeight: 160, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
+                  >
                   {favoriteSet.size === 0 ? (
                     <div style={{ textAlign: 'center', color: '#999', padding: 40 }}>
                       暂无收藏句子，点击字幕右侧星标收藏重难点
@@ -692,6 +776,7 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
                       )
                     })
                   )}
+                  </div>
                 </div>
               ),
             },

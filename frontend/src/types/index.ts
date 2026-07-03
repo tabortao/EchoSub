@@ -123,6 +123,8 @@ export interface Settings {
   pause_seconds: number
   tts_voice: string
   tts_speed: number
+  /** 界面主题标识：default | green | purple | blue */
+  theme?: string
 }
 
 export interface AlbumProgress {

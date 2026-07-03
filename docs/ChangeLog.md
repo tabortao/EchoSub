@@ -7,6 +7,44 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.4.0] - 2026-07-03
+
+### Added
+
+#### 界面主题切换（小学生审美 4 套主题）
+
+- **后端 `models/models.go`**：`Setting` 模型新增 `Theme string` 字段（`size:32;default:'default'`）。
+- **后端 `handlers/settings.go`**：`settingsReq` 新增 `Theme`；`validThemes` 白名单（`default/green/purple/blue`）；GET 返回与 PUT 写入均做兜底校验。
+- **前端 `theme/themes.ts`** ✨新增：4 套主题定义——暖阳橙（默认）/ 清新绿野 / 梦幻紫蓝 / 天空蓝，每套含完整 antd token 覆写。
+- **前端 `App.tsx`**：移除硬编码主题，改为读取 `useSettingsStore.theme` 动态应用 `getThemeConfig(theme)`。
+- **前端 `store/settings.ts`**：`DEFAULTS` 新增 `theme: 'default'`。
+- **前端 `types/index.ts`**：`Settings` 接口新增可选 `theme?: string`。
+- **前端 `pages/Settings.tsx`**：新增「🎨 外观主题」卡片——4 个主题色块（含 emoji、名称、主色条），点击切换并持久化，当前主题显示勾选标记。
+
+#### 收藏句子顺序播放
+
+- **前端 `components/MediaPlayer.tsx`**：新增 `favoritePlayMode` 状态与 `favoritePlayModeRef/favoriteSetRef`；「收藏句子」Tab 增加「▶ 播放收藏」按钮，点击后自动切到 repeat 模式并跳到第一句收藏句；repeat 决策逻辑中，收藏播放模式下「下一句」目标从 `favoriteSet` 按索引升序取下一句收藏句，无更多收藏句时整体循环回第一句或结束播放。
+
+#### 媒体封面播放次数徽标
+
+- **前端 `pages/Home.tsx`**：GridView 媒体卡片封面右上角新增 `▶ {play_count}` 橙色 Tag（`play_count > 0` 时显示）。
+
+#### 学习记录页面美化
+
+- **前端 `pages/Records.tsx`**：
+  - 汇总统计卡片：改为渐变背景 cover 样式（绿/橙/黄三色），含大字号数字、emoji 装饰、鼓励文字。
+  - 周/月/年统计卡片：渐变背景 + 当前日阴影高亮 + 柱状图投影。
+  - 汇总行（周/月/年共用）：改为独立渐变小卡片（播放/媒体/句子三色）。
+  - 按专辑进度：卡片化布局 + 渐变进度条（`from/to`）+ 百分比显示。
+  - 播放记录表：空状态自定义插画 + 表格斑马纹（通过 `rowClassName` + CSS 变量）+ 行悬停高亮。
+- **前端 `index.css`**：新增 `.row-even` / `.row-odd` 斑马纹样式。
+
+### Fixed
+
+- **前端 `components/MediaPlayer.tsx`**：修复最后一句字幕 `repeat_count` 不增加的问题。
+  - Normal 模式 `onEnded` 事件中，在循环/停止前补调 `incrementSentenceRepeat(lastIdx)`，解决媒体 `ended` 先于 `timeupdate(t>=end)` 触发导致的漏计数。
+  - Repeat 模式 `allDone` 分支补调 `incrementSentenceRepeat(curIdx)`，确保最后一遍重复也被计数。
+
 ## [v0.3.1] - 2026-07-03
 
 ### Added

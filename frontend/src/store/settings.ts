@@ -14,6 +14,7 @@ const DEFAULTS: Settings = {
   pause_seconds: 1.5,
   tts_voice: 'en-US-JennyNeural',
   tts_speed: 1.0,
+  theme: 'default',
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
