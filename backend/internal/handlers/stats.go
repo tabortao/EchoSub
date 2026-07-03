@@ -73,6 +73,9 @@ func GetStudyStats() gin.HandlerFunc {
 
 // getWeekStats 获取某一周（周一~周日）的每日统计
 func getWeekStats(uid uint, base time.Time) []studyStat {
+	// 归一到本地时区当天 0 点：time.Parse("2006-01-02") 返回 UTC 0 点，
+	// time.Now() 带当前时分秒，两者都会导致日界偏移，使某天的记录错算到相邻天。
+	base = time.Date(base.Year(), base.Month(), base.Day(), 0, 0, 0, 0, time.Local)
 	weekday := int(base.Weekday())
 	if weekday == 0 {
 		weekday = 7
@@ -159,12 +162,15 @@ func getMonthStats(uid uint, base time.Time) []studyStat {
 	return stats
 }
 
-// getYearStats 获取最近 5 年的统计
+// getYearStats 获取 base 所在年份往前共 5 年的统计。
+// 注意：年份范围以 base 为准（支持前端年度翻页），
+// IsCurrent 标记仍以真实当前年份为准。
 func getYearStats(uid uint, base time.Time) []studyStat {
+	endYear := base.Year()
 	currentYear := time.Now().Year()
 	stats := make([]studyStat, 0, 5)
 
-	for y := currentYear - 4; y <= currentYear; y++ {
+	for y := endYear - 4; y <= endYear; y++ {
 		start := time.Date(y, 1, 1, 0, 0, 0, 0, time.Local)
 		end := start.AddDate(1, 0, 0)
 

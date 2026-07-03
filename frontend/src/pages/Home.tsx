@@ -29,7 +29,7 @@ export default function Home() {
   const [keyword, setKeyword] = useState('')
   const [type, setType] = useState<string | undefined>(undefined)
   const [sort, setSort] = useState('name')
-  const [order] = useState<'asc' | 'desc'>('asc')
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc')
 
   // 是否进入网格视图（任一筛选条件激活时）
   const hasFilter = !!(albumFilter || subAlbumFilter || tagFilter || keyword || type)
@@ -52,7 +52,7 @@ export default function Home() {
       {/* 视图切换：有筛选时显示网格，否则显示 emby 横向滚动布局 */}
       {hasFilter ? (
         <GridView
-          keyword={keyword} type={type} sort={sort} order={order}
+          keyword={keyword} type={type} sort={sort} order={order} setOrder={setOrder}
           albumFilter={albumFilter} subAlbumFilter={subAlbumFilter} tagFilter={tagFilter}
           locationKey={location.key}
           token={token}
@@ -135,14 +135,14 @@ function FilterBar(props: {
  * 网格视图：按筛选条件拉取媒体 + 学习页面，混排展示。
  */
 function GridView(props: {
-  keyword: string; type?: string; sort: string; order: 'asc' | 'desc'
+  keyword: string; type?: string; sort: string; order: 'asc' | 'desc'; setOrder: (v: 'asc' | 'desc') => void
   albumFilter?: string; subAlbumFilter?: string; tagFilter?: string
   locationKey: string
   token: string
   navigate: ReturnType<typeof useNavigate>
   searchParams: URLSearchParams; setSearchParams: (next: URLSearchParams) => void
 }) {
-  const { keyword, type, sort, order, albumFilter, subAlbumFilter, tagFilter, locationKey, token, navigate } = props
+  const { keyword, type, sort, order, setOrder, albumFilter, subAlbumFilter, tagFilter, locationKey, token, navigate } = props
   const [loading, setLoading] = useState(true)
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [albums, setAlbums] = useState<Album[]>([])
@@ -158,7 +158,7 @@ function GridView(props: {
     setLoading(true)
     try {
       const mediaRes = await mediaApi.list({
-        keyword, type, sort, order: gridOrder, page: 1, size: 100,
+        keyword, type, sort, order, page: 1, size: 100,
         album: albumFilter, sub_album: subAlbumFilter, tag_id: tagFilter,
       })
       const mediaList = (mediaRes.data.data as MediaListResponse).list ?? []
@@ -248,12 +248,8 @@ function GridView(props: {
 
   // 升序/降序切换（名称排序时有效）
   const toggleOrder = () => {
-    const next = order === 'asc' ? 'desc' : 'asc'
-    setGridOrder(next)
+    setOrder(order === 'asc' ? 'desc' : 'asc')
   }
-  const [gridOrder, setGridOrder] = useState<'asc' | 'desc'>(order)
-  // 同步外部 order 变化
-  useEffect(() => { setGridOrder(order) }, [order])
 
   const currentSortLabel = sort === 'name' ? '名称' : (sort === 'file_modified_at' ? '存入时间' : '时长')
 
@@ -266,10 +262,10 @@ function GridView(props: {
         <Button
           size="small"
           type={sort === 'name' ? 'primary' : 'default'}
-          icon={gridOrder === 'asc' ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
+          icon={order === 'asc' ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
           onClick={toggleOrder}
         >
-          {gridOrder === 'asc' ? '升序 ↑' : '降序 ↓'}
+          {order === 'asc' ? '升序 ↑' : '降序 ↓'}
         </Button>
       </div>
 

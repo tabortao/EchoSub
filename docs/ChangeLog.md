@@ -76,6 +76,18 @@
 
 - **后端 `handlers/media.go`**：`ListMedia` 默认排序保持 `name ASC`（已是正确值），修改已在 v0.4.2 完成。**注：需重启后端让修改生效。**
 
+#### 专辑升降序排序不生效
+
+- **前端 `pages/Home.tsx`**：修复点击「升序/降序」按钮不刷新列表的问题。根因是 `Home` 的 `order` 状态缺少 setter（`const [order] = useState(...)`），且 `GridView` 内的 `gridOrder` 状态变化未加入 `load` 的依赖数组，导致切换排序方向既无法回到升序、也不会触发重新拉取。改为将 `order`/`setOrder` 提升至 `Home` 并下传，移除冗余的 `gridOrder` 状态与同步 `useEffect`，按钮直接切换 `order` 并即时刷新。
+
+#### 学习统计年度翻页失效
+
+- **后端 `handlers/stats.go`**：`getYearStats` 此前忽略 `base` 参数、始终以 `time.Now().Year()` 为终点，导致前端「年度」Tab 的上/下翻页按钮毫无效果。改为以 `base.Year()` 作为 5 年范围的终点，`IsCurrent` 仍以真实当前年份为准。
+
+#### 学习统计周日界偏移
+
+- **后端 `handlers/stats.go`**：`getWeekStats` 未将 `base` 归一到本地 0 点。`time.Parse("2006-01-02")` 返回 UTC 0 点、`time.Now()` 带当前时分秒，两者都会让每日统计窗口偏移，使某天的播放/背诵记录错算到相邻天。新增 `time.Date(base.Year(), base.Month(), base.Day(), 0,0,0,0, time.Local)` 归一化，确保按本地时区自然日切分。
+
 ### Added
 
 #### favicon + PWA 图标更新
