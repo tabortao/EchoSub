@@ -202,17 +202,22 @@ func GetSubtitle() gin.HandlerFunc {
 	}
 }
 
-// ListAlbums 列出所有专辑（含子专辑）
+// ListAlbums 列出所有专辑（含子专辑），带已看进度。
+// played 字段表示该专辑下，当前用户有过播放记录的媒体数量。
 func ListAlbums() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		uid := middleware.GetUserID(c)
+
 		type albumRow struct {
-			Album string `json:"album"`
-			Count int64  `json:"count"`
+			Album  string `json:"album"`
+			Count  int64  `json:"count"`
+			Played int64  `json:"played"`
 		}
 		var rows []albumRow
 		database.DB.Model(&models.MediaFile{}).
-			Select("album, count(*) as count").
-			Where("album IS NOT NULL AND album <> ''").
+			Select("album, count(*) as count, "+
+				"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
+			Where("album IS NOT NULL AND album <> '' AND deleted_at IS NULL").
 			Group("album").
 			Order("album ASC").
 			Scan(&rows)
@@ -220,22 +225,25 @@ func ListAlbums() gin.HandlerFunc {
 		type subAlbumRow struct {
 			SubAlbum string `json:"sub_album"`
 			Count    int64  `json:"count"`
+			Played   int64  `json:"played"`
 		}
 		type albumWithSubs struct {
 			Album     string        `json:"album"`
 			Count     int64         `json:"count"`
+			Played    int64         `json:"played"`
 			SubAlbums []subAlbumRow `json:"sub_albums"`
 		}
 		result := make([]albumWithSubs, 0, len(rows))
 		for _, r := range rows {
 			var subs []subAlbumRow
 			database.DB.Model(&models.MediaFile{}).
-				Select("sub_album, count(*) as count").
-				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> ''", r.Album).
+				Select("sub_album, count(*) as count, "+
+					"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
+				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> '' AND deleted_at IS NULL", r.Album).
 				Group("sub_album").
 				Order("sub_album ASC").
 				Scan(&subs)
-			result = append(result, albumWithSubs{Album: r.Album, Count: r.Count, SubAlbums: subs})
+			result = append(result, albumWithSubs{Album: r.Album, Count: r.Count, Played: r.Played, SubAlbums: subs})
 		}
 		utils.OK(c, gin.H{"albums": result})
 	}

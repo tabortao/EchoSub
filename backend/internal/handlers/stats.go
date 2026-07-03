@@ -89,18 +89,21 @@ func getWeekStats(uid uint, base time.Time) []studyStat {
 
 		var mediaCount int64
 		database.DB.Model(&models.PlayRecord{}).
-			Where("user_id = ? AND last_played_at >= ? AND last_played_at < ?", uid, day, nextDay).
+			Joins("JOIN media_files ON media_files.id = play_records.media_id AND media_files.deleted_at IS NULL").
+			Where("play_records.user_id = ? AND play_records.last_played_at >= ? AND play_records.last_played_at < ?", uid, day, nextDay).
 			Count(&mediaCount)
 
 		var sentenceCount int64
 		database.DB.Model(&models.SentenceProgress{}).
-			Where("user_id = ? AND updated_at >= ? AND updated_at < ? AND completed = ?", uid, day, nextDay, true).
+			Joins("JOIN media_files ON media_files.id = sentence_progresses.media_id AND media_files.deleted_at IS NULL").
+			Where("sentence_progresses.user_id = ? AND sentence_progresses.updated_at >= ? AND sentence_progresses.updated_at < ? AND sentence_progresses.completed = ?", uid, day, nextDay, true).
 			Count(&sentenceCount)
 
 		var totalPlayed int64
 		database.DB.Model(&models.PlayRecord{}).
-			Where("user_id = ? AND last_played_at >= ? AND last_played_at < ?", uid, day, nextDay).
-			Select("COALESCE(SUM(play_count), 0)").Scan(&totalPlayed)
+			Joins("JOIN media_files ON media_files.id = play_records.media_id AND media_files.deleted_at IS NULL").
+			Where("play_records.user_id = ? AND play_records.last_played_at >= ? AND play_records.last_played_at < ?", uid, day, nextDay).
+			Select("COALESCE(SUM(play_records.play_count), 0)").Scan(&totalPlayed)
 
 		stats = append(stats, studyStat{
 			Date:          dayStr,
@@ -128,18 +131,21 @@ func getMonthStats(uid uint, base time.Time) []studyStat {
 
 		var mediaCount int64
 		database.DB.Model(&models.PlayRecord{}).
-			Where("user_id = ? AND last_played_at >= ? AND last_played_at < ?", uid, start, end).
+			Joins("JOIN media_files ON media_files.id = play_records.media_id AND media_files.deleted_at IS NULL").
+			Where("play_records.user_id = ? AND play_records.last_played_at >= ? AND play_records.last_played_at < ?", uid, start, end).
 			Count(&mediaCount)
 
 		var sentenceCount int64
 		database.DB.Model(&models.SentenceProgress{}).
-			Where("user_id = ? AND updated_at >= ? AND updated_at < ? AND completed = ?", uid, start, end, true).
+			Joins("JOIN media_files ON media_files.id = sentence_progresses.media_id AND media_files.deleted_at IS NULL").
+			Where("sentence_progresses.user_id = ? AND sentence_progresses.updated_at >= ? AND sentence_progresses.updated_at < ? AND sentence_progresses.completed = ?", uid, start, end, true).
 			Count(&sentenceCount)
 
 		var totalPlayed int64
 		database.DB.Model(&models.PlayRecord{}).
-			Where("user_id = ? AND last_played_at >= ? AND last_played_at < ?", uid, start, end).
-			Select("COALESCE(SUM(play_count), 0)").Scan(&totalPlayed)
+			Joins("JOIN media_files ON media_files.id = play_records.media_id AND media_files.deleted_at IS NULL").
+			Where("play_records.user_id = ? AND play_records.last_played_at >= ? AND play_records.last_played_at < ?", uid, start, end).
+			Select("COALESCE(SUM(play_records.play_count), 0)").Scan(&totalPlayed)
 
 		stats = append(stats, studyStat{
 			Date:          strconv.Itoa(year) + "-" + fmt2d(m),
@@ -164,18 +170,21 @@ func getYearStats(uid uint, base time.Time) []studyStat {
 
 		var mediaCount int64
 		database.DB.Model(&models.PlayRecord{}).
-			Where("user_id = ? AND last_played_at >= ? AND last_played_at < ?", uid, start, end).
+			Joins("JOIN media_files ON media_files.id = play_records.media_id AND media_files.deleted_at IS NULL").
+			Where("play_records.user_id = ? AND play_records.last_played_at >= ? AND play_records.last_played_at < ?", uid, start, end).
 			Count(&mediaCount)
 
 		var sentenceCount int64
 		database.DB.Model(&models.SentenceProgress{}).
-			Where("user_id = ? AND updated_at >= ? AND updated_at < ? AND completed = ?", uid, start, end, true).
+			Joins("JOIN media_files ON media_files.id = sentence_progresses.media_id AND media_files.deleted_at IS NULL").
+			Where("sentence_progresses.user_id = ? AND sentence_progresses.updated_at >= ? AND sentence_progresses.updated_at < ? AND sentence_progresses.completed = ?", uid, start, end, true).
 			Count(&sentenceCount)
 
 		var totalPlayed int64
 		database.DB.Model(&models.PlayRecord{}).
-			Where("user_id = ? AND last_played_at >= ? AND last_played_at < ?", uid, start, end).
-			Select("COALESCE(SUM(play_count), 0)").Scan(&totalPlayed)
+			Joins("JOIN media_files ON media_files.id = play_records.media_id AND media_files.deleted_at IS NULL").
+			Where("play_records.user_id = ? AND play_records.last_played_at >= ? AND play_records.last_played_at < ?", uid, start, end).
+			Select("COALESCE(SUM(play_records.play_count), 0)").Scan(&totalPlayed)
 
 		stats = append(stats, studyStat{
 			Date:          strconv.Itoa(y),

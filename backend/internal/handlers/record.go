@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -52,12 +53,64 @@ func UpdateRecord() gin.HandlerFunc {
 }
 
 // ListRecords 列出当前用户的播放记录
+// 已软删除的媒体会被 Preload 置为零值 MediaFile（ID == 0），这里统一剔除，
+// 避免前端 Table 渲染时访问 undefined.name 崩溃。
 func ListRecords() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
 		var records []models.PlayRecord
 		database.DB.Where("user_id = ?", uid).Preload("Media").Order("last_played_at DESC").Find(&records)
-		utils.OK(c, gin.H{"records": records})
+		// 过滤掉关联媒体已被软删除的记录（Preload 失败时 Media.ID == 0）
+		valid := records[:0]
+		for i := range records {
+			if records[i].Media.ID != 0 {
+				valid = append(valid, records[i])
+			}
+		}
+		utils.OK(c, gin.H{"records": valid})
+	}
+}
+
+// ListRecent 列出当前用户每个媒体最近一条播放记录（按 media_id 去重），
+// 并按最后播放时间倒序。已软删除的媒体会被剔除。
+// 路由：GET /records/recent?limit=20
+func ListRecent() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := middleware.GetUserID(c)
+		limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+		if limit < 1 || limit > 100 {
+			limit = 20
+		}
+
+		// 子查询：每个媒体最近一次播放时间
+		latestSub := database.DB.Model(&models.PlayRecord{}).
+			Select("media_id, MAX(last_played_at) AS max_ts").
+			Where("user_id = ?", uid).
+			Group("media_id")
+
+		var records []models.PlayRecord
+		err := database.DB.
+			Joins("JOIN (?) latest ON latest.media_id = play_records.media_id AND latest.max_ts = play_records.last_played_at", latestSub).
+			Joins("JOIN media_files mf ON mf.id = play_records.media_id AND mf.deleted_at IS NULL").
+			Where("play_records.user_id = ?", uid).
+			Preload("Media").
+			Order("play_records.last_played_at DESC").
+			Limit(limit).
+			Find(&records).Error
+
+		if err != nil {
+			utils.Fail(c, http.StatusInternalServerError, "查询最近播放失败: "+err.Error())
+			return
+		}
+
+		// 理论上	Preload 只会命中未删除的媒体（有 JOIN mf 过滤），再做一次兜底
+		valid := records[:0]
+		for i := range records {
+			if records[i].Media.ID != 0 {
+				valid = append(valid, records[i])
+			}
+		}
+		utils.OK(c, gin.H{"records": valid})
 	}
 }
 

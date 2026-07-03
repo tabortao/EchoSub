@@ -68,6 +68,7 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 		records := authed.Group("/records")
 		{
 			records.GET("", handlers.ListRecords())
+			records.GET("/recent", handlers.ListRecent())
 			records.GET("/stats", handlers.GetStudyStats())
 			records.PUT("/:mediaId", handlers.UpdateRecord())
 			records.GET("/:mediaId", handlers.GetRecord())

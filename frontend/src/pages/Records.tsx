@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Row, Col, Statistic, Table, Progress, Spin, Typography, Empty, Tag, Tabs, Button, Space, message } from 'antd'
-import { CheckCircleOutlined, PlayCircleOutlined, FolderOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons'
+import { Card, Row, Col, Statistic, Table, Progress, Spin, Typography, Empty, Tag, Tabs, Button, Space, message, Alert } from 'antd'
+import { CheckCircleOutlined, PlayCircleOutlined, FolderOutlined, LeftOutlined, RightOutlined, ReloadOutlined } from '@ant-design/icons'
 import { recordApi } from '@/api'
 import type { ProgressResponse, PlayRecord, StudyStatsResponse } from '@/types'
 import { formatDuration, formatRelative } from '@/utils'
@@ -31,6 +31,7 @@ export default function Records() {
   const [progress, setProgress] = useState<ProgressResponse | null>(null)
   const [records, setRecords] = useState<PlayRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'week' | 'month' | 'year'>('week')
 
   // 周视图的基准日期（默认今天），翻页时加减 7 天
@@ -41,20 +42,27 @@ export default function Records() {
   const [stats, setStats] = useState<StudyStatsResponse | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [p, r] = await Promise.all([recordApi.progress(), recordApi.list()])
-        setProgress(p.data.data)
-        setRecords(r.data.data.records ?? [])
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false)
-      }
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const [p, r] = await Promise.all([recordApi.progress(), recordApi.list()])
+      if (!p.data || p.data.data == null) throw new Error('进度接口返回为空')
+      if (!r.data) throw new Error('播放记录接口返回为空')
+      setProgress(p.data.data)
+      setRecords(r.data.data.records ?? [])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '加载失败'
+      setLoadError(msg)
+      message.error('加载学习记录失败：' + msg)
+    } finally {
+      setLoading(false)
     }
-    load()
   }, [])
+
+  useEffect(() => {
+    loadAll()
+  }, [loadAll])
 
   // 加载统计
   const loadStats = useCallback(async () => {
@@ -116,20 +124,32 @@ export default function Records() {
     return <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
   }
 
+  // 关联媒体不可用时（已被删除），显示占位名称
+  const mediaName = (r: PlayRecord) =>
+    r.media && r.media.id !== 0 ? r.media.name : `（已删除媒体 #${r.media_id}）`
+
+  const mediaAlbum = (r: PlayRecord) =>
+    r.media && r.media.id !== 0 ? r.media.album : null
+
   const columns = [
     {
       title: '媒体名称',
       dataIndex: ['media', 'name'],
       key: 'name',
-      render: (text: string, record: PlayRecord) => (
-        <a onClick={() => navigate(`/play/${record.media_id}`)}>{text || `#${record.media_id}`}</a>
+      render: (_text: string, record: PlayRecord) => (
+        record.media && record.media.id !== 0
+          ? <a onClick={() => navigate(`/play/${record.media?.id ?? record.media_id}`)}>{mediaName(record)}</a>
+          : <span style={{ color: '#999' }}>{mediaName(record)}</span>
       ),
     },
     {
       title: '专辑',
       dataIndex: ['media', 'album'],
       key: 'album',
-      render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : '-'),
+      render: (_v: string | null, record: PlayRecord) => {
+        const alb = mediaAlbum(record)
+        return alb ? <Tag color="blue">{alb}</Tag> : '-'
+      },
     },
     { title: '播放次数', dataIndex: 'play_count', key: 'play_count' },
     {
@@ -290,6 +310,17 @@ export default function Records() {
   return (
     <div>
       <Title level={4} style={{ color: '#1a1a1a' }}>📊 学习记录</Title>
+
+      {/* 加载错误提示 + 重试 */}
+      {loadError && (
+        <Alert
+          type="error"
+          showIcon
+          message={`加载失败：${loadError}`}
+          action={<Button size="small" icon={<ReloadOutlined />} onClick={loadAll}>重试</Button>}
+          style={{ marginBottom: 16, borderRadius: 12 }}
+        />
+      )}
 
       {/* 汇总统计卡片 */}
       <Row gutter={16} style={{ marginBottom: 16 }}>

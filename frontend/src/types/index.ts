@@ -52,11 +52,15 @@ export interface MediaListResponse {
 export interface SubAlbum {
   sub_album: string
   count: number
+  /** 当前用户有过播放记录的子专辑内媒体数量（后端 v0.3.1 起返回） */
+  played?: number
 }
 
 export interface Album {
   album: string
   count: number
+  /** 当前用户有过播放记录的专辑内媒体数量（后端 v0.3.1 起返回） */
+  played?: number
   sub_albums?: SubAlbum[]
 }
 

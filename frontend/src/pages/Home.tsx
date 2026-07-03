@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message } from 'antd'
+import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message, Tabs } from 'antd'
 import type { MenuProps } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -247,24 +247,48 @@ function GridView(props: {
 
   return (
     <>
-      {/* 专辑详情下的工具栏补充：子专辑筛选 + 新建学习页面 */}
+      {/* 专辑详情下的工具栏补充：子专辑 Tabs（季）+ 新建学习页面 */}
       {albumFilter && (
-        <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ marginBottom: 16 }}>
           {subAlbums.length > 0 && (
-            <Select
-              placeholder="子专辑" allowClear style={{ width: 180 }}
-              value={subAlbumFilter} size="middle"
-              onChange={(v) => {
+            <Tabs
+              activeKey={subAlbumFilter ?? '__all__'}
+              onChange={(key) => {
                 const next = new URLSearchParams(props.searchParams)
-                if (v) next.set('sub_album', v); else next.delete('sub_album')
+                if (key === '__all__') next.delete('sub_album'); else next.set('sub_album', key)
                 props.setSearchParams(next)
               }}
-              options={subAlbums.map((s) => ({ value: s.sub_album, label: `${s.sub_album} (${s.count})` }))}
+              size="middle"
+              items={[
+                {
+                  key: '__all__',
+                  label: (
+                    <span>
+                      <AppstoreOutlined style={{ marginRight: 4 }} />
+                      全部
+                    </span>
+                  ),
+                },
+                ...subAlbums.map((s) => ({
+                  key: s.sub_album,
+                  label: (
+                    <span>
+                      {s.sub_album}
+                      <Tag color="default" style={{ marginLeft: 6, borderRadius: 10 }}>
+                        {s.played ?? 0}/{s.count}
+                      </Tag>
+                    </span>
+                  ),
+                })),
+              ]}
+              style={{ marginBottom: 12 }}
             />
           )}
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-            新建学习页面
-          </Button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              新建学习页面
+            </Button>
+          </div>
         </div>
       )}
 

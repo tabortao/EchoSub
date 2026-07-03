@@ -1,4 +1,4 @@
-import { Layout, Button, Space, Drawer, Tooltip, Avatar } from 'antd'
+import { Layout, Button, Space, Drawer, Tooltip, Avatar, Spin } from 'antd'
 import {
   HomeOutlined,
   TagOutlined,
@@ -8,11 +8,14 @@ import {
   AudioOutlined,
   MenuOutlined,
   UploadOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState, type ReactNode } from 'react'
+import { message } from 'antd'
 import { useAuthStore } from '@/store/auth'
 import { useSettingsStore } from '@/store/settings'
+import { useScanStore } from '@/store/scan'
 import { authApi } from '@/api'
 import { Grid } from 'antd'
 
@@ -42,6 +45,8 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const { user, token, logout } = useAuthStore()
   const loadSettings = useSettingsStore((s) => s.load)
+  const scanning = useScanStore((s) => s.scanning)
+  const triggerScan = useScanStore((s) => s.trigger)
   const screens = useBreakpoint()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -49,6 +54,16 @@ export default function MainLayout() {
   useEffect(() => {
     loadSettings()
   }, [loadSettings])
+
+  const handleTriggerScan = async () => {
+    if (scanning) return
+    try {
+      await triggerScan()
+      message.success('媒体文件夹扫描已启动')
+    } catch (err) {
+      message.error('触发扫描失败：' + (err instanceof Error ? err.message : String(err)))
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -172,6 +187,20 @@ export default function MainLayout() {
             </span>
           )}
           <Space>
+            {/* 扫描媒体目录按钮：全局可见，点击触发重新扫描 */}
+            <Tooltip title={scanning ? '正在扫描…' : '重新扫描媒体文件夹'}>
+              <Spin spinning={scanning} size="small">
+                <Button
+                  type="text"
+                  icon={<ReloadOutlined spin={scanning} />}
+                  onClick={handleTriggerScan}
+                  disabled={scanning}
+                  style={{ display: 'inline-flex', alignItems: 'center' }}
+                >
+                  {!isMobile && !scanning ? '扫描' : ''}
+                </Button>
+              </Spin>
+            </Tooltip>
             <Tooltip title={user?.username}>
               {user?.avatar_path ? (
                 <Avatar size={32} src={authApi.avatarUrl(token ?? '')} />

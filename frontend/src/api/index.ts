@@ -103,6 +103,9 @@ export const tagApi = {
 // ===== 学习记录 =====
 export const recordApi = {
   list: () => client.get<ApiResponse<{ records: PlayRecord[] }>>('/records'),
+  /** 按 media_id 去重，每个媒体返回最近一条播放记录（已过滤软删除媒体） */
+  recent: (limit = 20) =>
+    client.get<ApiResponse<{ records: PlayRecord[] }>>('/records/recent', { params: { limit } }),
   update: (mediaId: number, lastPosition: number, incrementPlay = false) =>
     client.put<ApiResponse>(`/records/${mediaId}`, {
       last_position: lastPosition,

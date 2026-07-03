@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Spin, Empty, Tag, Typography, Tooltip } from 'antd'
 import { PlayCircleOutlined, ReadOutlined, FolderOutlined } from '@ant-design/icons'
 import { mediaApi, noteApi, recordApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
+import { useScanStore } from '@/store/scan'
 import MediaCover from '@/components/MediaCover'
 import { formatRelative } from '@/utils'
 import type { MediaListItem, Album, StudyNote, PlayRecord, MediaFile } from '@/types'
@@ -26,6 +27,7 @@ interface AlbumEntry {
   album: Album
   cover: MediaListItem | null
   count: number
+  played: number
   lastPlayedAt: string
   hasVideo: boolean
 }
@@ -48,6 +50,8 @@ interface EmbyHomeProps {
  */
 export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyHomeProps) {
   const token = useAuthStore((s) => s.token) ?? ''
+  const lastTriggeredAt = useScanStore((s) => s.lastTriggeredAt)
+  const lastTriggeredAtRef = useRef(lastTriggeredAt)
   const [loading, setLoading] = useState(true)
   const [recent, setRecent] = useState<FeedItem[]>([])
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>([])
@@ -59,7 +63,7 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
       setLoading(true)
       try {
         const [recordRes, noteRes, mediaRes, albumRes] = await Promise.all([
-          recordApi.list(),
+          recordApi.recent(20),
           noteApi.list(),
           mediaApi.list({ sort: 'file_modified_at', order: 'desc', page: 1, size: 200 }),
           mediaApi.albums(),
@@ -70,22 +74,25 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
         const albums = (albumRes.data.data.albums ?? []) as Album[]
 
         // 继续学习：最近播放的媒体（去重，最多 12 条）
+        // recordApi.recent 后端已去重，但前端再容错一遍以避免重复渲染
         const seenMedia = new Set<number>()
         const mediaFeed: FeedItem[] = []
         for (const r of records) {
-          if (!r.media || seenMedia.has(r.media.id)) continue
-          seenMedia.add(r.media.id)
-          mediaFeed.push({
-            kind: 'media',
-            item: {
-              media: r.media as MediaFile,
-              play_count: r.play_count,
-              last_position: r.last_position,
-              last_played_at: r.last_played_at,
-            },
-            ts: r.last_played_at || '',
-          })
-          if (mediaFeed.length >= 12) break
+          if (r.media && r.media.id !== 0) {
+            if (seenMedia.has(r.media.id)) continue
+            seenMedia.add(r.media.id)
+            mediaFeed.push({
+              kind: 'media',
+              item: {
+                media: r.media as MediaFile,
+                play_count: r.play_count,
+                last_position: r.last_position,
+                last_played_at: r.last_played_at,
+              },
+              ts: r.last_played_at || '',
+            })
+            if (mediaFeed.length >= 12) break
+          }
         }
         const notes = (noteRes.data.data.notes ?? []).slice(0, 4)
         const noteFeed: FeedItem[] = notes.map((n) => ({
@@ -97,6 +104,7 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
         // 专辑入口：每个专辑选一个代表封面
         const entries: AlbumEntry[] = albums.map((a) => pickAlbumCover(a, allMedia, records))
           .filter((e) => e.count > 0)
+          .sort((a, b) => b.lastPlayedAt.localeCompare(a.lastPlayedAt))
         if (!cancelled) setAlbumEntries(entries)
 
         // 独立资源：未归入专辑的散落文件
@@ -113,7 +121,13 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
     }
     load()
     return () => { cancelled = true }
-  }, [])
+    // 依赖 lastTriggeredAt：Header 触发扫描后重新拉取
+  }, [lastTriggeredAt])
+
+  // ref 同步，避免组件卸载后漏掉最新值
+  useEffect(() => {
+    lastTriggeredAtRef.current = lastTriggeredAt
+  }, [lastTriggeredAt])
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
@@ -219,7 +233,7 @@ function toMediaListItem(r: PlayRecord): MediaListItem {
 }
 
 function makeEntry(album: Album, cover: MediaListItem | null, count: number, lastPlayedAt: string, hasVideo: boolean): AlbumEntry {
-  return { album, cover, count, lastPlayedAt, hasVideo }
+  return { album, cover, count, played: album.played ?? 0, lastPlayedAt, hasVideo }
 }
 
 /**
@@ -257,8 +271,9 @@ const scrollRowStyle: React.CSSProperties = {
  * 学习 Emby「My Media」海报风格——大尺寸竖向封面 + 底部渐变标题。
  */
 function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void }) {
-  const { album, cover, count, lastPlayedAt, hasVideo } = entry
+  const { album, cover, count, played, hasVideo } = entry
   const [hovered, setHovered] = useState(false)
+  const playedPct = count > 0 ? Math.round((played / count) * 100) : 0
   return (
     <div
       onClick={onClick}
@@ -311,21 +326,30 @@ function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void 
         <div style={{
           position: 'absolute', bottom: 0, left: 0, right: 0,
           background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%)',
-          padding: '16px 12px 12px',
+          padding: '16px 12px 8px',
         }}>
           <Tooltip title={album.album}>
             <Text ellipsis style={{ display: 'block', color: '#fff', fontWeight: 700, fontSize: 15, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
               {album.album}
             </Text>
           </Tooltip>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
             {hasVideo && <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11 }}>🎬 含视频</span>}
-            {lastPlayedAt && (
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
-                · 最近播放 {formatRelative(lastPlayedAt)}
-              </span>
-            )}
+            <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: 600 }}>
+              {played > 0 ? `已看 ${played}/${count}` : `${count} 项`}
+            </span>
           </div>
+          {/* 观看进度条微条 */}
+          {count > 0 && (
+            <div style={{ height: 3, background: 'rgba(255,255,255,0.25)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${playedPct}%`,
+                background: 'linear-gradient(90deg, #FF7A45, #FFB37A)',
+                transition: 'width 0.4s',
+              }} />
+            </div>
+          )}
         </div>
       </div>
     </div>

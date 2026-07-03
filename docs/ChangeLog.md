@@ -7,6 +7,43 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.3.1] - 2026-07-03
+
+### Added
+
+#### Header 全局扫描按钮
+
+- **前端 `store/scan.ts`**：新建 `useScanStore`，保存 `scanning` 状态、`lastTriggeredAt` 时间戳与 `trigger()` 动作。`trigger()` 调用 `scanApi.trigger()`，成功后更新时间戳并每秒轮询 `/scan/status` 直到扫描结束。
+- **前端 `layouts/MainLayout.tsx`**：Header 用户头像左侧插入扫描按钮（`<ReloadOutlined spin />` + `<Spin>` 包裹），点击触发 `useScanStore.trigger()`；扫描中按钮禁用并 spinner 动画；成功后 `message.success('媒体文件夹扫描已启动')`。
+- **前端 `components/EmbyHome.tsx`**：使用 `useAuthStore` 同时也订阅 `useScanStore.lastTriggeredAt`；该值变化即重新获取专辑、最近播放、学习笔记等数据，实现扫描后首页及时刷新。
+
+#### Emby 风格专辑详情（季 Tabs + 智能封面 + 观看进度）
+
+- **后端 `handlers/media.go`**：`ListAlbums()` 增加 `played` 维度——album 层与每个 sub_album 层都返回「当前用户有过播放记录的媒体数」。WHERE 增加 `deleted_at IS NULL` 过滤。
+- **前端 `types/index.ts`**：`Album` 与 `SubAlbum` 接口均新增可选 `played?: number` 字段。
+- **前端 `components/EmbyHome.tsx`**：`AlbumEntry` 新加 `played` 字段；`AlbumCard` 移除冗余「最近播放」文字，改为「已看 X/Y」徽标 + 底部微进度条；专辑卡片按 `lastPlayedAt` 倒序排列。
+- **前端 `pages/Home.tsx`**：专辑详情页的子专辑筛选从 Select 下下拉改为 Ant Design `<Tabs>` 横滑标签——「全部」+ 每个子专辑（带「已看/总数」小 Tag）。
+
+#### 最近播放接口按媒体_id 去重
+
+- **后端 `handlers/record.go`**：新增 `ListRecent()` Handler——子查询按 `media_id, MAX(last_played_at)` 分组取最近一条，JOIN 过滤 `media_files.deleted_at IS NULL`，限制 `?limit`（默认 20，最大 100）。
+- **后端 `router/router.go`**：注册 `GET /records/recent?limit=N`。
+- **前端 `api/index.ts`**：`recordApi` 新增 `recent(limit?)` 方法。
+- **前端 `components/EmbyHome.tsx`**：`useEffect` 中 `recordApi.list()` 替换为 `recordApi.recent(20)`；继续学习列表数据更准确（每个媒体一条最近记录）。
+
+### Changed
+
+- **后端 `handlers/record.go`**：`ListRecords()` 在 Preload 后剔除 `Media.ID == 0` 的幽灵记录（关联媒体已被软删除时 GORM Preload 会返回零值结构），避免前端渲染访问 `undefined.name`。
+- **后端 `handlers/stats.go`**：`getWeekStats / getMonthStats / getYearStats` 三个函数内所有 `PlayRecord / SentenceProgress` 聚合查询都增加 `JOIN media_files ... AND media_files.deleted_at IS NULL`，已删媒体的学习记录不再进入统计。
+
+### Fixed
+
+- **前端 `pages/Records.tsx`**：
+  - 初始加载失败（后端 500 / 网络错误）不再静默 `catch {} ignore`，改为 `Alert` 错误提示 + 重试按钮。
+  - 捕捉 `p.data != null` 的边界，`message.error` 输岀可读错误。
+  - Table「媒体名称」列的 `dataIndex: ['media','name']` 改为 render 函数：关联媒体存在时显示可点击链接、缺失时显示灰色「（已删除媒体 #id）占位。
+  - 「专辑」列改用 `mediaAlbum()` 辅助函数安全访问。
+
 ## [v0.3.0] - 2026-07-03
 
 ### Added
