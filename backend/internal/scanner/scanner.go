@@ -185,11 +185,26 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 			}
 		}
 		// 季封面图（仅在专辑根目录识别）：seasonXX-poster.<ext>
+		// 把 seasonXX-poster.jpg 等候选放入 seasonCovers[XX]，例如 "02" / "2" / "1" 等。
+		// 在写库时再通过候选季目录名列表尝试匹配，匹配成功则关联到对应季。
 		if subAlbum == "" && imgExts[ext] && strings.HasSuffix(stem, "-poster") {
 			prefix := strings.TrimSuffix(stem, "-poster")
-			// 兼容 "season" / "season1" / "season01" / "s01" 等
-			if strings.HasPrefix(prefix, "season") || strings.HasPrefix(prefix, "s") {
-				seasonCovers[strings.TrimPrefix(prefix, "season")] = filepath.Join(absDir, e.Name())
+			// 兼容 "season" / "season1" / "season01" / "s01" / "s1"
+			num := ""
+			switch {
+			case strings.HasPrefix(prefix, "season"):
+				num = strings.TrimPrefix(prefix, "season")
+			case strings.HasPrefix(prefix, "s"):
+				num = strings.TrimPrefix(prefix, "s")
+			}
+			if num != "" {
+				// 同时记录两种 key：带前导零 + 去前导零
+				seasonCovers[num] = filepath.Join(absDir, e.Name())
+				// 去前导零再记录一次（如 "02" → "2"）
+				trimmed := strings.TrimLeft(num, "0")
+				if trimmed != "" && trimmed != num {
+					seasonCovers[trimmed] = filepath.Join(absDir, e.Name())
+				}
 			}
 		}
 		// nfo 文件
@@ -244,18 +259,53 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 
 	// 同步专辑根目录下的 seasonXX-poster.jpg 到对应季的 cover_path
 	for num, p := range seasonCovers {
-		// 季目录名是 "Season 1" / "Season 2" 等，按数字直接匹配
-		seasonDirName := "Season " + num
-		// 也兼容 "seasonXX" 形式
-		seasonDirs := []string{seasonDirName, "season" + num, "Season" + num}
-		for _, sd := range seasonDirs {
-			// 若该季目录存在则关联
+		// 多种季目录命名约定：
+		//   "Season 1" / "Season 01" / "season 1" / "season 01" / "Season1" / "season1" / "Season01" / "season01" / "S01" / "s01" / "S1" / "s1"
+		candidates := seasonDirCandidates(num)
+		matched := ""
+		for _, sd := range candidates {
 			if _, err := os.Stat(filepath.Join(absDir, sd)); err == nil {
-				upsertSeasonCover(album, sd, p)
+				matched = sd
 				break
 			}
 		}
+		if matched != "" {
+			upsertSeasonCover(album, matched, p)
+		} else {
+			// 季目录尚未创建时，也预创建 AlbumMeta 记录（让 UI 能展示该季的占位封面）
+			expected := "Season " + num
+			upsertSeasonCover(album, expected, p)
+		}
 	}
+}
+
+// seasonDirCandidates 返回给定季号 num 的候选季目录名列表。
+// 例如 num="02" → ["Season 02","season 02","Season02","season02","Season 2","season 2","Season2","season2","S02","s02","S2","s2","Season 0","season 0"]
+// num="2"   → ["Season 2","season 2","Season2","season2","Season 02","season 02","Season02","season02","S2","s2","S02","s02","Season 02","season 02"]
+func seasonDirCandidates(num string) []string {
+	withZero := num
+	noZero := strings.TrimLeft(num, "0")
+	if noZero == "" {
+		noZero = "0"
+	}
+	all := []string{withZero, noZero}
+	var out []string
+	seen := make(map[string]bool)
+	add := func(s string) {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	for _, n := range all {
+		add("Season " + n)
+		add("season " + n)
+		add("Season" + n)
+		add("season" + n)
+		add("S" + n)
+		add("s" + n)
+	}
+	return out
 }
 
 // upsertSeasonCover 把 seasonXX-poster.jpg 写入对应季的 cover_path（仅设置，不覆盖其他字段）。
@@ -445,6 +495,15 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 	// 识别该目录的 Emby / Kodi 风格元数据并写入 AlbumMeta
 	absDir := filepath.Join(s.cfg.Media.Dir, dir)
 	s.scanAlbumMeta(absDir, getOrEmpty(album), getOrEmpty(subAlbum))
+	// 季内文件入库时，同步扫描专辑根目录的元数据（banner.jpg / folder.jpg / tvshow.nfo），
+	// 避免只识别到 Season 1 内的 folder.jpg，而忽略专辑根的横幅 / 封面 / 描述。
+	// rootAbs 始终在 media root 之下（filepath.Join + 路径解析），无需额外越界检查。
+	if subAlbum != nil && *subAlbum != "" && album != nil {
+		rootAbs := filepath.Join(s.cfg.Media.Dir, *album)
+		if rootAbs != absDir {
+			s.scanAlbumMeta(rootAbs, *album, "")
+		}
+	}
 	return nil
 }
 

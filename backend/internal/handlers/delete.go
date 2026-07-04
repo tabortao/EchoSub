@@ -144,3 +144,53 @@ func DeleteAlbum(cfg *config.Config) gin.HandlerFunc {
 		})
 	}
 }
+
+// DeleteSeason 删除专辑下的某个季（子目录）：磁盘目录递归删除（含季内所有媒体/字幕/封面），
+// 数据库批量软删除该季下所有 MediaFile，并清理 AlbumMeta 中对应季的元数据记录。
+// 路由: DELETE /albums/:name/sub/:sub
+// Header: X-Delete-Password（必填，二次确认）
+func DeleteSeason(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !verifyUserPassword(c) {
+			return
+		}
+		album := strings.TrimSpace(c.Param("name"))
+		sub := strings.TrimSpace(c.Param("sub"))
+		if album == "" || sub == "" {
+			utils.Fail(c, http.StatusBadRequest, "缺少专辑名或季名")
+			return
+		}
+		// 防路径穿越（与 RenameAlbum 保持一致）
+		album = filepath.Base(filepath.Clean(album))
+		sub = filepath.Base(filepath.Clean(sub))
+		if sub == "." || sub == "/" {
+			utils.Fail(c, http.StatusBadRequest, "非法的季名")
+			return
+		}
+
+		root := filepath.Clean(cfg.Media.Dir)
+		dir := filepath.Join(root, album, sub)
+
+		// 1. 磁盘目录存在时递归删除（容忍不存在，期望季可能尚未创建）
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			if err := os.RemoveAll(dir); err != nil {
+				utils.Fail(c, http.StatusInternalServerError, "删除季目录失败: "+err.Error())
+				return
+			}
+		}
+
+		// 2. 批量软删除该季下所有 MediaFile
+		res := database.DB.Where("album = ? AND sub_album = ?", album, sub).Delete(&models.MediaFile{})
+		deleted := res.RowsAffected
+
+		// 3. 删除 AlbumMeta 中该季的元数据（封面、横幅、nfo 等）
+		database.DB.Where("album = ? AND sub_album = ?", album, sub).Delete(&models.AlbumMeta{})
+
+		utils.OK(c, gin.H{
+			"deleted":       true,
+			"album":         album,
+			"sub_album":     sub,
+			"files_deleted": deleted,
+		})
+	}
+}

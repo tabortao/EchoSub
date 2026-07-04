@@ -68,6 +68,8 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 		authed.POST("/albums/:name/cover", handlers.UploadAlbumCover(cfg))
 		authed.GET("/albums/:name/cover", handlers.ServeAlbumCover(cfg))
 		authed.GET("/albums/:name/banner", handlers.ServeAlbumBanner(cfg))
+		// 季删除：DELETE /albums/:name/sub/:sub（X-Delete-Password 校验）
+		authed.DELETE("/albums/:name/sub/:sub", handlers.DeleteSeason(cfg))
 
 		// 标签
 		tags := authed.Group("/tags")

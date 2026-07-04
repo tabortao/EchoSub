@@ -7,6 +7,26 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.4.6] - 2026-07-04
+
+### Added
+
+#### 季卡片 ⋮ 菜单 + 专辑根目录元数据二次扫描 + 横幅描述展示
+
+- **后端 `scanner/scanner.go` (`upsertMedia`)**：季内媒体入库完成后，同步扫描专辑根目录的 Emby 元数据（`banner.jpg` / `folder.jpg` / `tvshow.nfo`），避免只识别到 `Season 1/folder.jpg` 而忽略专辑根的横幅 / 封面 / 描述。`Season 1` 内的媒体入库时同样会触发专辑根的扫描，让「小猪佩奇(2004)」等目录的 `banner.jpg` 横幅能被正确入库。
+- **后端 `handlers/delete.go`** ✨新增 `DeleteSeason`：`DELETE /albums/:name/sub/:sub`（X-Delete-Password 校验）递归删除季目录、批量软删除该季下所有 MediaFile，并清理 AlbumMeta 中对应季的元数据记录。防路径穿越 + 容忍期望季目录尚未创建的边界情况。
+- **后端 `router/router.go`**：注册 `DELETE /albums/:name/sub/:sub` 路由。
+- **前端 `components/SeasonCardMenu.tsx`** ✨新增：季卡片 ⋮ 菜单共享组件，菜单项为「🖼️ 上传季封面（自动以 `folder.<ext>` 命名写入季目录）/ 🗑️ 删除该季（密码确认）」。触发器位置、z-index 可定制，与 `NoteCardMenu` 风格保持一致。
+- **前端 `api/index.ts`**：`mediaApi.deleteSeason` 新增（带 `X-Delete-Password` 头）。
+- **前端 `pages/Home.tsx`**：
+  - `SeasonGrid` 集成 `SeasonCardMenu`：季卡片右下角显示 ⋮ 按钮，点击可上传季封面或删除该季（密码确认），操作完成后通过 `onChanged` 回调刷新专辑数据。GridView 父组件传入 `load` 作为回调。
+  - `AlbumBanner` 增强：横幅高度由 180 → 220 px、宽度铺满 Card 容器；底部叠加专辑 / 季名 + 副标题（"· 专辑名"）+ 描述（最多 2 行，溢出省略），让 Emby 风格专辑页更接近原生 Emby 视觉。
+
+### Notes
+
+- 季删除是危险操作（递归删除季目录及全部媒体 / 字幕 / 封面 / nfo），前端通过 `PasswordConfirmModal` 要求用户输入登录密码二次确认；密码错误返回 401 不关闭弹窗，便于重试。
+- 「期望季」（仅有 `season02-poster.jpg` 资源但 `Season 2` 目录尚未创建的情况）当前仍由 `buildSubs` 自动建占位卡（`count=0`）；如需在 v0.4.6 之后删除该占位季，可通过「新建媒体」让扫描自动建立季目录，或直接删除对应的 `seasonXX-poster.jpg`。
+
 ## [v0.4.5] - 2026-07-04
 
 ### Added

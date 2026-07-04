@@ -119,6 +119,14 @@ export const mediaApi = {
   /** 获取专辑/季横幅 URL */
   albumBannerUrl: (album: string, token: string, subAlbum = '') =>
     `/api/v1/albums/${encodeURIComponent(album)}/banner?token=${encodeURIComponent(token)}${subAlbum ? `&sub=${encodeURIComponent(subAlbum)}` : ''}`,
+  /** 删除某个季（子目录）：X-Delete-Password 头校验当前用户密码 */
+  deleteSeason: (album: string, subAlbum: string, password?: string) =>
+    client.delete<ApiResponse<{ deleted: boolean; album: string; sub_album: string; files_deleted: number }>>(
+      `/albums/${encodeURIComponent(album)}/sub/${encodeURIComponent(subAlbum)}`,
+      {
+        headers: password ? { 'X-Delete-Password': password, 'X-Confirm-Purpose': 'delete' } : undefined,
+      },
+    ),
   /** 新建目录 */
   mkdir: (path: string) =>
     client.post<{ data: { path: string } }>('/media/mkdir', { path }),

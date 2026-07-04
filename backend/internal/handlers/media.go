@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -286,6 +287,61 @@ func ListAlbums() gin.HandlerFunc {
 			PinOrder    int           `json:"pin_order"` // 置顶顺序（值越小越靠前；未置顶 = -1）
 			SubAlbums   []subAlbumRow `json:"sub_albums"`
 		}
+		// buildSubs 构造某专辑的子专辑列表：
+		// 1. 先用 MediaFile 聚合（count/played）
+		// 2. 再合并 AlbumMeta 中只有封面/横幅但无媒体的「期望季」（Emby 部分刮削常见）
+		// 这样即使磁盘上 Season 2 目录还不存在，只要 season02-poster.jpg 存在，
+		// 前端也能看到「Season 2」占位卡片，方便用户后续补资源。
+		buildSubs := func(albumName string) []subAlbumRow {
+			var subs []subAlbumRow
+			database.DB.Model(&models.MediaFile{}).
+				Select("sub_album, count(*) as count, "+
+					"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
+				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> '' AND deleted_at IS NULL "+excludePaired, albumName).
+				Group("sub_album").
+				Order("sub_album ASC").
+				Scan(&subs)
+			existing := make(map[string]bool, len(subs))
+			for _, s := range subs {
+				existing[s.SubAlbum] = true
+			}
+			for _, m := range allMeta[albumName] {
+				if m.SubAlbum == "" || existing[m.SubAlbum] {
+					continue
+				}
+				subs = append(subs, subAlbumRow{
+					SubAlbum:    m.SubAlbum,
+					Count:       0,
+					Played:      0,
+					CoverPath:   m.CoverPath,
+					BannerPath:  m.BannerPath,
+					Description: m.Description,
+				})
+				existing[m.SubAlbum] = true
+			}
+			// 关联 AlbumMeta 元数据（cover/banner/description）
+			for i := range subs {
+				for _, m := range allMeta[albumName] {
+					if m.SubAlbum == subs[i].SubAlbum {
+						if m.CoverPath != nil {
+							subs[i].CoverPath = m.CoverPath
+						}
+						if m.BannerPath != nil {
+							subs[i].BannerPath = m.BannerPath
+						}
+						if m.Description != "" {
+							subs[i].Description = m.Description
+						}
+						break
+					}
+				}
+			}
+			// 排序：按自然季号升序（"Season 1" 在 "Season 2" 前，"Season 10" 在 "Season 2" 后）
+			sort.SliceStable(subs, func(i, j int) bool {
+				return seasonLess(subs[i].SubAlbum, subs[j].SubAlbum)
+			})
+			return subs
+		}
 		// 行 → 完整结构（按置顶优先 + 名字）
 		rowMap := make(map[string]albumRow, len(rows))
 		for _, r := range rows {
@@ -315,31 +371,13 @@ func ListAlbums() gin.HandlerFunc {
 					break
 				}
 			}
-			// 季子专辑
-			var subs []subAlbumRow
-			database.DB.Model(&models.MediaFile{}).
-				Select("sub_album, count(*) as count, "+
-					"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
-				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> '' AND deleted_at IS NULL "+excludePaired, r.Album).
-				Group("sub_album").
-				Order("sub_album ASC").
-				Scan(&subs)
-			for i := range subs {
-				for _, m := range allMeta[r.Album] {
-					if m.SubAlbum == subs[i].SubAlbum {
-						subs[i].CoverPath = m.CoverPath
-						subs[i].BannerPath = m.BannerPath
-						subs[i].Description = m.Description
-						break
-					}
-				}
-			}
+			subs := buildSubs(r.Album)
 			result = append(result, albumWithSubs{
 				Album: r.Album, Count: r.Count, Played: r.Played,
 				HasSeasons: len(subs) > 0,
 				CoverPath:  albumCover, BannerPath: albumBanner, Description: albumDesc,
-				Pinned:    true,
-				PinOrder:  pinOrderIdx[r.Album],
+				Pinned:   true,
+				PinOrder: pinOrderIdx[r.Album],
 				SubAlbums: subs,
 			})
 		}
@@ -359,25 +397,7 @@ func ListAlbums() gin.HandlerFunc {
 					break
 				}
 			}
-			// 季子专辑
-			var subs []subAlbumRow
-			database.DB.Model(&models.MediaFile{}).
-				Select("sub_album, count(*) as count, "+
-					"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
-				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> '' AND deleted_at IS NULL "+excludePaired, r.Album).
-				Group("sub_album").
-				Order("sub_album ASC").
-				Scan(&subs)
-			for i := range subs {
-				for _, m := range allMeta[r.Album] {
-					if m.SubAlbum == subs[i].SubAlbum {
-						subs[i].CoverPath = m.CoverPath
-						subs[i].BannerPath = m.BannerPath
-						subs[i].Description = m.Description
-						break
-					}
-				}
-			}
+			subs := buildSubs(r.Album)
 			result = append(result, albumWithSubs{
 				Album: r.Album, Count: r.Count, Played: r.Played,
 				HasSeasons: len(subs) > 0,
@@ -389,6 +409,52 @@ func ListAlbums() gin.HandlerFunc {
 		}
 		utils.OK(c, gin.H{"albums": result})
 	}
+}
+
+// seasonLess 比较两个子专辑名，按自然季号升序：
+//   "Season 1" < "Season 2" < "Season 10"；同名子专辑维持原顺序。
+// 非 "Season N" 形式的子专辑退化为字典序排在末尾。
+func seasonLess(a, b string) bool {
+	na, oka := seasonNumber(a)
+	nb, okb := seasonNumber(b)
+	if oka && okb {
+		return na < nb
+	}
+	if oka != okb {
+		// 不都是 Season N：有编号的排前面
+		return oka
+	}
+	return a < b
+}
+
+// seasonNumber 解析 "Season 1" / "season01" / "S02" 等为整数。
+// 解析失败返回 0, false。
+func seasonNumber(name string) (int, bool) {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	for _, prefix := range []string{"season ", "season"} {
+		if strings.HasPrefix(lower, prefix) {
+			num := strings.TrimSpace(strings.TrimPrefix(lower, prefix))
+			num = strings.TrimLeft(num, "0")
+			if num == "" {
+				return 0, true
+			}
+			n, err := strconv.Atoi(num)
+			if err == nil {
+				return n, true
+			}
+		}
+	}
+	if lower != "" && (lower[0] == 's') {
+		num := strings.TrimLeft(lower[1:], "0")
+		if num == "" {
+			return 0, true
+		}
+		n, err := strconv.Atoi(num)
+		if err == nil {
+			return n, true
+		}
+	}
+	return 0, false
 }
 
 func isValidOrder(o string) bool {

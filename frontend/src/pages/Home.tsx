@@ -9,6 +9,7 @@ import MediaCover from '@/components/MediaCover'
 import EmbyHome from '@/components/EmbyHome'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 import NoteCardMenu from '@/components/NoteCardMenu'
+import SeasonCardMenu from '@/components/SeasonCardMenu'
 import type { MediaListResponse, MediaListItem, Album, SubAlbum, StudyNote } from '@/types'
 
 const { Text } = Typography
@@ -377,6 +378,7 @@ function GridView(props: {
             next.set('sub_album', sub)
             props.setSearchParams(next)
           }}
+          onChanged={load}
         />
       ) : feed.length === 0 ? (
         <Empty description="🎁 没有匹配的内容" />
@@ -547,21 +549,45 @@ function AlbumBanner({ album, subAlbum, token }: { album: Album; subAlbum: strin
   const subMeta = subAlbum ? album.sub_albums?.find((s) => s.sub_album === subAlbum) : undefined
   const bannerPath = subMeta?.banner_path ?? album.banner_path
   const coverPath = subMeta?.cover_path ?? album.cover_path
+  const description = subMeta?.description ?? album.description
   const bannerUrl = bannerPath ? mediaApi.albumBannerUrl(album.album, token, subAlbum ?? '') : ''
   const coverUrl = coverPath ? mediaApi.albumCoverUrl(album.album, token, subAlbum ?? '') : ''
   // 当季无 banner 时回退到季封面（或专辑封面）
   const bgUrl = bannerUrl || coverUrl
   return (
     <div style={{
-      position: 'relative', height: 180,
+      position: 'relative', height: 220, width: '100%',
       background: bgUrl
         ? `linear-gradient(to bottom, rgba(0,0,0,0.15), rgba(0,0,0,0.55)), url(${bgUrl}) center/cover no-repeat`
         : 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
     }}>
-      <div style={{ position: 'absolute', bottom: 12, left: 16, right: 16, color: '#fff' }}>
-        <Text style={{ color: '#fff', fontSize: 22, fontWeight: 800, textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
+      <div style={{ position: 'absolute', bottom: 14, left: 20, right: 20, color: '#fff' }}>
+        <Text style={{ color: '#fff', fontSize: 24, fontWeight: 800, textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
           {subAlbum ?? album.album}
         </Text>
+        {subAlbum && (
+          <Text style={{ color: 'rgba(255,255,255,0.85)', marginLeft: 8, fontSize: 14, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+            · {album.album}
+          </Text>
+        )}
+        {description && (
+          <div
+            style={{
+              marginTop: 6,
+              color: 'rgba(255,255,255,0.92)',
+              fontSize: 13,
+              lineHeight: 1.55,
+              maxWidth: 720,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+            }}
+          >
+            {description}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -569,11 +595,14 @@ function AlbumBanner({ album, subAlbum, token }: { album: Album; subAlbum: strin
 
 /**
  * 季选择网格：专辑下有多个子专辑时，进入专辑页默认展示。
- * 每张季卡片：封面（cover_path 或 banner_path）+ 季名 + 数量徽标，点击进入该季。
+ * 每张季卡片：封面（cover_path 或 banner_path）+ 季名 + 数量徽标，点击季卡片查看内容。
+ * 季卡片右下角 ⋮ 菜单：上传季封面、删除季（密码确认）。
  * 类似 Emby "Seasons" 行。
  */
-function SeasonGrid({ album, subAlbums, token, onPick }: {
-  album: Album; subAlbums: SubAlbum[]; token: string; onPick: (sub: string) => void
+function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
+  album: Album; subAlbums: SubAlbum[]; token: string
+  onPick: (sub: string) => void
+  onChanged: () => void
 }) {
   return (
     <div>
@@ -612,6 +641,12 @@ function SeasonGrid({ album, subAlbums, token, onPick }: {
                     <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 8, fontWeight: 600, border: 'none' }}>
                       📁 季
                     </Tag>
+                    {/* 右下角 ⋮ 菜单：上传季封面 / 删除该季（密码确认） */}
+                    <SeasonCardMenu
+                      album={album.album}
+                      subAlbum={s.sub_album}
+                      onChanged={onChanged}
+                    />
                     <div style={{
                       position: 'absolute', bottom: 0, left: 0, right: 0,
                       background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
