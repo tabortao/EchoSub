@@ -36,9 +36,9 @@ services:
       # 媒体目录：将宿主机的 NAS 媒体文件夹挂载到容器的 /media
       # ★ 请把下面这行左侧改为你实际的 NAS 媒体路径 ★
       # 读写模式（上传功能需要写入），如需只读可追加 :ro
-      - ./Media:/media
+      - ./media:/media
       # 数据持久化：SQLite 数据库 + 笔记图片（建议保留在宿主机本地，不要放 NAS）
-      - ./Data:/app/data
+      - ./data:/app/data
     # NAS 设备通常无需特殊设备映射；如需硬件解码视频可按需配置
 
 volumes:
