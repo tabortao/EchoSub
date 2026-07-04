@@ -63,6 +63,7 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 		authed.GET("/albums", handlers.ListAlbums())
 		authed.PUT("/albums/rename", handlers.RenameAlbum(cfg))
 		authed.DELETE("/albums", handlers.DeleteAlbum(cfg))
+		authed.POST("/albums/:name/pin", handlers.ToggleAlbumPin())
 		// 专辑 / 季 封面 + 横幅（Emby 风格：folder.jpg / banner.jpg）
 		authed.POST("/albums/:name/cover", handlers.UploadAlbumCover(cfg))
 		authed.GET("/albums/:name/cover", handlers.ServeAlbumCover(cfg))
@@ -101,6 +102,7 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			notes.GET("/:id", handlers.GetNote(cfg))
 			notes.PUT("/:id", handlers.UpdateNote(cfg))
 			notes.DELETE("/:id", handlers.DeleteNote(cfg))
+			notes.POST("/:id/pin", handlers.ToggleNotePin())
 			notes.POST("/:id/images", handlers.UploadNoteImage(cfg))
 			notes.DELETE("/:id/images/:filename", handlers.DeleteNoteImage(cfg))
 			notes.GET("/:id/images/:filename", handlers.ServeNoteImage(cfg))

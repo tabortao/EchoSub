@@ -87,7 +87,9 @@ func (s *Scanner) findCover(mediaPath string) string {
 	if err != nil {
 		return ""
 	}
-	// Emby 缩略图（最优先）
+	// Emby 缩略图（最优先）：<basename>-thumb.<ext>
+	// 形如「小猪佩奇.S01E01.Muddy Puddles-thumb.jpg」对应「小猪佩奇.S01E01.Muddy Puddles.mp4」
+	baseName := filepath.Base(base)
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -97,9 +99,8 @@ func (s *Scanner) findCover(mediaPath string) string {
 		if !imgExts[ext] {
 			continue
 		}
-		// 去掉 -thumb 后再比 basename
 		stripped := strings.TrimSuffix(name, "-thumb"+ext)
-		if !imgExts[strings.ToLower(filepath.Ext(stripped))] && strings.EqualFold(filepath.Join(dir, stripped), base) {
+		if strings.EqualFold(stripped, baseName) {
 			return filepath.Join(dir, name)
 		}
 	}
@@ -128,6 +129,11 @@ var albumBannerNames = []string{"banner", "backdrop", "fanart"}
 // scanAlbumMeta 扫描指定目录，识别 Emby 风格元数据（folder.jpg / banner.jpg / season.nfo 等）
 // 写入或更新 AlbumMeta 表。subAlbum 为空表示专辑本身，非空表示季。
 // 安全：路径必须在 media root 下（防止误识别）。
+//
+// 增强（v0.4.5）：
+//   - 季目录识别 tvshow.nfo（Emby 把整季描述放在这里）
+//   - 季目录识别 backdrop.jpg / fanart.jpg 作为横幅
+//   - 专辑目录识别 seasonXX-poster.jpg 自动关联到对应季的 cover_path
 func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 	if album == "" {
 		return
@@ -148,6 +154,9 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 	}
 
 	var coverPath, bannerPath, nfoPath *string
+	// seasonXX-poster.<ext>：专辑根目录下的季封面图，关联到对应季
+	seasonCovers := make(map[string]string) // seasonXX -> abs path
+
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -175,12 +184,19 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 				}
 			}
 		}
+		// 季封面图（仅在专辑根目录识别）：seasonXX-poster.<ext>
+		if subAlbum == "" && imgExts[ext] && strings.HasSuffix(stem, "-poster") {
+			prefix := strings.TrimSuffix(stem, "-poster")
+			// 兼容 "season" / "season1" / "season01" / "s01" 等
+			if strings.HasPrefix(prefix, "season") || strings.HasPrefix(prefix, "s") {
+				seasonCovers[strings.TrimPrefix(prefix, "season")] = filepath.Join(absDir, e.Name())
+			}
+		}
 		// nfo 文件
 		if nfoPath == nil && ext == ".nfo" {
-			// season.nfo 仅作季描述；tvshow.nfo / album.nfo / folder.nfo 任何位置都作专辑/季描述
 			if subAlbum != "" {
-				// 季目录：识别 season.nfo / seasonXX.nfo
-				if stem == "season" || strings.HasPrefix(stem, "season") {
+				// 季目录：识别 season.nfo / seasonXX.nfo / tvshow.nfo（Emby 把整季描述放这里）
+				if stem == "season" || strings.HasPrefix(stem, "season") || stem == "tvshow" {
 					p := filepath.Join(absDir, e.Name())
 					nfoPath = &p
 				}
@@ -224,6 +240,37 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 			Description: description,
 		}
 		database.DB.Create(&meta)
+	}
+
+	// 同步专辑根目录下的 seasonXX-poster.jpg 到对应季的 cover_path
+	for num, p := range seasonCovers {
+		// 季目录名是 "Season 1" / "Season 2" 等，按数字直接匹配
+		seasonDirName := "Season " + num
+		// 也兼容 "seasonXX" 形式
+		seasonDirs := []string{seasonDirName, "season" + num, "Season" + num}
+		for _, sd := range seasonDirs {
+			// 若该季目录存在则关联
+			if _, err := os.Stat(filepath.Join(absDir, sd)); err == nil {
+				upsertSeasonCover(album, sd, p)
+				break
+			}
+		}
+	}
+}
+
+// upsertSeasonCover 把 seasonXX-poster.jpg 写入对应季的 cover_path（仅设置，不覆盖其他字段）。
+func upsertSeasonCover(album, subAlbum, coverPath string) {
+	var meta models.AlbumMeta
+	tx := database.DB.Where("album = ? AND sub_album = ?", album, subAlbum).First(&meta)
+	if tx.Error == nil {
+		database.DB.Model(&meta).Update("cover_path", coverPath)
+	} else {
+		p := coverPath
+		database.DB.Create(&models.AlbumMeta{
+			Album:     album,
+			SubAlbum:  subAlbum,
+			CoverPath: &p,
+		})
 	}
 }
 

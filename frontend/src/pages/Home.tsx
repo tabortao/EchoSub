@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/auth'
 import MediaCover from '@/components/MediaCover'
 import EmbyHome from '@/components/EmbyHome'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
+import NoteCardMenu from '@/components/NoteCardMenu'
 import type { MediaListResponse, MediaListItem, Album, SubAlbum, StudyNote } from '@/types'
 
 const { Text } = Typography
@@ -440,7 +441,7 @@ function GridView(props: {
                   />
                 </Card>
               ) : (
-                <NoteCard note={f.note} token={token} onClick={() => navigate(`/notes/${f.note.id}`)} />
+                <NoteCard note={f.note} token={token} onClick={() => navigate(`/notes/${f.note.id}`)} onChanged={load} />
               )}
             </Col>
           ))}
@@ -483,7 +484,15 @@ function GridView(props: {
 }
 
 // 学习页面卡片（网格视图用）
-function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; onClick: () => void }) {
+// 右下角 ⋮ 菜单：置顶、重命名、上传封面、删除（密码确认）。
+function NoteCard({
+  note, token, onClick, onChanged,
+}: {
+  note: StudyNote
+  token: string
+  onClick: () => void
+  onChanged: () => void
+}) {
   const hasImg = note.images && note.images.length > 0
   return (
     <Card
@@ -508,11 +517,13 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
             </div>
           )}
           <Tag color="gold" style={{ position: 'absolute', top: 8, left: 8, margin: 0, fontWeight: 600, borderRadius: 8 }}>📖 学习页</Tag>
-          <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, maxWidth: '60%', background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: 80, verticalAlign: 'middle' }}>
-              {note.album}
-            </span>
-          </Tag>
+          {note.pinned && (
+            <Tag color="gold" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(250,173,20,0.95)', color: '#fff', fontWeight: 700, borderRadius: 8, border: 'none' }}>
+              📌
+            </Tag>
+          )}
+          {/* 右下角 ⋮ 菜单：置顶、重命名、上传封面、删除（密码确认） */}
+          <NoteCardMenu note={note} onChanged={onChanged} zIndex={3} />
         </div>
       }
     >

@@ -81,6 +81,7 @@ type StudyNote struct {
 	Title     string         `gorm:"size:255;not null" json:"title"`
 	Content   string         `gorm:"type:text" json:"content"`  // markdown 原文
 	Images    string         `gorm:"type:text" json:"images"`   // JSON array of image filenames
+	Pinned    bool           `gorm:"default:false;index" json:"pinned"` // 用户置顶
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -114,6 +115,15 @@ type AlbumMeta struct {
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// AlbumPin 专辑置顶（每个用户可置顶多个专辑，置顶项展示在最前）。
+type AlbumPin struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index;uniqueIndex:idx_user_album_pin;not null" json:"user_id"`
+	Album     string    `gorm:"size:255;uniqueIndex:idx_user_album_pin;not null" json:"album"`
+	Sort      int       `gorm:"default:0" json:"sort"` // 置顶顺序（值越小越靠前）
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Setting 用户学习偏好

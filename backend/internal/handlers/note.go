@@ -36,12 +36,13 @@ func noteToJSON(n models.StudyNote) gin.H {
 		"title":      n.Title,
 		"content":    n.Content,
 		"images":     imgs,
+		"pinned":     n.Pinned,
 		"created_at": n.CreatedAt,
 		"updated_at": n.UpdatedAt,
 	}
 }
 
-// ListNotes 列出指定专辑下的学习页面
+// ListNotes 列出指定专辑下的学习页面，按置顶优先 + 更新时间倒序
 // 路由: GET /notes?album=xxx
 func ListNotes(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -52,7 +53,7 @@ func ListNotes(cfg *config.Config) gin.HandlerFunc {
 			q = q.Where("album = ?", album)
 		}
 		var notes []models.StudyNote
-		q.Order("updated_at DESC").Find(&notes)
+		q.Order("pinned DESC, updated_at DESC").Find(&notes)
 		result := make([]gin.H, 0, len(notes))
 		for _, n := range notes {
 			result = append(result, noteToJSON(n))
@@ -109,6 +110,7 @@ func GetNote(cfg *config.Config) gin.HandlerFunc {
 type updateNoteReq struct {
 	Title   *string `json:"title"`
 	Content *string `json:"content"`
+	Pinned  *bool   `json:"pinned"`
 }
 
 // UpdateNote 更新学习页面内容
@@ -133,12 +135,32 @@ func UpdateNote(cfg *config.Config) gin.HandlerFunc {
 		if req.Content != nil {
 			note.Content = *req.Content
 		}
+		if req.Pinned != nil {
+			note.Pinned = *req.Pinned
+		}
 		database.DB.Save(&note)
 		utils.OK(c, noteToJSON(note))
 	}
 }
 
-// DeleteNote 删除学习页面（同时删除关联图片）
+// ToggleNotePin 切换学习页面置顶状态
+// 路由: POST /notes/:id/pin
+func ToggleNotePin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := middleware.GetUserID(c)
+		id := c.Param("id")
+		var note models.StudyNote
+		if err := database.DB.Where("user_id = ? AND id = ?", uid, id).First(&note).Error; err != nil {
+			utils.Fail(c, http.StatusNotFound, "学习页面不存在")
+			return
+		}
+		note.Pinned = !note.Pinned
+		database.DB.Save(&note)
+		utils.OK(c, gin.H{"pinned": note.Pinned})
+	}
+}
+
+// DeleteNote 删除学习页面（同时删除关联图片）。需 X-Delete-Password 头校验当前用户密码。
 // 路由: DELETE /notes/:id
 func DeleteNote(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -147,6 +169,10 @@ func DeleteNote(cfg *config.Config) gin.HandlerFunc {
 		var note models.StudyNote
 		if err := database.DB.Where("user_id = ? AND id = ?", uid, id).First(&note).Error; err != nil {
 			utils.Fail(c, http.StatusNotFound, "学习页面不存在")
+			return
+		}
+		if !verifyUserPassword(c) {
+			utils.Fail(c, http.StatusUnauthorized, "密码错误")
 			return
 		}
 		dir := filepath.Join(noteImagesDir(cfg), strconv.FormatUint(uint64(note.ID), 10))

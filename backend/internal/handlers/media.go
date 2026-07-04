@@ -250,6 +250,14 @@ func ListAlbums() gin.HandlerFunc {
 			Order("album ASC").
 			Scan(&rows)
 
+		// 拉取当前用户置顶的专辑（按 sort 升序）——置顶专辑排在最前
+		var pinList []models.AlbumPin
+		database.DB.Where("user_id = ?", uid).Order("sort ASC").Find(&pinList)
+		pinnedSet := make(map[string]bool, len(pinList))
+		for _, p := range pinList {
+			pinnedSet[p.Album] = true
+		}
+
 		// 一次性拉取所有 AlbumMeta（按 album 名映射到子专辑数组）
 		allMeta := make(map[string][]models.AlbumMeta)
 		var metas []models.AlbumMeta
@@ -274,10 +282,28 @@ func ListAlbums() gin.HandlerFunc {
 			CoverPath   *string       `json:"cover_path"`   // 专辑本身封面（来自 AlbumMeta）
 			BannerPath  *string       `json:"banner_path"`
 			Description string        `json:"description"`
+			Pinned      bool          `json:"pinned"` // 用户是否置顶
+			PinOrder    int           `json:"pin_order"` // 置顶顺序（值越小越靠前；未置顶 = -1）
 			SubAlbums   []subAlbumRow `json:"sub_albums"`
 		}
-		result := make([]albumWithSubs, 0, len(rows))
+		// 行 → 完整结构（按置顶优先 + 名字）
+		rowMap := make(map[string]albumRow, len(rows))
 		for _, r := range rows {
+			rowMap[r.Album] = r
+		}
+		result := make([]albumWithSubs, 0, len(rows))
+		// 先把置顶项按 sort 顺序加入
+		pinOrderIdx := make(map[string]int, len(pinList))
+		for i, p := range pinList {
+			pinOrderIdx[p.Album] = i
+		}
+		added := make(map[string]bool)
+		for _, p := range pinList {
+			r, ok := rowMap[p.Album]
+			if !ok {
+				continue
+			}
+			added[p.Album] = true
 			// 专辑本体的封面 / 横幅
 			var albumCover, albumBanner *string
 			var albumDesc string
@@ -298,7 +324,6 @@ func ListAlbums() gin.HandlerFunc {
 				Group("sub_album").
 				Order("sub_album ASC").
 				Scan(&subs)
-			// 关联季的封面 / 横幅
 			for i := range subs {
 				for _, m := range allMeta[r.Album] {
 					if m.SubAlbum == subs[i].SubAlbum {
@@ -313,6 +338,52 @@ func ListAlbums() gin.HandlerFunc {
 				Album: r.Album, Count: r.Count, Played: r.Played,
 				HasSeasons: len(subs) > 0,
 				CoverPath:  albumCover, BannerPath: albumBanner, Description: albumDesc,
+				Pinned:    true,
+				PinOrder:  pinOrderIdx[r.Album],
+				SubAlbums: subs,
+			})
+		}
+		// 再把未置顶项按名字加入
+		for _, r := range rows {
+			if added[r.Album] {
+				continue
+			}
+			// 专辑本体的封面 / 横幅
+			var albumCover, albumBanner *string
+			var albumDesc string
+			for _, m := range allMeta[r.Album] {
+				if m.SubAlbum == "" {
+					albumCover = m.CoverPath
+					albumBanner = m.BannerPath
+					albumDesc = m.Description
+					break
+				}
+			}
+			// 季子专辑
+			var subs []subAlbumRow
+			database.DB.Model(&models.MediaFile{}).
+				Select("sub_album, count(*) as count, "+
+					"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
+				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> '' AND deleted_at IS NULL "+excludePaired, r.Album).
+				Group("sub_album").
+				Order("sub_album ASC").
+				Scan(&subs)
+			for i := range subs {
+				for _, m := range allMeta[r.Album] {
+					if m.SubAlbum == subs[i].SubAlbum {
+						subs[i].CoverPath = m.CoverPath
+						subs[i].BannerPath = m.BannerPath
+						subs[i].Description = m.Description
+						break
+					}
+				}
+			}
+			result = append(result, albumWithSubs{
+				Album: r.Album, Count: r.Count, Played: r.Played,
+				HasSeasons: len(subs) > 0,
+				CoverPath:  albumCover, BannerPath: albumBanner, Description: albumDesc,
+				Pinned:    false,
+				PinOrder:  -1,
 				SubAlbums: subs,
 			})
 		}

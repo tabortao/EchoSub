@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Spin, Empty, Tag, Typography, Tooltip, Button, Modal, Input, message, Dropdown, Upload } from 'antd'
-import { PlayCircleOutlined, ReadOutlined, FolderOutlined, MoreOutlined, EditOutlined, PictureOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, ReadOutlined, FolderOutlined, MoreOutlined, EditOutlined, PictureOutlined, PushpinFilled, PushpinOutlined, DeleteOutlined } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
 import type { MenuProps } from 'antd'
 import { mediaApi, noteApi, recordApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { useScanStore } from '@/store/scan'
 import MediaCover from '@/components/MediaCover'
+import PasswordConfirmModal from '@/components/PasswordConfirmModal'
+import NoteCardMenu from '@/components/NoteCardMenu'
 import { formatRelative } from '@/utils'
 import type { MediaListItem, Album, StudyNote, PlayRecord, MediaFile } from '@/types'
 
@@ -147,7 +149,7 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
             f.kind === 'media' ? (
               <MediaCard key={`m-${f.item.media.id}`} item={f.item} showProgress onClick={() => onPlayMedia(f.item.media.id)} />
             ) : (
-              <NoteCard key={`n-${f.note.id}`} note={f.note} token={token} onClick={() => onOpenNote(f.note.id)} />
+              <NoteCard key={`n-${f.note.id}`} note={f.note} token={token} onClick={() => onOpenNote(f.note.id)} onChanged={load} />
             )
           }
         />
@@ -270,7 +272,7 @@ const scrollRowStyle: React.CSSProperties = {
 /**
  * 专辑入口卡片：一个封面代表整个专辑，点击进入详情。
  * 学习 Emby「My Media」海报风格——大尺寸竖向封面 + 底部渐变标题。
- * 右上角 ⋮ 菜单：重命名专辑、上传专辑封面（folder.jpg）。
+ * 右下角 ⋮ 菜单：置顶/取消置顶、重命名专辑、上传专辑封面（folder.jpg）、删除（密码确认）。
  * 优先使用 album.cover_path（来自 Emby 扫描或用户上传），否则自动挑选代表媒体封面。
  */
 function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; onClick: () => void; onChanged: () => void; token: string }) {
@@ -281,6 +283,8 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
   const [renameValue, setRenameValue] = useState(album.album)
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [pinned, setPinned] = useState(!!album.pinned)
 
   // 优先使用 album 自带封面（来自 Emby 扫描或用户上传）；否则用自动挑选的代表封面
   const hasAlbumCover = !!album.cover_path
@@ -302,6 +306,36 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
     } finally {
       setSubmitting(false)
     }
+  }
+
+  // 切换置顶
+  const handleTogglePin = async () => {
+    try {
+      const res = await mediaApi.togglePinAlbum(album.album)
+      const next = res.data.data?.pinned ?? false
+      setPinned(next)
+      message.success(next ? '已置顶专辑' : '已取消置顶')
+      onChanged()
+    } catch (err: unknown) {
+      message.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '置顶操作失败')
+    }
+  }
+
+  // 删除专辑
+  const handleDelete = (password: string) => {
+    return mediaApi.deleteAlbum(album.album, password)
+      .then(() => {
+        message.success('专辑已删除')
+        setDeleteOpen(false)
+        onChanged()
+      })
+      .catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '删除失败'
+        message.error(msg)
+        if (status === 401) throw err
+        setDeleteOpen(false)
+      })
   }
 
   // 上传封面前的 props 配置
@@ -327,20 +361,29 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
     },
   }
 
+  // 菜单项：最上方为置顶（视觉强调），下方编辑类操作
   const cardMenuItems: MenuProps['items'] = [
-    { key: 'rename', icon: <EditOutlined />, label: '重命名专辑' },
-    { key: 'cover', icon: <PictureOutlined />, label: uploading ? '上传中…' : '上传封面图' },
+    { key: 'pin', icon: pinned ? <PushpinFilled /> : <PushpinOutlined />, label: pinned ? '取消置顶' : '📌 置顶专辑' },
+    { type: 'divider' },
+    { key: 'rename', icon: <EditOutlined />, label: '✏️ 重命名专辑' },
+    { key: 'cover', icon: <PictureOutlined />, label: uploading ? '上传中…' : '🖼️ 上传封面图' },
+    { type: 'divider' },
+    { key: 'delete', icon: <DeleteOutlined />, label: '🗑️ 删除专辑', danger: true },
   ]
 
   const onMenuClick: MenuProps['onClick'] = ({ key, domEvent }) => {
     // 阻止冒泡到卡片点击（防止触发进入专辑）
     domEvent?.stopPropagation()
-    if (key === 'rename') {
+    if (key === 'pin') {
+      handleTogglePin()
+    } else if (key === 'rename') {
       setRenameValue(album.album)
       setRenameOpen(true)
     } else if (key === 'cover') {
       // 触发 Upload 组件的 input 点击
       document.getElementById(`album-cover-input-${CSS.escape(album.album)}`)?.click()
+    } else if (key === 'delete') {
+      setDeleteOpen(true)
     }
   }
 
@@ -378,34 +421,39 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
             <FolderOutlined style={{ fontSize: 64, color: 'rgba(255,255,255,0.8)' }} />
           </div>
         )}
-        {/* 顶部信息角标 */}
-        <div style={{ position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', justifyContent: 'space-between' }}>
-          <Tag color="orange" style={{ margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 8, fontSize: 12 }}>
-            📂 专辑
-          </Tag>
-          <Tag style={{ margin: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 8, fontWeight: 600, fontSize: 12, border: 'none' }}>
+        {/* 顶部信息角标：置顶徽标 + 专辑类型 + 数量 */}
+        <div style={{ position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
+            <Tag color="orange" style={{ margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 8, fontSize: 12 }}>
+              📂 专辑
+            </Tag>
+            {pinned && (
+              <Tag color="gold" style={{ margin: 0, background: 'rgba(250,173,20,0.95)', color: '#fff', fontWeight: 700, borderRadius: 8, fontSize: 12, border: 'none' }}>
+                📌 置顶
+              </Tag>
+            )}
+          </div>
+          <Tag style={{ margin: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 8, fontWeight: 600, fontSize: 12, border: 'none', flexShrink: 0 }}>
             {count} 项
           </Tag>
         </div>
-        {/* 右上角 ⋮ 菜单按钮：hover 时半透明背景，便于在不离开封面时操作 */}
+        {/* 右下角 ⋮ 菜单按钮：固定位置 + hover 时加深背景 */}
         <div
           onClick={(e) => e.stopPropagation()}
           style={{
-            position: 'absolute', top: 10, right: 10,
-            opacity: hovered ? 1 : 0.85, transition: 'opacity 0.2s',
-            transform: hovered ? 'translateY(40px)' : 'none',
+            position: 'absolute', bottom: 10, right: 10, zIndex: 5,
           }}
         >
           <Dropdown
             menu={{ items: cardMenuItems, onClick: onMenuClick }}
             trigger={['click']}
-            placement="bottomRight"
+            placement="topRight"
           >
             <Button
               shape="circle"
               size="small"
               icon={<MoreOutlined style={{ fontSize: 18 }} />}
-              style={{ background: 'rgba(0,0,0,0.55)', border: 'none', color: '#fff' }}
+              style={{ background: 'rgba(0,0,0,0.65)', border: 'none', color: '#fff' }}
               onClick={(e) => e.stopPropagation()}
             />
           </Dropdown>
@@ -481,6 +529,15 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
           maxLength={255}
         />
       </Modal>
+
+      {/* 删除专辑：密码二次确认 */}
+      <PasswordConfirmModal
+        open={deleteOpen}
+        title="🗑️ 删除专辑"
+        description={`确定删除「${album.album}」吗？专辑目录及其全部媒体 / 字幕 / 封面 / 学习页面将被永久删除，无法恢复。`}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteOpen(false)}
+      />
     </div>
   )
 }
@@ -551,8 +608,16 @@ function MediaCard({
 
 /**
  * 学习页面海报卡片：首图或渐变占位 + 标题。
+ * 右下角 ⋮ 菜单：置顶、重命名、上传封面、删除（密码确认）。
  */
-function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; onClick: () => void }) {
+function NoteCard({
+  note, token, onClick, onChanged,
+}: {
+  note: StudyNote
+  token: string
+  onClick: () => void
+  onChanged: () => void
+}) {
   const hasImg = note.images && note.images.length > 0
   return (
     <div
@@ -562,6 +627,7 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
         borderRadius: 12, overflow: 'hidden', background: '#fff',
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         transition: 'transform 0.2s, box-shadow 0.2s',
+        position: 'relative',
       }}
       onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(250,173,20,0.18)' }}
       onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)' }}
@@ -586,6 +652,13 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
         <Tag color="gold" style={{ position: 'absolute', top: 8, left: 8, margin: 0, fontWeight: 600, borderRadius: 8, background: 'rgba(255,255,255,0.9)' }}>
           📖 学习页
         </Tag>
+        {note.pinned && (
+          <Tag color="gold" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(250,173,20,0.95)', color: '#fff', fontWeight: 700, borderRadius: 8, border: 'none' }}>
+            📌 置顶
+          </Tag>
+        )}
+        {/* 右下角 ⋮ 菜单：置顶、重命名、上传封面、删除（密码确认） */}
+        <NoteCardMenu note={note} onChanged={onChanged} />
       </div>
       <div style={{ padding: '8px 10px' }}>
         <Tooltip title={note.title}>

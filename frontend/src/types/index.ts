@@ -94,6 +94,10 @@ export interface Album {
   banner_path?: string | null
   /** 专辑描述（来自 tvshow.nfo / album.nfo 的 <plot> 段） */
   description?: string
+  /** 用户是否置顶该专辑（v0.4.5 起） */
+  pinned?: boolean
+  /** 置顶顺序（值越小越靠前；未置顶 = -1） */
+  pin_order?: number
   sub_albums?: SubAlbum[]
 }
 
@@ -205,6 +209,8 @@ export interface StudyNote {
   title: string
   content: string
   images: string[]
+  /** 用户是否置顶（v0.4.5 起） */
+  pinned?: boolean
   created_at: string
   updated_at: string
 }

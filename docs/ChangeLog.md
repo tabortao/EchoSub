@@ -7,6 +7,40 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.4.5] - 2026-07-04
+
+### Added
+
+#### 学习页面 ⋮ 菜单 + 专辑置顶 + 部分 Emby 刮削兼容
+
+- **后端 `models/models.go`**：
+  - `StudyNote` 新增 `Pinned bool` 字段（带索引），用于学习页面级别的用户置顶。
+  - ✨新增 `AlbumPin` 模型：专辑置顶（每个用户可置顶多个专辑，按 `sort` 升序展示在首页最前）。联合唯一索引 `(user_id, album)`。
+- **后端 `database/database.go`**：`AutoMigrate` 加入 `StudyNote.Pinned` 与 `AlbumPin`。
+- **后端 `scanner/scanner.go`**：在已有 Emby 元数据识别基础上增强对「部分刮削」专辑的兼容：
+  - `findCover` 继续支持 `<basename>-thumb.jpg` 缩略图优先。
+  - `scanAlbumMeta` 在专辑根目录识别 `seasonXX-poster.<ext>` 作为对应季的封面（季目录名 `Season XX` / `seasonXX` / `SeasonXX`），并支持 `seasonXX-banner.<ext>` 作为季横幅，让「小猪佩奇(2004)」等只有部分 Emby 资源的目录也能正常显示封面、季封面、横幅与描述。
+- **后端 `handlers/note.go`**：
+  - `updateNoteReq` 新增 `pinned` 字段，`UpdateNote` 支持置顶切换。
+  - ✨新增 `ToggleNotePin`：`POST /notes/:id/pin` 切换学习页面置顶状态，返回 `{pinned: bool}`。
+  - `DeleteNote` 增强：要求 `X-Delete-Password` 请求头（bcrypt 校验当前用户密码），与「删除专辑 / 删除文件 / 删除目录」二次确认保持一致。
+- **后端 `handlers/album_pin.go`** ✨新增：`POST /albums/:name/pin` 切换专辑置顶状态（按用户隔离，已置顶则取消，否则按 `MAX(sort)+1` 追加）。
+- **后端 `handlers/media.go`**：`ListAlbums` 拉取当前用户的 `AlbumPin` 列表，先按 `sort` 升序拼接置顶项，再拼接未置顶项；`Album` 返回新增 `pinned` / `pin_order` 字段。
+- **后端 `router/router.go`**：注册 `POST /albums/:name/pin`、`POST /notes/:id/pin` 两条新路由。
+- **前端 `types/index.ts`**：`Album` 新增 `pinned? / pin_order?` 字段；`StudyNote` 新增 `pinned?` 字段。
+- **前端 `api/index.ts`**：`mediaApi.togglePinAlbum` 切换专辑置顶；`noteApi.pin` 切换学习页置顶；`noteApi.delete` 接受可选 `password` 并附带 `X-Delete-Password` 头。
+- **前端 `components/NoteCardMenu.tsx`** ✨新增：学习页面卡片 ⋮ 菜单共享组件，统一实现「置顶 / 取消置顶 → 重命名 → 上传封面 → 删除（密码确认）」四项操作，触发器与 z-index 可定制，首页 / 网格视图共用同一份逻辑。
+- **前端 `components/EmbyHome.tsx`**：
+  - `AlbumCard` ⋮ 菜单移至卡片右下角，菜单项最上方为「置顶 / 取消置顶」，依次为「重命名专辑 / 上传封面图 / 删除专辑（密码确认）」，置顶卡片在顶部叠加 📌 徽标。
+  - `NoteCard` 集成 `NoteCardMenu`：右下角 ⋮ 菜单 + 置顶徽标 + 标题展示逻辑保持原样。
+- **前端 `pages/Home.tsx`**：网格视图的 `NoteCard` 同步集成 `NoteCardMenu`（z-index 调整为 3 以避免被 Card 浮层遮挡），将原右上角的「专辑名」标签替换为「📌 置顶」徽标。
+
+### Notes
+
+- 学习页面「上传封面」通过 `noteApi.uploadImages` 上传图片，新图片会追加到 `images` 数组的首位（首图用于卡片展示）。
+- 专辑 / 学习页删除时如不传登录密码将返回 401，便于前端控制「必须二次确认」的 UX 流程（当前统一通过 `PasswordConfirmModal` 引导用户输入）。
+- 部分 Emby 刮削的目录（缺少 `season.nfo` 但有 `seasonXX-poster.jpg`）现在也能正确显示季封面；`scanAlbumMeta` 对每张图分别记录候选，支持后续增补资源后自动升级。
+
 ## [v0.4.4] - 2026-07-04
 
 ### Added

@@ -50,6 +50,7 @@ func Init(cfg *config.Config) error {
 		&models.StudyNote{},
 		&models.MediaRemark{},
 		&models.AlbumMeta{},
+		&models.AlbumPin{},
 	); err != nil {
 		return fmt.Errorf("数据库迁移失败: %w", err)
 	}

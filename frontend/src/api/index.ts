@@ -91,6 +91,9 @@ export const mediaApi = {
   /** 重命名专辑（磁盘目录 + DB 记录批量更新） */
   renameAlbum: (album: string, newName: string) =>
     client.put<ApiResponse>('/albums/rename', { album, new_name: newName }),
+  /** 切换专辑置顶（v0.4.5 起）。返回当前是否置顶 */
+  togglePinAlbum: (album: string) =>
+    client.post<ApiResponse<{ pinned: boolean }>>(`/albums/${encodeURIComponent(album)}/pin`),
   /** 删除专辑（递归删除磁盘目录 + DB 批量软删除）。可选 password 二次确认 */
   deleteAlbum: (album: string, password?: string) =>
     client.delete<ApiResponse>('/albums', {
@@ -194,9 +197,15 @@ export const noteApi = {
   create: (album: string, title: string, content = '') =>
     client.post<ApiResponse<StudyNote>>('/notes', { album, title, content }),
   get: (id: number) => client.get<ApiResponse<StudyNote>>(`/notes/${id}`),
-  update: (id: number, data: { title?: string; content?: string }) =>
+  update: (id: number, data: { title?: string; content?: string; pinned?: boolean }) =>
     client.put<ApiResponse<StudyNote>>(`/notes/${id}`, data),
-  delete: (id: number) => client.delete<ApiResponse>(`/notes/${id}`),
+  /** 删除学习页面（v0.4.5 起需 X-Delete-Password 头校验登录密码） */
+  delete: (id: number, password?: string) =>
+    client.delete<ApiResponse>(`/notes/${id}`, {
+      headers: password ? { 'X-Delete-Password': password, 'X-Confirm-Purpose': 'delete' } : undefined,
+    }),
+  /** 切换置顶 */
+  pin: (id: number) => client.post<ApiResponse<{ pinned: boolean }>>(`/notes/${id}/pin`),
   uploadImages: (id: number, files: File[]) => {
     const form = new FormData()
     files.forEach((f) => form.append('files', f))
