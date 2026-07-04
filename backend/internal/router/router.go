@@ -78,6 +78,12 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			tags.POST("", handlers.CreateTag())
 			tags.PUT("/:id", handlers.UpdateTag())
 			tags.DELETE("/:id", handlers.DeleteTag())
+			// 多态标签关联（专辑 / 季 / 学习页 / 媒体）
+			tags.POST("/:id/attach", handlers.AttachEntityTag())
+			tags.POST("/:id/detach", handlers.DetachEntityTag())
+			tags.GET("/:id/entities", handlers.ListEntitiesByTag())
+			tags.GET("/entity", handlers.GetEntityTags())
+			tags.PUT("/entity", handlers.SetEntityTags())
 		}
 
 		// 学习记录

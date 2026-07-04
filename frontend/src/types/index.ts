@@ -79,6 +79,10 @@ export interface SubAlbum {
   banner_path?: string | null
   /** 季描述（来自 season.nfo / tvshow.nfo 的 <plot> 段） */
   description?: string
+  /** 季关联的标签列表（v0.5.0 起） */
+  tags?: Tag[]
+  /** 季对应的 AlbumMeta.ID（用于标签 attach/detach） */
+  meta_id?: number
 }
 
 export interface Album {
@@ -98,8 +102,15 @@ export interface Album {
   pinned?: boolean
   /** 置顶顺序（值越小越靠前；未置顶 = -1） */
   pin_order?: number
+  /** 专辑关联的标签列表（v0.5.0 起） */
+  tags?: Tag[]
+  /** 专辑对应的 AlbumMeta.ID（用于标签 attach/detach） */
+  meta_id?: number
   sub_albums?: SubAlbum[]
 }
+
+/** 标签可关联的实体类型（v0.5.0 起） */
+export type TagEntityType = 'media' | 'album' | 'season' | 'note'
 
 export interface BrowseEntry {
   name: string
@@ -211,9 +222,35 @@ export interface StudyNote {
   images: string[]
   /** 用户是否置顶（v0.4.5 起） */
   pinned?: boolean
+  /** 学习页面关联的标签列表（v0.5.0 起） */
+  tags?: Tag[]
   created_at: string
   updated_at: string
 }
+
+/** 标签筛选结果（v0.5.0 起）：按标签分组返回的实体列表 */
+export interface TagFilterResult {
+  /** 标签基本信息；后端偶尔可能不返回，统一允许 null */
+  tag: Tag | null
+  /** 携带此标签的专辑列表（AlbumMeta 中 sub_album='' 的记录） */
+  albums: TagFilterAlbum[]
+  /** 携带此标签的季列表 */
+  seasons: TagFilterSeason[]
+  /** 携带此标签的学习页面 */
+  notes: StudyNote[]
+  /** 携带此标签的媒体文件 */
+  medias: MediaFile[]
+}
+
+export interface TagFilterAlbum {
+  album: string
+  sub_album: string
+  name: string
+  cover_path: string | null
+  meta_id: number
+}
+
+export type TagFilterSeason = TagFilterAlbum
 
 // 文件备注（用户对单个媒体文件的 markdown 笔记）
 export interface MediaRemark {

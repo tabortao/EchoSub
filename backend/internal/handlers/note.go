@@ -22,13 +22,16 @@ func noteImagesDir(cfg *config.Config) string {
 }
 
 // noteToJSON 将 StudyNote 转换为带解析 images 的 JSON 响应
-func noteToJSON(n models.StudyNote) gin.H {
+func noteToJSON(n models.StudyNote, tags []models.Tag) gin.H {
 	var imgs []string
 	if n.Images != "" {
 		_ = json.Unmarshal([]byte(n.Images), &imgs)
 	}
 	if imgs == nil {
 		imgs = []string{}
+	}
+	if tags == nil {
+		tags = []models.Tag{}
 	}
 	return gin.H{
 		"id":         n.ID,
@@ -37,6 +40,7 @@ func noteToJSON(n models.StudyNote) gin.H {
 		"content":    n.Content,
 		"images":     imgs,
 		"pinned":     n.Pinned,
+		"tags":       tags,
 		"created_at": n.CreatedAt,
 		"updated_at": n.UpdatedAt,
 	}
@@ -55,8 +59,14 @@ func ListNotes(cfg *config.Config) gin.HandlerFunc {
 		var notes []models.StudyNote
 		q.Order("pinned DESC, updated_at DESC").Find(&notes)
 		result := make([]gin.H, 0, len(notes))
+		// 一次性加载所有学习页面的标签
+		noteIDs := make([]uint, 0, len(notes))
 		for _, n := range notes {
-			result = append(result, noteToJSON(n))
+			noteIDs = append(noteIDs, n.ID)
+		}
+		tagMap := LoadTagsForEntities(uid, models.EntityTypeNote, noteIDs)
+		for _, n := range notes {
+			result = append(result, noteToJSON(n, tagMap[n.ID]))
 		}
 		utils.OK(c, gin.H{"notes": result})
 	}
@@ -88,7 +98,8 @@ func CreateNote(cfg *config.Config) gin.HandlerFunc {
 			utils.Fail(c, http.StatusInternalServerError, "创建失败: "+err.Error())
 			return
 		}
-		utils.OK(c, noteToJSON(note))
+		// 新建学习页默认无标签
+		utils.OK(c, noteToJSON(note, []models.Tag{}))
 	}
 }
 
@@ -103,7 +114,8 @@ func GetNote(cfg *config.Config) gin.HandlerFunc {
 			utils.Fail(c, http.StatusNotFound, "学习页面不存在")
 			return
 		}
-		utils.OK(c, noteToJSON(note))
+		tagMap := LoadTagsForEntities(uid, models.EntityTypeNote, []uint{note.ID})
+		utils.OK(c, noteToJSON(note, tagMap[note.ID]))
 	}
 }
 
@@ -139,7 +151,8 @@ func UpdateNote(cfg *config.Config) gin.HandlerFunc {
 			note.Pinned = *req.Pinned
 		}
 		database.DB.Save(&note)
-		utils.OK(c, noteToJSON(note))
+		tagMap := LoadTagsForEntities(uid, models.EntityTypeNote, []uint{note.ID})
+		utils.OK(c, noteToJSON(note, tagMap[note.ID]))
 	}
 }
 

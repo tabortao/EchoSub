@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message, Tabs } from 'antd'
 import type { MenuProps } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined, FolderOutlined, LockOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined, FolderOutlined, LockOutlined, TagsOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -10,6 +10,7 @@ import EmbyHome from '@/components/EmbyHome'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 import NoteCardMenu from '@/components/NoteCardMenu'
 import SeasonCardMenu from '@/components/SeasonCardMenu'
+import TagManagerModal from '@/components/TagManagerModal'
 import type { MediaListResponse, MediaListItem, Album, SubAlbum, StudyNote } from '@/types'
 
 const { Text } = Typography
@@ -155,6 +156,10 @@ function GridView(props: {
   const [renameValue, setRenameValue] = useState('')
   // 待删除的媒体（用于弹出密码确认框）
   const [deleteTarget, setDeleteTarget] = useState<MediaListItem | null>(null)
+  // 专辑级标签管理弹窗（v0.5.0 起）：点击专辑标题旁的「🏷️ 标签」按钮打开
+  const [tagOpen, setTagOpen] = useState(false)
+  // 媒体级标签管理弹窗（v0.5.0 起）：在媒体 ⋮ 菜单里点击「管理标签」打开
+  const [tagMedia, setTagMedia] = useState<MediaListItem | null>(null)
 
   const currentAlbum = albums.find((a) => a.album === albumFilter)
   const subAlbums = currentAlbum?.sub_albums ?? []
@@ -268,12 +273,14 @@ function GridView(props: {
   }
 
   const buildMediaMenu = (): MenuProps['items'] => [
+    { key: 'tag', label: '🏷️ 管理标签', icon: <TagsOutlined /> },
     { key: 'rename', label: '✏️ 重命名', icon: <EditOutlined /> },
     { type: 'divider' },
     { key: 'delete', label: '🗑️ 删除', icon: <DeleteOutlined />, danger: true },
   ]
   const onMediaMenuClick = (item: MediaListItem, key: string) => {
-    if (key === 'rename') openRenameMedia(item)
+    if (key === 'tag') setTagMedia(item)
+    else if (key === 'rename') openRenameMedia(item)
     else if (key === 'delete') handleDeleteMedia(item)
   }
 
@@ -320,7 +327,25 @@ function GridView(props: {
                   {currentAlbum.description.slice(0, 200)}
                 </div>
               )}
+              {/* 专辑级标签展示 + 管理入口（v0.5.0 起） */}
+              {(currentAlbum.tags?.length ?? 0) > 0 && (
+                <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {currentAlbum.tags!.map((t) => (
+                    <Tag key={t.id} color="purple" style={{ borderRadius: 8, margin: 0 }}>{t.name}</Tag>
+                  ))}
+                </div>
+              )}
             </div>
+            {/* 管理标签：专辑级标签由 AlbumMeta.ID 关联；meta_id=0 时禁用（罕见） */}
+            <Tooltip title={currentAlbum.meta_id ? '管理该专辑的标签' : '该专辑未关联元数据，无法管理标签'}>
+              <Button
+                icon={<TagsOutlined />}
+                onClick={() => setTagOpen(true)}
+                disabled={!currentAlbum.meta_id}
+              >
+                标签
+              </Button>
+            </Tooltip>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
               新建学习页面
             </Button>
@@ -502,6 +527,36 @@ function GridView(props: {
         onConfirm={confirmDeleteMedia}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      {/* 专辑级标签管理弹窗（v0.5.0 起）：使用 AlbumMeta.ID 关联 */}
+      {currentAlbum && (
+        <TagManagerModal
+          open={tagOpen}
+          entityType="album"
+          entityId={currentAlbum.meta_id || null}
+          currentTagIds={(currentAlbum.tags ?? []).map((t) => t.id)}
+          onClose={() => setTagOpen(false)}
+          onSaved={() => {
+            // 重新拉取专辑列表以刷新标签显示
+            mediaApi.albums().then((res) => setAlbums(res.data.data.albums ?? [])).catch(() => {})
+          }}
+        />
+      )}
+
+      {/* 媒体级标签管理弹窗（v0.5.0 起）：使用 MediaFile.ID 关联 */}
+      {tagMedia && (
+        <TagManagerModal
+          open={!!tagMedia}
+          entityType="media"
+          entityId={tagMedia.media.id}
+          currentTagIds={(tagMedia.media.tags ?? []).map((t) => t.id)}
+          onClose={() => setTagMedia(null)}
+          onSaved={() => {
+            // 重新拉取当前列表以刷新媒体标签显示
+            load()
+          }}
+        />
+      )}
     </>
   )
 }
@@ -656,6 +711,8 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
         {subAlbums.map((s) => {
           const cover = s.cover_path || s.banner_path
           const coverUrl = cover ? mediaApi.albumCoverUrl(album.album, token, s.sub_album) : ''
+          // 季未读：played=0 且 count>0（季内所有媒体都未开始学习）
+          const isUnread = (s.played ?? 0) === 0 && (s.count ?? 0) > 0
           return (
             <Col xs={12} sm={8} md={6} lg={4} xxl={4} key={s.sub_album}>
               <Card
@@ -686,10 +743,27 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
                     <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(0,0,0,0.65)', color: '#fff', borderRadius: 8, fontWeight: 600, border: 'none' }}>
                       📁 季
                     </Tag>
-                    {/* 右下角 ⋮ 菜单：上传季封面 / 删除该季（密码确认） */}
+                    {/* 季未读灰色蒙版：played=0 且 count>0（季内所有媒体都未开始学习）。
+                        季内任意媒体被学习后（played>0）蒙版自动消失。 */}
+                    {isUnread && (
+                      <div style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(128,128,128,0.55)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        pointerEvents: 'none',
+                      }}>
+                        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
+                          <LockOutlined style={{ fontSize: 48, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
+                          <span style={{ fontSize: 13, fontWeight: 600, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>未开始</span>
+                        </div>
+                      </div>
+                    )}
+                    {/* 右下角 ⋮ 菜单：管理标签 / 上传季封面 / 删除该季（密码确认） */}
                     <SeasonCardMenu
                       album={album.album}
                       subAlbum={s.sub_album}
+                      metaId={s.meta_id}
+                      tags={s.tags}
                       onChanged={onChanged}
                     />
                     <div style={{

@@ -7,6 +7,8 @@ import type {
   SubtitleResponse,
   Album,
   Tag,
+  TagEntityType,
+  TagFilterResult,
   PlayRecord,
   SentenceProgress,
   ProgressResponse,
@@ -165,6 +167,35 @@ export const tagApi = {
   create: (name: string) => client.post<ApiResponse<Tag>>('/tags', { name }),
   update: (id: number, name: string) => client.put<ApiResponse<Tag>>(`/tags/${id}`, { name }),
   delete: (id: number) => client.delete<ApiResponse>(`/tags/${id}`),
+  // ===== 多态标签关联（v0.5.0 起）=====
+  /**
+   * 通用：给任意类型的实体附加一个标签（幂等）。
+   * @param entityType 'media' | 'album' | 'season' | 'note'
+   * @param entityId 对应实体的 ID
+   */
+  attach: (tagId: number, entityType: TagEntityType, entityId: number) =>
+    client.post<ApiResponse>(`/tags/${tagId}/attach`, { entity_type: entityType, entity_id: entityId }),
+  /** 通用：从某个实体上摘除一个标签 */
+  detach: (tagId: number, entityType: TagEntityType, entityId: number) =>
+    client.post<ApiResponse>(`/tags/${tagId}/detach`, { entity_type: entityType, entity_id: entityId }),
+  /** 通用：覆盖式设置实体的全部标签（用于管理弹窗一次性保存） */
+  setForEntity: (entityType: TagEntityType, entityId: number, tagIds: number[]) =>
+    client.put<ApiResponse<{ tags: Tag[] }>>('/tags/entity', {
+      entity_type: entityType,
+      entity_id: entityId,
+      tag_ids: tagIds,
+    }),
+  /** 通用：获取某个实体当前关联的标签列表 */
+  getForEntity: (entityType: TagEntityType, entityId: number) =>
+    client.get<ApiResponse<{ tags: Tag[] }>>('/tags/entity', {
+      params: { type: entityType, id: entityId },
+    }),
+  /**
+   * 按标签筛选：返回该标签下的所有实体，按 专辑 / 季 / 文件（媒体 + 学习页）分组。
+   * 前端 Tags 页面选中某个标签后调用此接口。
+   */
+  entities: (tagId: number) =>
+    client.get<ApiResponse<TagFilterResult>>(`/tags/${tagId}/entities`),
 }
 
 // ===== 学习记录 =====

@@ -144,3 +144,28 @@ type Setting struct {
 
 // TableName 显式指定表名（避免复数问题）
 func (Tag) TableName() string { return "tags" }
+
+// EntityType 枚举：标签可关联的实体类型
+const (
+	EntityTypeMedia = "media" // 媒体文件（沿用 GORM media_tags，但元数据走 entity_tags）
+	EntityTypeAlbum = "album" // 专辑（AlbumMeta 中 sub_album='' 的记录）
+	EntityTypeSeason = "season" // 季（AlbumMeta 中 sub_album!='' 的记录）
+	EntityTypeNote  = "note"  // 学习页面
+)
+
+// EntityTag 多态标签关联表。
+// 一条记录 = 一个用户的一个标签关联到一个实体（album/season/note/media）。
+// 联合唯一索引 (user_id, tag_id, entity_type, entity_id) 防止重复关联。
+// 媒体文件原本走 GORM many2many media_tags；为统一查询体验，album/season/note 走此表。
+// Tags 页面的「按标签筛选 + 三组（专辑/季/文件）」接口使用本表 + media_tags 联合查询。
+type EntityTag struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	UserID     uint      `gorm:"uniqueIndex:idx_et_uniq;not null" json:"user_id"`
+	TagID      uint      `gorm:"uniqueIndex:idx_et_uniq;not null" json:"tag_id"`
+	EntityType string    `gorm:"size:32;uniqueIndex:idx_et_uniq;not null" json:"entity_type"`
+	EntityID   uint      `gorm:"uniqueIndex:idx_et_uniq;not null" json:"entity_id"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// TableName 显式指定表名
+func (EntityTag) TableName() string { return "entity_tags" }

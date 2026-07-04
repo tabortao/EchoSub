@@ -2,12 +2,12 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Spin, Empty, Typography, Button, Space, Modal,
-  Input, message, Tooltip, Image,
+  Input, message, Tooltip, Image, Tag,
 } from 'antd'
 import {
   ArrowLeftOutlined, EditOutlined, EyeOutlined,
   DeleteOutlined, UploadOutlined, LeftOutlined, RightOutlined,
-  SoundOutlined, LoadingOutlined,
+  SoundOutlined, LoadingOutlined, TagsOutlined,
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -15,6 +15,7 @@ import { noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { useSettingsStore } from '@/store/settings'
 import { markdownToPlainText } from '@/utils'
+import TagManagerModal from '@/components/TagManagerModal'
 import type { StudyNote } from '@/types'
 
 const { Text } = Typography
@@ -38,7 +39,8 @@ export default function NoteEditorPage() {
   const [loading, setLoading] = useState(true)
   const [note, setNote] = useState<StudyNote | null>(null)
 
-  useEffect(() => {
+  // 加载/刷新笔记数据：标签修改后调用此函数刷新当前页面的标签显示
+  const loadNote = () => {
     if (!id) return
     setLoading(true)
     noteApi
@@ -49,6 +51,11 @@ export default function NoteEditorPage() {
         setNote(null)
       })
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadNote()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   // 返回上一页；无历史栈（直接 URL 访问）兜底回首页
@@ -95,6 +102,7 @@ export default function NoteEditorPage() {
       token={token}
       onBack={handleBack}
       onDelete={handleDelete}
+      onReload={loadNote}
     />
   )
 }
@@ -104,9 +112,11 @@ interface NoteEditorProps {
   token: string
   onBack: () => void
   onDelete: () => void
+  /** 重新加载笔记数据（标签修改后调用） */
+  onReload: () => void
 }
 
-function NoteEditor({ note, token, onBack, onDelete }: NoteEditorProps) {
+function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title)
   const [content, setContent] = useState(note.content)
   const [images, setImages] = useState<string[]>(note.images)
@@ -115,6 +125,8 @@ function NoteEditor({ note, token, onBack, onDelete }: NoteEditorProps) {
   const [imgIndex, setImgIndex] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
   const [ttsLoading, setTtsLoading] = useState(false)
+  // 标签管理弹窗（v0.5.0 起）
+  const [tagOpen, setTagOpen] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   // 从全局设置读取 TTS 默认音色与语速
@@ -207,8 +219,8 @@ function NoteEditor({ note, token, onBack, onDelete }: NoteEditorProps) {
   return (
     <div>
       {/* 顶部：返回 + 标题 + 操作 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 8 }}>
-        <Space>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
+        <Space wrap>
           <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} title="返回" />
           <Input
             value={title}
@@ -216,8 +228,17 @@ function NoteEditor({ note, token, onBack, onDelete }: NoteEditorProps) {
             onBlur={() => { if (title !== note.title) save({ title }) }}
             style={{ fontSize: 18, fontWeight: 600, width: 400 }}
           />
+          {/* 标签展示（v0.5.0 起）：直接显示当前笔记的所有标签，紧贴标题便于一眼查看 */}
+          {(note.tags?.length ?? 0) > 0 && (
+            <Space size={4} wrap>
+              {note.tags!.map((t) => (
+                <Tag key={t.id} color="purple" style={{ borderRadius: 8, margin: 0 }}>{t.name}</Tag>
+              ))}
+            </Space>
+          )}
         </Space>
         <Space>
+          <Button icon={<TagsOutlined />} onClick={() => setTagOpen(true)}>标签</Button>
           <Button icon={<DeleteOutlined />} danger onClick={onDelete}>删除</Button>
         </Space>
       </div>
@@ -359,6 +380,16 @@ function NoteEditor({ note, token, onBack, onDelete }: NoteEditorProps) {
           </div>
         )}
       </div>
+
+      {/* 标签管理弹窗（v0.5.0 起）：学习页标签通过 StudyNote.ID 关联 */}
+      <TagManagerModal
+        open={tagOpen}
+        entityType="note"
+        entityId={note.id}
+        currentTagIds={(note.tags ?? []).map((t) => t.id)}
+        onClose={() => setTagOpen(false)}
+        onSaved={onReload}
+      />
     </div>
   )
 }

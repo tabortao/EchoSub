@@ -268,12 +268,14 @@ func ListAlbums() gin.HandlerFunc {
 		}
 
 		type subAlbumRow struct {
-			SubAlbum    string  `json:"sub_album"`
-			Count       int64   `json:"count"`
-			Played      int64   `json:"played"`
-			CoverPath   *string `json:"cover_path"`
-			BannerPath  *string `json:"banner_path"`
-			Description string  `json:"description"`
+			SubAlbum    string        `json:"sub_album"`
+			Count       int64         `json:"count"`
+			Played      int64         `json:"played"`
+			CoverPath   *string       `json:"cover_path"`
+			BannerPath  *string       `json:"banner_path"`
+			Description string        `json:"description"`
+			Tags        []models.Tag  `json:"tags"`
+			MetaID      uint          `json:"meta_id"` // AlbumMeta.ID，用于标签 attach/detach
 		}
 		type albumWithSubs struct {
 			Album       string        `json:"album"`
@@ -285,6 +287,8 @@ func ListAlbums() gin.HandlerFunc {
 			Description string        `json:"description"`
 			Pinned      bool          `json:"pinned"` // 用户是否置顶
 			PinOrder    int           `json:"pin_order"` // 置顶顺序（值越小越靠前；未置顶 = -1）
+			Tags        []models.Tag  `json:"tags"`
+			MetaID      uint          `json:"meta_id"` // 专辑对应的 AlbumMeta.ID（sub_album=""）
 			SubAlbums   []subAlbumRow `json:"sub_albums"`
 		}
 		// buildSubs 构造某专辑的子专辑列表：
@@ -318,10 +322,11 @@ func ListAlbums() gin.HandlerFunc {
 					// 期望季自身无 banner 时继承专辑横幅
 					BannerPath:  pickBanner(m.BannerPath, albumBanner),
 					Description: m.Description,
+					MetaID:      m.ID,
 				})
 				existing[m.SubAlbum] = true
 			}
-			// 关联 AlbumMeta 元数据（cover/banner/description）
+			// 关联 AlbumMeta 元数据（cover/banner/description/meta_id）
 			for i := range subs {
 				for _, m := range allMeta[albumName] {
 					if m.SubAlbum == subs[i].SubAlbum {
@@ -336,6 +341,10 @@ func ListAlbums() gin.HandlerFunc {
 						}
 						if m.Description != "" {
 							subs[i].Description = m.Description
+						}
+						// 取 AlbumMeta.ID 用于标签关联（每个季是独立的实体）
+						if m.ID != 0 {
+							subs[i].MetaID = m.ID
 						}
 						break
 					}
@@ -373,11 +382,13 @@ func ListAlbums() gin.HandlerFunc {
 			// 专辑本体的封面 / 横幅
 			var albumCover, albumBanner *string
 			var albumDesc string
+			var albumMetaID uint
 			for _, m := range allMeta[r.Album] {
 				if m.SubAlbum == "" {
 					albumCover = m.CoverPath
 					albumBanner = m.BannerPath
 					albumDesc = m.Description
+					albumMetaID = m.ID
 					break
 				}
 			}
@@ -388,6 +399,7 @@ func ListAlbums() gin.HandlerFunc {
 				CoverPath:  albumCover, BannerPath: albumBanner, Description: albumDesc,
 				Pinned:   true,
 				PinOrder: pinOrderIdx[r.Album],
+				MetaID:   albumMetaID,
 				SubAlbums: subs,
 			})
 		}
@@ -399,11 +411,13 @@ func ListAlbums() gin.HandlerFunc {
 			// 专辑本体的封面 / 横幅
 			var albumCover, albumBanner *string
 			var albumDesc string
+			var albumMetaID uint
 			for _, m := range allMeta[r.Album] {
 				if m.SubAlbum == "" {
 					albumCover = m.CoverPath
 					albumBanner = m.BannerPath
 					albumDesc = m.Description
+					albumMetaID = m.ID
 					break
 				}
 			}
@@ -414,9 +428,39 @@ func ListAlbums() gin.HandlerFunc {
 				CoverPath:  albumCover, BannerPath: albumBanner, Description: albumDesc,
 				Pinned:    false,
 				PinOrder:  -1,
+				MetaID:    albumMetaID,
 				SubAlbums: subs,
 			})
 		}
+
+		// 一次性加载所有专辑和季的标签，避免 N+1 查询
+		albumMetaIDs := make([]uint, 0)
+		seasonMetaIDs := make([]uint, 0)
+		for _, a := range result {
+			if a.MetaID != 0 {
+				albumMetaIDs = append(albumMetaIDs, a.MetaID)
+			}
+			for _, s := range a.SubAlbums {
+				if s.MetaID != 0 {
+					seasonMetaIDs = append(seasonMetaIDs, s.MetaID)
+				}
+			}
+		}
+		albumTagMap := LoadTagsForEntities(uid, models.EntityTypeAlbum, albumMetaIDs)
+		seasonTagMap := LoadTagsForEntities(uid, models.EntityTypeSeason, seasonMetaIDs)
+		for i := range result {
+			result[i].Tags = albumTagMap[result[i].MetaID]
+			if result[i].Tags == nil {
+				result[i].Tags = []models.Tag{}
+			}
+			for j := range result[i].SubAlbums {
+				result[i].SubAlbums[j].Tags = seasonTagMap[result[i].SubAlbums[j].MetaID]
+				if result[i].SubAlbums[j].Tags == nil {
+					result[i].SubAlbums[j].Tags = []models.Tag{}
+				}
+			}
+		}
+
 		utils.OK(c, gin.H{"albums": result})
 	}
 }

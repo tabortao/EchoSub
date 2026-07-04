@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Spin, Empty, Tag, Typography, Tooltip, Button, Modal, Input, message, Dropdown, Upload } from 'antd'
-import { PlayCircleOutlined, ReadOutlined, FolderOutlined, MoreOutlined, EditOutlined, PictureOutlined, PushpinFilled, PushpinOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, ReadOutlined, FolderOutlined, MoreOutlined, EditOutlined, PictureOutlined, PushpinFilled, PushpinOutlined, DeleteOutlined, LockOutlined, TagsOutlined } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
 import type { MenuProps } from 'antd'
 import { mediaApi, noteApi, recordApi } from '@/api'
@@ -9,6 +9,7 @@ import { useScanStore } from '@/store/scan'
 import MediaCover from '@/components/MediaCover'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 import NoteCardMenu from '@/components/NoteCardMenu'
+import TagManagerModal from '@/components/TagManagerModal'
 import { formatRelative } from '@/utils'
 import type { MediaListItem, Album, StudyNote, PlayRecord, MediaFile } from '@/types'
 
@@ -287,6 +288,8 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
   const [uploading, setUploading] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [pinned, setPinned] = useState(!!album.pinned)
+  // 标签管理弹窗（v0.5.0 起）：专辑级标签由 AlbumMeta.ID 关联
+  const [tagOpen, setTagOpen] = useState(false)
 
   // 优先使用 album 自带封面（来自 Emby 扫描或用户上传）；否则用自动挑选的代表封面
   const hasAlbumCover = !!album.cover_path
@@ -369,6 +372,7 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
     { type: 'divider' },
     { key: 'rename', icon: <EditOutlined />, label: '✏️ 重命名专辑' },
     { key: 'cover', icon: <PictureOutlined />, label: uploading ? '上传中…' : '🖼️ 上传封面图' },
+    { key: 'tag', icon: <TagsOutlined />, label: '🏷️ 管理标签', disabled: !album.meta_id },
     { type: 'divider' },
     { key: 'delete', icon: <DeleteOutlined />, label: '🗑️ 删除专辑', danger: true },
   ]
@@ -384,6 +388,9 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
     } else if (key === 'cover') {
       // 触发 Upload 组件的 input 点击
       document.getElementById(`album-cover-input-${CSS.escape(album.album)}`)?.click()
+    } else if (key === 'tag') {
+      // 打开标签管理弹窗（专辑级标签）
+      setTagOpen(true)
     } else if (key === 'delete') {
       setDeleteOpen(true)
     }
@@ -539,6 +546,16 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
         description={`确定删除「${album.album}」吗？专辑目录及其全部媒体 / 字幕 / 封面 / 学习页面将被永久删除，无法恢复。`}
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
+      />
+
+      {/* 专辑级标签管理弹窗（v0.5.0 起） */}
+      <TagManagerModal
+        open={tagOpen}
+        entityType="album"
+        entityId={album.meta_id || null}
+        currentTagIds={(album.tags ?? []).map((t) => t.id)}
+        onClose={() => setTagOpen(false)}
+        onSaved={onChanged}
       />
     </div>
   )

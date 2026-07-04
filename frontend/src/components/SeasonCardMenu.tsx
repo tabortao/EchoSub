@@ -1,14 +1,20 @@
 import { useState } from 'react'
 import { Button, Dropdown, Upload, message } from 'antd'
-import { MoreOutlined, PictureOutlined, DeleteOutlined } from '@ant-design/icons'
+import { MoreOutlined, PictureOutlined, DeleteOutlined, TagsOutlined } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
 import type { MenuProps } from 'antd'
 import { mediaApi } from '@/api'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
+import TagManagerModal from '@/components/TagManagerModal'
+import type { Tag } from '@/types'
 
 interface SeasonCardMenuProps {
   album: string
   subAlbum: string
+  /** 季的 AlbumMeta.ID（用于标签 attach/detach）；为 0 时隐藏标签入口 */
+  metaId?: number
+  /** 当前季已绑定的标签（用于初始化 TagManagerModal） */
+  tags?: Tag[]
   /** 操作完成后回调（通常用于刷新专辑数据） */
   onChanged: () => void
   /** 触发器按钮额外样式 */
@@ -19,18 +25,23 @@ interface SeasonCardMenuProps {
 
 /**
  * 季卡片 ⋮ 菜单：
+ * - 管理标签（v0.5.0 起）—— 通用 TagManagerModal
  * - 上传季封面（自动以 folder.<ext> 命名写入季目录）
  * - 删除季（递归删除季目录 + 软删除该季下所有 MediaFile / AlbumMeta，需登录密码二次确认）
  */
 export default function SeasonCardMenu({
   album,
   subAlbum,
+  metaId = 0,
+  tags = [],
   onChanged,
   triggerStyle,
   zIndex = 5,
 }: SeasonCardMenuProps) {
   const [uploading, setUploading] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // 标签管理弹窗：open=true 时显示
+  const [tagOpen, setTagOpen] = useState(false)
 
   // 上传季封面
   const uploadProps: UploadProps = {
@@ -81,6 +92,14 @@ export default function SeasonCardMenu({
 
   const items: MenuProps['items'] = [
     {
+      key: 'tag',
+      icon: <TagsOutlined />,
+      label: '🏷️ 管理标签',
+      // 没有 metaId 时（如未扫描的季）禁用入口
+      disabled: !metaId,
+    },
+    { type: 'divider' },
+    {
       key: 'cover',
       icon: <PictureOutlined />,
       label: uploading ? '上传中…' : '🖼️ 上传季封面',
@@ -91,7 +110,9 @@ export default function SeasonCardMenu({
 
   const onMenuClick: MenuProps['onClick'] = ({ key, domEvent }) => {
     domEvent?.stopPropagation()
-    if (key === 'cover') {
+    if (key === 'tag') {
+      setTagOpen(true)
+    } else if (key === 'cover') {
       // 触发隐藏的 Upload input
       document.getElementById(`season-cover-input-${album}-${subAlbum}`)?.click()
     } else if (key === 'delete') {
@@ -129,6 +150,16 @@ export default function SeasonCardMenu({
         description={`确定删除「${album} / ${subAlbum}」吗？该季目录及其全部媒体 / 字幕 / 封面 / nfo 将被永久删除，无法恢复。`}
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
+      />
+
+      {/* 标签管理弹窗：通用 TagManagerModal，复用统一标签管理 UI */}
+      <TagManagerModal
+        open={tagOpen}
+        entityType="season"
+        entityId={metaId || null}
+        currentTagIds={tags.map((t) => t.id)}
+        onClose={() => setTagOpen(false)}
+        onSaved={onChanged}
       />
     </>
   )

@@ -7,11 +7,13 @@ import {
   EditOutlined,
   PictureOutlined,
   DeleteOutlined,
+  TagsOutlined,
 } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
 import type { MenuProps } from 'antd'
 import { noteApi } from '@/api'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
+import TagManagerModal from '@/components/TagManagerModal'
 import type { StudyNote } from '@/types'
 
 interface NoteCardMenuProps {
@@ -49,6 +51,8 @@ export default function NoteCardMenu({
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  // 标签管理弹窗：v0.5.0 起支持
+  const [tagOpen, setTagOpen] = useState(false)
 
   // 切换置顶
   const handleTogglePin = async () => {
@@ -150,6 +154,7 @@ export default function NoteCardMenu({
     { type: 'divider' },
     { key: 'rename', icon: <EditOutlined />, label: '✏️ 重命名' },
     { key: 'cover', icon: <PictureOutlined />, label: uploading ? '上传中…' : '🖼️ 上传封面' },
+    { key: 'tag', icon: <TagsOutlined />, label: '🏷️ 管理标签' },
     { type: 'divider' },
     { key: 'delete', icon: <DeleteOutlined />, label: '🗑️ 删除', danger: true },
   ]
@@ -164,6 +169,9 @@ export default function NoteCardMenu({
     } else if (key === 'cover') {
       // 触发隐藏的 Upload input
       document.getElementById(`note-cover-input-${note.id}`)?.click()
+    } else if (key === 'tag') {
+      // 打开标签管理弹窗
+      setTagOpen(true)
     } else if (key === 'delete') {
       setDeleteOpen(true)
     }
@@ -229,6 +237,16 @@ export default function NoteCardMenu({
         description={`确定删除「${note.title}」吗？该学习页面及其全部图片将被永久删除，无法恢复。`}
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
+      />
+
+      {/* 标签管理弹窗（v0.5.0 起） */}
+      <TagManagerModal
+        open={tagOpen}
+        entityType="note"
+        entityId={note.id}
+        currentTagIds={(note.tags ?? []).map((t) => t.id)}
+        onClose={() => setTagOpen(false)}
+        onSaved={onChanged}
       />
     </>
   )

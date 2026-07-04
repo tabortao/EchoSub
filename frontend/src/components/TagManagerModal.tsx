@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react'
 import { Modal, Select, Input, Button, Space, message } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { tagApi, mediaApi } from '@/api'
-import type { Tag } from '@/types'
+import { tagApi } from '@/api'
+import type { Tag, TagEntityType } from '@/types'
 
+/**
+ * TagManagerModal 通用标签管理弹窗。
+ * 支持任意实体类型（媒体 / 专辑 / 季 / 学习页），由调用方传入 entityType + entityId。
+ * 设计为可复用：实体类型决定后端 attach/detach 的目标，但 UI 完全一致。
+ */
 interface TagManagerModalProps {
   open: boolean
-  mediaId: number | null
+  /** 实体类型，决定后端目标表 */
+  entityType: TagEntityType
+  /** 实体 ID（媒体:MediaFile.ID；专辑/季:AlbumMeta.ID；学习页:StudyNote.ID） */
+  entityId: number | null
+  /** 当前已绑定的标签 ID 列表 */
   currentTagIds: number[]
   onClose: () => void
   onSaved?: () => void
 }
 
-// TagManagerModal 为指定媒体管理标签：多选已有标签 + 快速创建新标签。
-export default function TagManagerModal({ open, mediaId, currentTagIds, onClose, onSaved }: TagManagerModalProps) {
+export default function TagManagerModal({
+  open, entityType, entityId, currentTagIds, onClose, onSaved,
+}: TagManagerModalProps) {
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>(currentTagIds)
   const [newTagName, setNewTagName] = useState('')
@@ -46,23 +56,33 @@ export default function TagManagerModal({ open, mediaId, currentTagIds, onClose,
   }
 
   const handleSave = async () => {
-    if (!mediaId) return
+    if (!entityId) return
     setSaving(true)
     try {
-      await mediaApi.assignTags(mediaId, selectedIds)
+      // 覆盖式设置：后端会先删除旧关联再插入新关联
+      await tagApi.setForEntity(entityType, entityId, selectedIds)
       message.success('标签已保存')
       onSaved?.()
       onClose()
-    } catch {
-      message.error('保存失败')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '保存失败'
+      message.error(msg)
     } finally {
       setSaving(false)
     }
   }
 
+  // 标题：按实体类型显示
+  const titleByType: Record<TagEntityType, string> = {
+    media: '管理标签（媒体）',
+    album: '管理标签（专辑）',
+    season: '管理标签（季）',
+    note: '管理标签（学习页）',
+  }
+
   return (
     <Modal
-      title="管理标签"
+      title={titleByType[entityType] ?? '管理标签'}
       open={open}
       onCancel={onClose}
       onOk={handleSave}
@@ -81,6 +101,7 @@ export default function TagManagerModal({ open, mediaId, currentTagIds, onClose,
           options={allTags.map((t) => ({ label: t.name, value: t.id }))}
           optionFilterProp="label"
           showSearch
+          maxTagCount="responsive"
         />
         <Space.Compact style={{ width: '100%' }}>
           <Input

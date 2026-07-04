@@ -1,34 +1,63 @@
-import { useEffect, useState } from 'react'
-import { Card, Row, Col, Tag, Input, Button, Empty, Spin, Modal, message, Typography } from 'antd'
-import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { useEffect, useState, useCallback } from 'react'
+import { Card, Row, Col, Tag, Input, Button, Empty, Spin, Modal, message, Typography, Space, Tooltip } from 'antd'
+import { PlusOutlined, DeleteOutlined, EditOutlined, FilterFilled, RollbackOutlined, FolderOutlined, PlayCircleOutlined, ReadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { tagApi, mediaApi } from '@/api'
-import type { Tag as TagType, MediaListResponse } from '@/types'
+import { tagApi } from '@/api'
+import { useAuthStore } from '@/store/auth'
+import type { Tag as TagType, TagFilterResult, MediaFile, StudyNote, TagFilterAlbum } from '@/types'
+import { formatDuration } from '@/utils'
 
-const { Text } = Typography
+const { Text, Title } = Typography
 
+/**
+ * Tags 标签管理页：
+ * - 顶部：标签 CRUD（创建 / 重命名 / 删除）
+ * - 中部：标签列表（每张卡显示该标签下三类实体的数量：专辑/季/文件）
+ * - 下部：选中某个标签后展示三组结果（专辑 / 季 / 文件）。
+ *
+ * 「文件」组包含 media（媒体文件）+ note（学习页面），分别用 🎬/🎵 与 📝 图标区分。
+ */
 export default function Tags() {
   const navigate = useNavigate()
+  const token = useAuthStore((s) => s.token) ?? ''
   const [tags, setTags] = useState<TagType[]>([])
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
   const [editing, setEditing] = useState<TagType | null>(null)
   const [editName, setEditName] = useState('')
-  const [counts, setCounts] = useState<Record<number, number>>({})
+  // 标签下各类实体的数量（仅显示在卡片上，点击后拉详情）
+  const [counts, setCounts] = useState<Record<number, { albums: number; seasons: number; files: number }>>({})
+  // 当前选中的标签 id（点击卡片后展开下方三组）
+  const [selectedTagId, setSelectedTagId] = useState<number | null>(null)
+  const [filterResult, setFilterResult] = useState<TagFilterResult | null>(null)
+  const [filterLoading, setFilterLoading] = useState(false)
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await tagApi.list()
       const list = res.data.data.tags ?? []
       setTags(list)
-      // 统计每个标签下媒体数量
+      // 统计每个标签下 专辑/季/文件 数量
       for (const t of list) {
         try {
-          const m = await mediaApi.list({ tag_id: String(t.id), size: 1 })
-          setCounts((c) => ({ ...c, [t.id]: (m.data.data as MediaListResponse).total }))
+          const ent = await tagApi.entities(t.id)
+          const r = ent.data.data ?? {}
+          // 后端偶尔可能返回 null/缺失字段，统一兜底为空数组，避免 .length 崩溃
+          const albums = r.albums ?? []
+          const seasons = r.seasons ?? []
+          const medias = r.medias ?? []
+          const notes = r.notes ?? []
+          setCounts((c) => ({
+            ...c,
+            [t.id]: {
+              albums: albums.length,
+              seasons: seasons.length,
+              files: medias.length + notes.length,
+            },
+          }))
         } catch {
-          // ignore
+          setCounts((c) => ({ ...c, [t.id]: { albums: 0, seasons: 0, files: 0 } }))
         }
       }
     } catch {
@@ -36,11 +65,34 @@ export default function Tags() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     load()
-  }, [])
+  }, [load])
+
+  // 选中标签后加载其下所有实体
+  useEffect(() => {
+    if (selectedTagId == null) {
+      setFilterResult(null)
+      return
+    }
+    setFilterLoading(true)
+    tagApi.entities(selectedTagId)
+      .then((res) => {
+        // 兜底空字段，避免后端遗漏字段时前端 .length 崩溃
+        const d = res.data.data ?? {}
+        setFilterResult({
+          tag: d.tag ?? null,
+          albums: d.albums ?? [],
+          seasons: d.seasons ?? [],
+          medias: d.medias ?? [],
+          notes: d.notes ?? [],
+        })
+      })
+      .catch(() => setFilterResult(null))
+      .finally(() => setFilterLoading(false))
+  }, [selectedTagId])
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -69,11 +121,14 @@ export default function Tags() {
   const handleDelete = async (t: TagType) => {
     Modal.confirm({
       title: '确认删除标签？',
-      content: `将删除标签「${t.name}」`,
+      content: `将删除标签「${t.name}」（仅删除标签本身，已绑定的实体不会被删除）`,
       onOk: async () => {
         try {
           await tagApi.delete(t.id)
           message.success('已删除')
+          if (selectedTagId === t.id) {
+            setSelectedTagId(null)
+          }
           load()
         } catch {
           message.error('删除失败')
@@ -82,13 +137,22 @@ export default function Tags() {
     })
   }
 
+  const onCardClick = (t: TagType) => {
+    if (selectedTagId === t.id) {
+      // 再次点击收起
+      setSelectedTagId(null)
+    } else {
+      setSelectedTagId(t.id)
+    }
+  }
+
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
   }
 
   return (
     <div>
-      <Typography.Title level={4}>标签管理</Typography.Title>
+      <Title level={4} style={{ marginBottom: 16 }}>标签管理</Title>
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={8} align="middle">
           <Col flex="auto">
@@ -110,24 +174,145 @@ export default function Tags() {
         <Empty description="暂无标签" />
       ) : (
         <Row gutter={[16, 16]}>
-          {tags.map((t) => (
-            <Col xs={24} sm={12} md={8} lg={6} key={t.id}>
-              <Card
-                hoverable
-                onClick={() => navigate(`/?tag_id=${t.id}`)}
-                actions={[
-                  <EditOutlined key="edit" onClick={(e) => { e.stopPropagation(); setEditing(t); setEditName(t.name) }} />,
-                  <DeleteOutlined key="del" onClick={(e) => { e.stopPropagation(); handleDelete(t) }} />,
-                ]}
-              >
-                <Card.Meta
-                  title={<Tag color="blue" style={{ fontSize: 16 }}>{t.name}</Tag>}
-                  description={<Text type="secondary">{counts[t.id] ?? 0} 个媒体</Text>}
-                />
-              </Card>
-            </Col>
-          ))}
+          {tags.map((t) => {
+            const c = counts[t.id] ?? { albums: 0, seasons: 0, files: 0 }
+            const isSelected = selectedTagId === t.id
+            return (
+              <Col xs={24} sm={12} md={8} lg={6} key={t.id}>
+                <Card
+                  hoverable
+                  onClick={() => onCardClick(t)}
+                  style={isSelected ? { borderColor: 'var(--ant-color-primary)', boxShadow: `0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 20%, transparent)` } : undefined}
+                  actions={[
+                    <EditOutlined key="edit" onClick={(e) => { e.stopPropagation(); setEditing(t); setEditName(t.name) }} />,
+                    <DeleteOutlined key="del" onClick={(e) => { e.stopPropagation(); handleDelete(t) }} />,
+                  ]}
+                >
+                  <Card.Meta
+                    title={
+                      <Space>
+                        <Tag color="blue" style={{ fontSize: 16, margin: 0 }}>{t.name}</Tag>
+                        {isSelected && <FilterFilled style={{ color: 'var(--ant-color-primary)' }} />}
+                      </Space>
+                    }
+                    description={
+                      <Space size={4} wrap>
+                        <Tooltip title="专辑数"><Tag color="orange" style={{ borderRadius: 8 }}>📂 {c.albums}</Tag></Tooltip>
+                        <Tooltip title="季数"><Tag color="cyan" style={{ borderRadius: 8 }}>📁 {c.seasons}</Tag></Tooltip>
+                        <Tooltip title="文件数（媒体 + 学习页）"><Tag color="green" style={{ borderRadius: 8 }}>📄 {c.files}</Tag></Tooltip>
+                      </Space>
+                    }
+                  />
+                </Card>
+              </Col>
+            )
+          })}
         </Row>
+      )}
+
+      {/* 标签筛选结果：按三组分类展示 */}
+      {selectedTagId != null && (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <Title level={5} style={{ margin: 0 }}>
+              标签「{filterResult?.tag?.name ?? ''}」下的内容
+            </Title>
+            <Button size="small" icon={<RollbackOutlined />} onClick={() => setSelectedTagId(null)}>收起</Button>
+          </div>
+
+          {filterLoading ? (
+            <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+          ) : filterResult ? (
+            <Row gutter={[16, 16]}>
+              {/* 专辑组 */}
+              <Col xs={24} lg={8}>
+                <Card
+                  size="small"
+                  title={
+                    <Space>
+                      <span>📂 专辑</span>
+                      <Tag color="orange" style={{ borderRadius: 8 }}>{filterResult.albums.length}</Tag>
+                    </Space>
+                  }
+                  styles={{ body: { maxHeight: 480, overflowY: 'auto' } }}
+                >
+                  {filterResult.albums.length === 0 ? (
+                    <Text type="secondary">该标签下暂无专辑</Text>
+                  ) : (
+                    <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                      {filterResult.albums.map((a) => (
+                        <AlbumEntryCard
+                          key={`a-${a.meta_id}`}
+                          entry={a}
+                          token={token}
+                          onClick={() => navigate(`/?album=${encodeURIComponent(a.album)}`)}
+                          kind="album"
+                        />
+                      ))}
+                    </Space>
+                  )}
+                </Card>
+              </Col>
+
+              {/* 季组 */}
+              <Col xs={24} lg={8}>
+                <Card
+                  size="small"
+                  title={
+                    <Space>
+                      <span>📁 季</span>
+                      <Tag color="cyan" style={{ borderRadius: 8 }}>{filterResult.seasons.length}</Tag>
+                    </Space>
+                  }
+                  styles={{ body: { maxHeight: 480, overflowY: 'auto' } }}
+                >
+                  {filterResult.seasons.length === 0 ? (
+                    <Text type="secondary">该标签下暂无季</Text>
+                  ) : (
+                    <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                      {filterResult.seasons.map((s) => (
+                        <AlbumEntryCard
+                          key={`s-${s.meta_id}`}
+                          entry={s}
+                          token={token}
+                          onClick={() => navigate(`/?album=${encodeURIComponent(s.album)}&sub_album=${encodeURIComponent(s.sub_album)}`)}
+                          kind="season"
+                        />
+                      ))}
+                    </Space>
+                  )}
+                </Card>
+              </Col>
+
+              {/* 文件组：媒体 + 学习页 */}
+              <Col xs={24} lg={8}>
+                <Card
+                  size="small"
+                  title={
+                    <Space>
+                      <span>📄 文件</span>
+                      <Tag color="green" style={{ borderRadius: 8 }}>{filterResult.medias.length + filterResult.notes.length}</Tag>
+                    </Space>
+                  }
+                  styles={{ body: { maxHeight: 480, overflowY: 'auto' } }}
+                >
+                  {filterResult.medias.length === 0 && filterResult.notes.length === 0 ? (
+                    <Text type="secondary">该标签下暂无文件</Text>
+                  ) : (
+                    <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                      {filterResult.medias.map((m) => (
+                        <MediaEntryRow key={`m-${m.id}`} media={m} onClick={() => navigate(`/play/${m.id}`)} />
+                      ))}
+                      {filterResult.notes.map((n) => (
+                        <NoteEntryRow key={`n-${n.id}`} note={n} onClick={() => navigate(`/notes/${n.id}`)} />
+                      ))}
+                    </Space>
+                  )}
+                </Card>
+              </Col>
+            </Row>
+          ) : null}
+        </div>
       )}
 
       <Modal
@@ -138,6 +323,96 @@ export default function Tags() {
       >
         <Input value={editName} onChange={(e) => setEditName(e.target.value)} onPressEnter={handleUpdate} />
       </Modal>
+    </div>
+  )
+}
+
+// 专辑 / 季 行内卡片
+function AlbumEntryCard({ entry, token, onClick, kind }: {
+  entry: TagFilterAlbum; token: string; onClick: () => void; kind: 'album' | 'season'
+}) {
+  const coverUrl = entry.cover_path && token
+    ? `/api/v1/albums/${encodeURIComponent(entry.album)}/cover?token=${encodeURIComponent(token)}${entry.sub_album ? `&sub=${encodeURIComponent(entry.sub_album)}` : ''}`
+    : ''
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: 8, borderRadius: 10, cursor: 'pointer',
+        background: '#fafafa', border: '1px solid #f0f0f0',
+        transition: 'all 0.2s',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f5ff'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#f0f0f0' }}
+    >
+      <div style={{
+        width: 48, height: 48, flexShrink: 0, borderRadius: 8, overflow: 'hidden',
+        background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {coverUrl ? (
+          <img src={coverUrl} alt={entry.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+        ) : (
+          <FolderOutlined style={{ color: 'rgba(255,255,255,0.85)', fontSize: 22 }} />
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>
+          {entry.name}
+        </Text>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          {kind === 'album' ? '📂 专辑' : '📁 季'}
+        </Text>
+      </div>
+    </div>
+  )
+}
+
+// 媒体行
+function MediaEntryRow({ media, onClick }: { media: MediaFile; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: 8, borderRadius: 10, cursor: 'pointer',
+        background: '#fafafa', border: '1px solid #f0f0f0',
+        transition: 'all 0.2s',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f5ff'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#f0f0f0' }}
+    >
+      <PlayCircleOutlined style={{ fontSize: 20, color: media.type === 'video' ? '#eb2f96' : '#52c41a' }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>{media.name}</Text>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          {media.type === 'video' ? '🎬 视频' : '🎵 音频'} · {media.album ?? '独立资源'} {media.sub_album ? ` / ${media.sub_album}` : ''} · {formatDuration(media.duration)}
+        </Text>
+      </div>
+    </div>
+  )
+}
+
+// 学习页行
+function NoteEntryRow({ note, onClick }: { note: StudyNote; onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: 8, borderRadius: 10, cursor: 'pointer',
+        background: '#fafafa', border: '1px solid #f0f0f0',
+        transition: 'all 0.2s',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f5ff'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#f0f0f0' }}
+    >
+      <ReadOutlined style={{ fontSize: 20, color: '#722ed1' }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>{note.title}</Text>
+        <Text type="secondary" style={{ fontSize: 11 }}>📝 学习页 · {note.album}</Text>
+      </div>
     </div>
   )
 }

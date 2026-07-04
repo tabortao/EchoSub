@@ -51,6 +51,7 @@ func Init(cfg *config.Config) error {
 		&models.MediaRemark{},
 		&models.AlbumMeta{},
 		&models.AlbumPin{},
+		&models.EntityTag{},
 	); err != nil {
 		return fmt.Errorf("数据库迁移失败: %w", err)
 	}

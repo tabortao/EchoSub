@@ -7,6 +7,54 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.5.0] - 2026-07-04
+
+### Added
+
+#### 多态标签系统：专辑 / 季 / 学习页 / 媒体文件均支持打标签 + 按标签筛选
+
+- **后端 `models/models.go`**：新增 `EntityTag` 多态标签关联表，复合唯一索引 `(user_id, tag_id, entity_type, entity_id)`。新增 `EntityType` 枚举：`media` / `album` / `season` / `note`，支持标签与四种实体的多对多关联。
+- **后端 `handlers/entity_tag.go`（新文件）**：实现通用多态标签接口：
+  - `POST /tags/:id/attach` — 给任意实体附加单个标签（幂等）
+  - `POST /tags/:id/detach` — 从任意实体摘除单个标签
+  - `PUT /tags/entity` — 覆盖式设置某实体的全部标签（管理弹窗一次性保存）
+  - `GET /tags/entity?type=&id=` — 获取某实体当前已绑定的标签列表
+  - `GET /tags/:id/entities` — 按标签筛选实体，结果分四组：专辑 / 季 / 文件（媒体 + 学习页）
+  - `LoadTagsForEntities(userID, entityType, entityIDs)` — 批量加载函数，供业务侧按实体填充 `tags` 字段；媒体文件兼容旧 GORM `media_tags` 表，确保 v0.3.x 时代的标签数据仍可见
+- **后端 `handlers/media.go` (`ListAlbums`)**：专辑列表返回 `tags` + `meta_id`；季列表每个子项返回 `tags` + `meta_id`（季的 `AlbumMeta.ID`），作为 `entity_tags` 的 `entity_id`。
+- **后端 `handlers/note.go` (`noteToJSON`)**：学习页 JSON 响应新增 `tags` 字段。
+- **后端 `database/database.go`**：`AutoMigrate` 注册 `EntityTag` 表。
+- **前端 `types/index.ts`**：新增 `TagEntityType` 类型别名（`'media' | 'album' | 'season' | 'note'`）、`TagFilterResult` / `TagFilterAlbum` / `TagFilterSeason` 接口；`Album` / `SubAlbum` / `StudyNote` 扩展 `tags` + `meta_id` 字段。
+- **前端 `api/index.ts` (`tagApi`)**：新增 `attach` / `detach` / `setForEntity` / `getForEntity` / `entities` 五个方法对应后端多态接口。
+- **前端 `components/TagManagerModal.tsx（重构为通用）`**：原媒体专用弹窗升级为支持任意实体类型的通用弹窗。接受 `entityType` + `entityId` + `currentTagIds` props，复用同一套 UI 逻辑：标签下拉多选 + 新标签创建，覆盖式保存。
+- **前端 `pages/Tags.tsx（重构）**：原 CRUD 列表升级为「标签管理 + 标签筛选器」：
+  - 顶部：标签 CRUD
+  - 中部：标签卡片显示该标签下三类实体的数量徽标（📂 专辑 / 📁 季 / 📄 文件）
+  - 下部：选中标签后展开三组结果（专辑 / 季 / 文件），文件组合并展示媒体（🎬/🎵）与学习页（📝），分别可点击进入专辑页 / 季页 / 播放器 / 笔记编辑器。
+- **前端 `components/EmbyHome.tsx` (`AlbumCard`)**：右下角 ⋮ 菜单新增「🏷️ 管理标签」项（无 `meta_id` 时禁用），点击打开 `TagManagerModal`。
+- **前端 `components/NoteCardMenu.tsx`**：学习页 ⋮ 菜单新增「🏷️ 管理标签」项，点击打开 `TagManagerModal`。
+- **前端 `components/SeasonCardMenu.tsx`**：季 ⋮ 菜单新增「🏷️ 管理标签」项（无 `meta_id` 时禁用），点击打开 `TagManagerModal`；新增 `metaId` / `tags` props。
+- **前端 `pages/Home.tsx` (`GridView`)**：
+  - 专辑标题区新增「🏷️ 标签」按钮，点击打开 `TagManagerModal`；同时在标题下方展示当前专辑已绑定的所有标签 chip
+  - 媒体卡片 ⋮ 菜单新增「🏷️ 管理标签」项，点击打开 `TagManagerModal`
+  - 季网格右下角 `SeasonCardMenu` 自动透传 `metaId` + `tags`，确保季标签可被管理
+- **前端 `pages/NoteEditor.tsx`**：标题区紧贴显示当前学习页所有标签 chip；操作区新增「🏷️ 标签」按钮，点击打开 `TagManagerModal`，保存后自动重新加载笔记以更新 chip 列表。
+
+### Notes
+
+- 「未读蒙版」逻辑（v0.4.9）继续生效：未学习的媒体 / 季仍显示半透明灰色蒙版 + 锁图标 + 「未开始」提示；开始学习（`play_count > 0` 或 `last_position > 0`）后蒙版自动消失。
+- 标签筛选结果中，「文件」组合并展示媒体 + 学习页两类：媒体用 🎬/🎵 + 文件名；学习页用 📝 + 标题。
+- 媒体文件标签兼容 v0.3.x 的 `media_tags` 表（通过 GORM many2many 自动管理），与新 `entity_tags` 表的 `media` 类型合并去重，确保历史数据可见。
+- 验证方式：`go build` / `go vet` / `go test`（subtitle 8 用例）全部通过；`pnpm build`（含 `tsc -b` 严格类型检查）通过；按 changelog 模板同步更新至 v0.5.0。
+
+### Fixed
+
+- **修复 `Tags` 页面崩溃：`Cannot read properties of null (reading 'length')`**
+  - 根因：后端 `GET /tags/:id/entities` 在「该标签下没有媒体 / 学习页」时，Go 的 `var notes []models.StudyNote` / `var medias []models.MediaFile` 是 nil slice，序列化为 JSON `null`，导致前端 `r.medias.length` / `r.notes.length` 崩溃
+  - 修复（后端 `handlers/entity_tag.go`）：将 `notes` / `medias` 显式初始化为 `make([]T, 0)`，确保空结果序列化为 `[]` 而非 `null`
+  - 修复（前端 `pages/Tags.tsx`）：即使后端遗漏字段，前端也通过 `r.albums ?? []` / `r.seasons ?? []` / `r.medias ?? []` / `r.notes ?? []` 兜底；`tag` 字段统一为 `Tag | null`，渲染时使用 `filterResult?.tag?.name ?? ''`
+  - 验证方式：标签页正常打开，新建空标签、点击空标签均无崩溃
+
 ## [v0.4.9] - 2026-07-04
 
 ### Added
