@@ -5,14 +5,59 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      iOS 触摸图标（"添加到主屏幕" / 分享 → 添加到主屏幕 的关键）
+      多个尺寸供 iOS 8+ 不同设备选择最匹配的图标；缺失时 iOS 会自动放大 apple-touch-icon.png
+    -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167x167.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png" />
+
+    <!--
+      iOS 启动画面（首次从主屏幕启动时显示；按设备尺寸自动选择）
+      由 scripts/generate-splashes.ps1 基于 android-chrome-512x512.png 生成
+    -->
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-x.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-xr.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-xsmax.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-12.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-12-mini.png" media="(device-width: 360px) and (device-height: 780px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-12-max.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-14-pro.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-iphone-14-promax.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-ipad.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-ipad-pro-11.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)" />
+    <link rel="apple-touch-startup-image" href="/apple-touch-startup-ipad-pro-129.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)" />
+
+    <!-- PWA 清单 -->
     <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- 视口：适配 iOS 安全区 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#FF7A45" />
+
+    <!-- 主题色：浏览器顶栏 / Android 状态栏 -->
+    <meta name="theme-color" content="#FF7A45" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1F1F1F" media="(prefers-color-scheme: dark)" />
+
     <meta name="description" content="EchoSub - 语言学习与课文背诵" />
+
+    <!-- iOS Web App（"添加到主屏幕" 后全屏运行） -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="EchoSub" />
+    <meta name="apple-touch-fullscreen" content="yes" />
+
+    <!-- 禁用 iOS 自动识别电话 / 邮箱 / 地址（避免媒体文件名中的数字被误转为链接） -->
+    <meta name="format-detection" content="telephone=no, email=no, address=no" />
+
+    <!-- Windows 磁贴 -->
+    <meta name="msapplication-TileColor" content="#FF7A45" />
+    <meta name="msapplication-config" content="/browserconfig.xml" />
+
     <title>EchoSub - 语言学习与课文背诵</title>
   </head>
   <body>

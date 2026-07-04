@@ -54,6 +54,18 @@
   - 修复（后端 `handlers/entity_tag.go`）：将 `notes` / `medias` 显式初始化为 `make([]T, 0)`，确保空结果序列化为 `[]` 而非 `null`
   - 修复（前端 `pages/Tags.tsx`）：即使后端遗漏字段，前端也通过 `r.albums ?? []` / `r.seasons ?? []` / `r.medias ?? []` / `r.notes ?? []` 兜底；`tag` 字段统一为 `Tag | null`，渲染时使用 `filterResult?.tag?.name ?? ''`
   - 验证方式：标签页正常打开，新建空标签、点击空标签均无崩溃
+- **完善 PWA 对 iOS / 苹果设备的支持：通过分享 → 添加到主屏幕时显示网页图标**
+  - 背景：v0.1.0 起 PWA 仅在 Android 端「添加到主屏幕」时显示图标，iOS Safari 通过分享菜单添加到主屏幕时由于 manifest 中缺少 `apple-touch-icon-*` 多尺寸声明 + `purpose` 字段，会回退到首屏截屏作为图标；启动画面也是空白。
+  - 修复（图标生成）`frontend/scripts/generate-icons.ps1` ✨新增：基于 `android-chrome-512x512.png` 通过 `System.Drawing` 高质量缩放生成 4 个 `apple-touch-icon-{120,152,167,180}x{...}.png`，覆盖 iPhone、iPad 各代设备的 home screen 推荐尺寸。
+  - 修复（启动画面生成）`frontend/scripts/generate-splashes.ps1` ✨新增：基于同一图标生成 11 个设备的 `apple-touch-startup-*.png`（iPhone X / XR / XS Max / 12 / 12 mini / 12 Max / 14 Pro / 14 Pro Max / iPad / iPad Pro 11 / iPad Pro 12.9），画面浅米色背景（`#FFF9F0` 与品牌一致）+ 居中图标 + 「EchoSub」粗体标题 + 「Yu Yan Xue Xi Yu Wen Bei Song」副标题。
+  - 修复（清单文件）`frontend/public/site.webmanifest`：icons 数组显式声明 4 个 `apple-touch-icon-*`（`purpose: "any"`，iOS 16+ Safari 通过清单识别）+ 192/512 通用图标 + maskable 图标，确保 iOS 16+ 在「分享 → 添加到主屏幕」时能从 manifest 拿到正确图标。
+  - 修复（HTML 引用）`frontend/index.html`：
+    - 4 条 `<link rel="apple-touch-icon" sizes="...">` 分别指向 120/152/167/180 尺寸，缺失时 iOS 会自动放大默认 `apple-touch-icon.png` 导致模糊。
+    - 11 条 `<link rel="apple-touch-startup-image" media="...">` 按设备尺寸 + 像素比精确匹配，覆盖从 iPhone X 到 iPhone 14 Pro Max 全系 iPhone / iPad。
+    - 补充 `<meta name="apple-touch-fullscreen" content="yes">`、`<meta name="format-detection" content="telephone=no, email=no, address=no">`（避免媒体文件名中的数字被误识别为电话）。
+  - 修复（Windows 磁贴）`frontend/public/browserconfig.xml` ✨新增：与 `index.html` 的 `<meta name="msapplication-config">` 配合，给 Windows 10/11 Edge「固定到任务栏」提供方块磁贴配置（`TileColor=#FF7A45`）。
+  - 修复（构建）`frontend/vite.config.ts`：`includeAssets` 加入全部新增的 `apple-touch-icon-*` 与 `apple-touch-startup-*` 资产，`manifest.icons` 与 `public/site.webmanifest` 同步，确保 `pnpm build` 输出的 `dist/` 包含全部 16 个 PNG 与 manifest。
+  - 验证方式：`pnpm build` 通过（`tsc -b` 严格类型检查 + Vite 打包）；`dist/manifest.webmanifest` 输出包含 7 个 icon 条目（4 iOS + 2 Android + 1 maskable）；`dist/` 包含全部 5 个 `apple-touch-icon*`、11 个 `apple-touch-startup*`、`browserconfig.xml`。iOS Safari「分享 → 添加到主屏幕」后将显示清晰的 EchoSub 图标，首次启动时显示品牌启动画面而非空白。
 - **README.md 全面更新以反映 v0.4.x ~ v0.5.0 新增能力**
   - 功能特性按「媒体与播放 / 学习与笔记 / 标签管理 / 专辑季编辑 / 账户认证 / 部署」6 个子章节组织
   - 新增 Emby 风格专辑扫描、季、配对媒体、未读蒙版、继续观看、TTS、学习页、媒体备注、多态标签等特性的描述
