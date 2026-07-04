@@ -1,6 +1,8 @@
-import { useEffect, useState, useRef } from 'react'
-import { Spin, Empty, Tag, Typography, Tooltip } from 'antd'
-import { PlayCircleOutlined, ReadOutlined, FolderOutlined } from '@ant-design/icons'
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { Spin, Empty, Tag, Typography, Tooltip, Button, Modal, Input, message, Dropdown, Upload } from 'antd'
+import { PlayCircleOutlined, ReadOutlined, FolderOutlined, MoreOutlined, EditOutlined, PictureOutlined } from '@ant-design/icons'
+import type { UploadProps } from 'antd'
+import type { MenuProps } from 'antd'
 import { mediaApi, noteApi, recordApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { useScanStore } from '@/store/scan'
@@ -57,72 +59,69 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>([])
   const [standalone, setStandalone] = useState<MediaListItem[]>([])
 
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      try {
-        const [recordRes, noteRes, mediaRes, albumRes] = await Promise.all([
-          recordApi.recent(20),
-          noteApi.list(),
-          mediaApi.list({ sort: 'file_modified_at', order: 'desc', page: 1, size: 200 }),
-          mediaApi.albums(),
-        ])
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [recordRes, noteRes, mediaRes, albumRes] = await Promise.all([
+        recordApi.recent(20),
+        noteApi.list(),
+        mediaApi.list({ sort: 'file_modified_at', order: 'desc', page: 1, size: 200 }),
+        mediaApi.albums(),
+      ])
 
-        const records = (recordRes.data.data.records ?? []) as PlayRecord[]
-        const allMedia = (mediaRes.data.data.list ?? []) as MediaListItem[]
-        const albums = (albumRes.data.data.albums ?? []) as Album[]
+      const records = (recordRes.data.data.records ?? []) as PlayRecord[]
+      const allMedia = (mediaRes.data.data.list ?? []) as MediaListItem[]
+      const albums = (albumRes.data.data.albums ?? []) as Album[]
 
-        // 继续学习：最近播放的媒体（去重，最多 12 条）
-        // recordApi.recent 后端已去重，但前端再容错一遍以避免重复渲染
-        const seenMedia = new Set<number>()
-        const mediaFeed: FeedItem[] = []
-        for (const r of records) {
-          if (r.media && r.media.id !== 0) {
-            if (seenMedia.has(r.media.id)) continue
-            seenMedia.add(r.media.id)
-            mediaFeed.push({
-              kind: 'media',
-              item: {
-                media: r.media as MediaFile,
-                play_count: r.play_count,
-                last_position: r.last_position,
-                last_played_at: r.last_played_at,
-              },
-              ts: r.last_played_at || '',
-            })
-            if (mediaFeed.length >= 12) break
-          }
+      // 继续学习：最近播放的媒体（去重，最多 12 条）
+      // recordApi.recent 后端已去重，但前端再容错一遍以避免重复渲染
+      const seenMedia = new Set<number>()
+      const mediaFeed: FeedItem[] = []
+      for (const r of records) {
+        if (r.media && r.media.id !== 0) {
+          if (seenMedia.has(r.media.id)) continue
+          seenMedia.add(r.media.id)
+          mediaFeed.push({
+            kind: 'media',
+            item: {
+              media: r.media as MediaFile,
+              play_count: r.play_count,
+              last_position: r.last_position,
+              last_played_at: r.last_played_at,
+            },
+            ts: r.last_played_at || '',
+          })
+          if (mediaFeed.length >= 12) break
         }
-        const notes = (noteRes.data.data.notes ?? []).slice(0, 4)
-        const noteFeed: FeedItem[] = notes.map((n) => ({
-          kind: 'note' as const, note: n, ts: n.updated_at,
-        }))
-        const merged = [...mediaFeed, ...noteFeed].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 15)
-        if (!cancelled) setRecent(merged)
-
-        // 专辑入口：每个专辑选一个代表封面
-        const entries: AlbumEntry[] = albums.map((a) => pickAlbumCover(a, allMedia, records))
-          .filter((e) => e.count > 0)
-          .sort((a, b) => b.lastPlayedAt.localeCompare(a.lastPlayedAt))
-        if (!cancelled) setAlbumEntries(entries)
-
-        // 独立资源：未归入专辑的散落文件
-        if (!cancelled) setStandalone(allMedia.filter((m) => !m.media.album))
-      } catch {
-        if (!cancelled) {
-          setRecent([])
-          setAlbumEntries([])
-          setStandalone([])
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
       }
+      const notes = (noteRes.data.data.notes ?? []).slice(0, 4)
+      const noteFeed: FeedItem[] = notes.map((n) => ({
+        kind: 'note' as const, note: n, ts: n.updated_at,
+      }))
+      const merged = [...mediaFeed, ...noteFeed].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 15)
+      setRecent(merged)
+
+      // 专辑入口：每个专辑选一个代表封面
+      const entries: AlbumEntry[] = albums.map((a) => pickAlbumCover(a, allMedia, records))
+        .filter((e) => e.count > 0)
+        .sort((a, b) => b.lastPlayedAt.localeCompare(a.lastPlayedAt))
+      setAlbumEntries(entries)
+
+      // 独立资源：未归入专辑的散落文件
+      setStandalone(allMedia.filter((m) => !m.media.album))
+    } catch {
+      setRecent([])
+      setAlbumEntries([])
+      setStandalone([])
+    } finally {
+      setLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
     load()
-    return () => { cancelled = true }
     // 依赖 lastTriggeredAt：Header 触发扫描后重新拉取
-  }, [lastTriggeredAt])
+  }, [lastTriggeredAt, load])
 
   // ref 同步，避免组件卸载后漏掉最新值
   useEffect(() => {
@@ -163,7 +162,9 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
             <AlbumCard
               key={entry.album.album}
               entry={entry}
+              token={token}
               onClick={() => onOpenAlbum(entry.album.album)}
+              onChanged={load}
             />
           )}
         />
@@ -269,11 +270,80 @@ const scrollRowStyle: React.CSSProperties = {
 /**
  * 专辑入口卡片：一个封面代表整个专辑，点击进入详情。
  * 学习 Emby「My Media」海报风格——大尺寸竖向封面 + 底部渐变标题。
+ * 右上角 ⋮ 菜单：重命名专辑、上传专辑封面（folder.jpg）。
+ * 优先使用 album.cover_path（来自 Emby 扫描或用户上传），否则自动挑选代表媒体封面。
  */
-function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void }) {
+function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; onClick: () => void; onChanged: () => void; token: string }) {
   const { album, cover, count, played, hasVideo } = entry
   const [hovered, setHovered] = useState(false)
   const playedPct = count > 0 ? Math.round((played / count) * 100) : 0
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState(album.album)
+  const [submitting, setSubmitting] = useState(false)
+  const [uploading, setUploading] = useState(false)
+
+  // 优先使用 album 自带封面（来自 Emby 扫描或用户上传）；否则用自动挑选的代表封面
+  const hasAlbumCover = !!album.cover_path
+  const albumCoverUrl = hasAlbumCover ? mediaApi.albumCoverUrl(album.album, token) : ''
+
+  // 重命名提交
+  const submitRename = async () => {
+    const newName = renameValue.trim()
+    if (!newName) { message.warning('请输入新名称'); return }
+    if (newName === album.album) { setRenameOpen(false); return }
+    setSubmitting(true)
+    try {
+      await mediaApi.renameAlbum(album.album, newName)
+      message.success('专辑已重命名')
+      setRenameOpen(false)
+      onChanged()
+    } catch (err: unknown) {
+      message.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '重命名失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // 上传封面前的 props 配置
+  const uploadProps: UploadProps = {
+    showUploadList: false,
+    accept: 'image/jpeg,image/png,image/webp,image/gif',
+    beforeUpload: (file) => {
+      if (file.size > 10 * 1024 * 1024) {
+        message.error('封面图不能超过 10MB')
+        return Upload.LIST_IGNORE
+      }
+      setUploading(true)
+      mediaApi.uploadAlbumCover(album.album, file)
+        .then(() => {
+          message.success('封面已上传')
+          onChanged()
+        })
+        .catch((err: unknown) => {
+          message.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '上传失败')
+        })
+        .finally(() => setUploading(false))
+      return false
+    },
+  }
+
+  const cardMenuItems: MenuProps['items'] = [
+    { key: 'rename', icon: <EditOutlined />, label: '重命名专辑' },
+    { key: 'cover', icon: <PictureOutlined />, label: uploading ? '上传中…' : '上传封面图' },
+  ]
+
+  const onMenuClick: MenuProps['onClick'] = ({ key, domEvent }) => {
+    // 阻止冒泡到卡片点击（防止触发进入专辑）
+    domEvent?.stopPropagation()
+    if (key === 'rename') {
+      setRenameValue(album.album)
+      setRenameOpen(true)
+    } else if (key === 'cover') {
+      // 触发 Upload 组件的 input 点击
+      document.getElementById(`album-cover-input-${CSS.escape(album.album)}`)?.click()
+    }
+  }
+
   return (
     <div
       onClick={onClick}
@@ -290,7 +360,14 @@ function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void 
     >
       {/* 封面区 */}
       <div style={{ position: 'relative', height: ALBUM_COVER_HEIGHT }}>
-        {cover ? (
+        {hasAlbumCover ? (
+          <img
+            src={albumCoverUrl}
+            alt={album.album}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+          />
+        ) : cover ? (
           <MediaCover media={cover.media} height={ALBUM_COVER_HEIGHT} colorKey={album.album} />
         ) : (
           <div style={{
@@ -309,6 +386,33 @@ function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void 
           <Tag style={{ margin: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 8, fontWeight: 600, fontSize: 12, border: 'none' }}>
             {count} 项
           </Tag>
+        </div>
+        {/* 右上角 ⋮ 菜单按钮：hover 时半透明背景，便于在不离开封面时操作 */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute', top: 10, right: 10,
+            opacity: hovered ? 1 : 0.85, transition: 'opacity 0.2s',
+            transform: hovered ? 'translateY(40px)' : 'none',
+          }}
+        >
+          <Dropdown
+            menu={{ items: cardMenuItems, onClick: onMenuClick }}
+            trigger={['click']}
+            placement="bottomRight"
+          >
+            <Button
+              shape="circle"
+              size="small"
+              icon={<MoreOutlined style={{ fontSize: 18 }} />}
+              style={{ background: 'rgba(0,0,0,0.55)', border: 'none', color: '#fff' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </Dropdown>
+          {/* 隐藏的 Upload 组件，用于触发文件选择 */}
+          <Upload {...uploadProps}>
+            <span id={`album-cover-input-${album.album}`} style={{ display: 'none' }} />
+          </Upload>
         </div>
         {/* 悬停进入提示（hover 时淡入） */}
         <div style={{
@@ -334,7 +438,8 @@ function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void 
             </Text>
           </Tooltip>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
-            {hasVideo && <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11 }}>🎬 含视频</span>}
+            {album.has_seasons && <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11 }}>📁 {album.sub_albums?.length ?? 0} 季</span>}
+            {hasVideo && !album.has_seasons && <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11 }}>🎬 含视频</span>}
             <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: 600 }}>
               {played > 0 ? `已看 ${played}/${count}` : `${count} 项`}
             </span>
@@ -352,6 +457,30 @@ function AlbumCard({ entry, onClick }: { entry: AlbumEntry; onClick: () => void 
           )}
         </div>
       </div>
+
+      {/* 重命名专辑 Modal */}
+      <Modal
+        title={`重命名专辑：${album.album}`}
+        open={renameOpen}
+        onOk={submitRename}
+        onCancel={() => setRenameOpen(false)}
+        okText="确定"
+        cancelText="取消"
+        confirmLoading={submitting}
+        destroyOnClose
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+          将同时重命名磁盘上的专辑目录与数据库中的所有关联记录。
+        </Text>
+        <Input
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onPressEnter={submitRename}
+          autoFocus
+          size="large"
+          maxLength={255}
+        />
+      </Modal>
     </div>
   )
 }

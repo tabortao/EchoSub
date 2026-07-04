@@ -225,9 +225,10 @@ func GetSubtitle() gin.HandlerFunc {
 	}
 }
 
-// ListAlbums 列出所有专辑（含子专辑），带已看进度。
+// ListAlbums 列出所有专辑（含子专辑），带已看进度、封面、横幅与描述。
 // played 字段表示该专辑下，当前用户有过播放记录的媒体数量。
 // 同目录同名 video+audio 视为配对，列表计数时只算 video 一份，避免重复。
+// 封面 / 横幅来自 AlbumMeta 表（folder.jpg / banner.jpg / season.nfo 等 Emby 风格元数据）。
 func ListAlbums() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
@@ -249,19 +250,46 @@ func ListAlbums() gin.HandlerFunc {
 			Order("album ASC").
 			Scan(&rows)
 
+		// 一次性拉取所有 AlbumMeta（按 album 名映射到子专辑数组）
+		allMeta := make(map[string][]models.AlbumMeta)
+		var metas []models.AlbumMeta
+		database.DB.Find(&metas)
+		for _, m := range metas {
+			allMeta[m.Album] = append(allMeta[m.Album], m)
+		}
+
 		type subAlbumRow struct {
-			SubAlbum string `json:"sub_album"`
-			Count    int64  `json:"count"`
-			Played   int64  `json:"played"`
+			SubAlbum    string  `json:"sub_album"`
+			Count       int64   `json:"count"`
+			Played      int64   `json:"played"`
+			CoverPath   *string `json:"cover_path"`
+			BannerPath  *string `json:"banner_path"`
+			Description string  `json:"description"`
 		}
 		type albumWithSubs struct {
-			Album     string        `json:"album"`
-			Count     int64         `json:"count"`
-			Played    int64         `json:"played"`
-			SubAlbums []subAlbumRow `json:"sub_albums"`
+			Album       string        `json:"album"`
+			Count       int64         `json:"count"`
+			Played      int64         `json:"played"`
+			HasSeasons  bool          `json:"has_seasons"` // true 当专辑下存在 sub_album
+			CoverPath   *string       `json:"cover_path"`   // 专辑本身封面（来自 AlbumMeta）
+			BannerPath  *string       `json:"banner_path"`
+			Description string        `json:"description"`
+			SubAlbums   []subAlbumRow `json:"sub_albums"`
 		}
 		result := make([]albumWithSubs, 0, len(rows))
 		for _, r := range rows {
+			// 专辑本体的封面 / 横幅
+			var albumCover, albumBanner *string
+			var albumDesc string
+			for _, m := range allMeta[r.Album] {
+				if m.SubAlbum == "" {
+					albumCover = m.CoverPath
+					albumBanner = m.BannerPath
+					albumDesc = m.Description
+					break
+				}
+			}
+			// 季子专辑
 			var subs []subAlbumRow
 			database.DB.Model(&models.MediaFile{}).
 				Select("sub_album, count(*) as count, "+
@@ -270,7 +298,23 @@ func ListAlbums() gin.HandlerFunc {
 				Group("sub_album").
 				Order("sub_album ASC").
 				Scan(&subs)
-			result = append(result, albumWithSubs{Album: r.Album, Count: r.Count, Played: r.Played, SubAlbums: subs})
+			// 关联季的封面 / 横幅
+			for i := range subs {
+				for _, m := range allMeta[r.Album] {
+					if m.SubAlbum == subs[i].SubAlbum {
+						subs[i].CoverPath = m.CoverPath
+						subs[i].BannerPath = m.BannerPath
+						subs[i].Description = m.Description
+						break
+					}
+				}
+			}
+			result = append(result, albumWithSubs{
+				Album: r.Album, Count: r.Count, Played: r.Played,
+				HasSeasons: len(subs) > 0,
+				CoverPath:  albumCover, BannerPath: albumBanner, Description: albumDesc,
+				SubAlbums: subs,
+			})
 		}
 		utils.OK(c, gin.H{"albums": result})
 	}

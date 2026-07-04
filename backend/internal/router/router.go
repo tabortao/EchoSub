@@ -63,6 +63,10 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 		authed.GET("/albums", handlers.ListAlbums())
 		authed.PUT("/albums/rename", handlers.RenameAlbum(cfg))
 		authed.DELETE("/albums", handlers.DeleteAlbum(cfg))
+		// 专辑 / 季 封面 + 横幅（Emby 风格：folder.jpg / banner.jpg）
+		authed.POST("/albums/:name/cover", handlers.UploadAlbumCover(cfg))
+		authed.GET("/albums/:name/cover", handlers.ServeAlbumCover(cfg))
+		authed.GET("/albums/:name/banner", handlers.ServeAlbumBanner(cfg))
 
 		// 标签
 		tags := authed.Group("/tags")

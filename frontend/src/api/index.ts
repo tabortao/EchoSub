@@ -97,6 +97,25 @@ export const mediaApi = {
       data: { album },
       headers: password ? { 'X-Delete-Password': password, 'X-Confirm-Purpose': 'delete' } : undefined,
     }),
+  /**
+   * 上传专辑/季封面（统一命名为 folder.<ext> 写入对应目录）。
+   * subAlbum 为空表示专辑本身，非空表示季目录。
+   */
+  uploadAlbumCover: (album: string, file: File | Blob, subAlbum = '') => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return client.post<ApiResponse<{ album: string; sub_album: string; cover_path: string }>>(
+      `/albums/${encodeURIComponent(album)}/cover${subAlbum ? `?sub=${encodeURIComponent(subAlbum)}` : ''}`,
+      fd,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+  },
+  /** 获取专辑/季封面 URL（带 JWT 鉴权 query 参数；<img> 元素无法设置 Authorization 头） */
+  albumCoverUrl: (album: string, token: string, subAlbum = '') =>
+    `/api/v1/albums/${encodeURIComponent(album)}/cover?token=${encodeURIComponent(token)}${subAlbum ? `&sub=${encodeURIComponent(subAlbum)}` : ''}`,
+  /** 获取专辑/季横幅 URL */
+  albumBannerUrl: (album: string, token: string, subAlbum = '') =>
+    `/api/v1/albums/${encodeURIComponent(album)}/banner?token=${encodeURIComponent(token)}${subAlbum ? `&sub=${encodeURIComponent(subAlbum)}` : ''}`,
   /** 新建目录 */
   mkdir: (path: string) =>
     client.post<{ data: { path: string } }>('/media/mkdir', { path }),

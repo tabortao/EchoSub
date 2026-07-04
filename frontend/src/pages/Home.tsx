@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message, Tabs } from 'antd'
 import type { MenuProps } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined, FolderOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import MediaCover from '@/components/MediaCover'
 import EmbyHome from '@/components/EmbyHome'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
-import type { MediaListResponse, MediaListItem, Album, StudyNote } from '@/types'
+import type { MediaListResponse, MediaListItem, Album, SubAlbum, StudyNote } from '@/types'
 
 const { Text } = Typography
 
@@ -298,53 +298,85 @@ function GridView(props: {
         </Button>
       </div>
 
-      {/* 专辑详情下的工具栏补充：子专辑 Tabs（季）+ 新建学习页面 */}
-      {albumFilter && (
-        <div style={{ marginBottom: 16 }}>
-          {subAlbums.length > 0 && (
-            <Tabs
-              activeKey={subAlbumFilter ?? '__all__'}
-              onChange={(key) => {
-                const next = new URLSearchParams(props.searchParams)
-                if (key === '__all__') next.delete('sub_album'); else next.set('sub_album', key)
-                props.setSearchParams(next)
-              }}
-              size="middle"
-              items={[
-                {
-                  key: '__all__',
-                  label: (
-                    <span>
-                      <AppstoreOutlined style={{ marginRight: 4 }} />
-                      全部
-                    </span>
-                  ),
-                },
-                ...subAlbums.map((s) => ({
-                  key: s.sub_album,
-                  label: (
-                    <span>
-                      {s.sub_album}
-                      <Tag color="default" style={{ marginLeft: 6, borderRadius: 10 }}>
-                        {s.played ?? 0}/{s.count}
-                      </Tag>
-                    </span>
-                  ),
-                })),
-              ]}
-              style={{ marginBottom: 12 }}
-            />
-          )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      {/* 专辑详情：横幅 + 季选择视图 / 季内容视图 */}
+      {albumFilter && currentAlbum && (
+        <Card
+          size="small"
+          styles={{ body: { padding: 0 } }}
+          style={{ marginBottom: 16, overflow: 'hidden', borderRadius: 12 }}
+        >
+          {/* 横幅区：有 banner_path 时显示 16:5 横幅，否则用专辑封面作为小背景 */}
+          <AlbumBanner album={currentAlbum} token={token} subAlbum={subAlbumFilter ?? null} />
+          <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text strong style={{ fontSize: 16 }}>📂 {currentAlbum.album}</Text>
+              {subAlbumFilter && (
+                <Text type="secondary" style={{ marginLeft: 8, fontSize: 13 }}> / 📁 {subAlbumFilter}</Text>
+              )}
+              {currentAlbum.description && (
+                <div style={{ marginTop: 4, color: '#8c8c8c', fontSize: 12, lineHeight: 1.6 }}>
+                  {currentAlbum.description.slice(0, 200)}
+                </div>
+              )}
+            </div>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
               新建学习页面
             </Button>
           </div>
+        </Card>
+      )}
+
+      {/* 专辑详情下的工具栏补充：子专辑 Tabs（季） */}
+      {albumFilter && subAlbums.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Tabs
+            activeKey={subAlbumFilter ?? '__all__'}
+            onChange={(key) => {
+              const next = new URLSearchParams(props.searchParams)
+              if (key === '__all__') next.delete('sub_album'); else next.set('sub_album', key)
+              props.setSearchParams(next)
+            }}
+            size="middle"
+            items={[
+              {
+                key: '__all__',
+                label: (
+                  <span>
+                    <AppstoreOutlined style={{ marginRight: 4 }} />
+                    全部
+                  </span>
+                ),
+              },
+              ...subAlbums.map((s) => ({
+                key: s.sub_album,
+                label: (
+                  <span>
+                    {s.sub_album}
+                    <Tag color="default" style={{ marginLeft: 6, borderRadius: 10 }}>
+                      {s.played ?? 0}/{s.count}
+                    </Tag>
+                  </span>
+                ),
+              })),
+            ]}
+          />
         </div>
       )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
+      ) : albumFilter && subAlbums.length > 0 && !subAlbumFilter ? (
+        // 专辑下有季且未选季：默认进入「季选择视图」（仅展示季卡片，不展示全部内容）
+        <SeasonGrid
+          album={currentAlbum!}
+          subAlbums={subAlbums}
+          token={token}
+          onPick={(sub) => {
+            const next = new URLSearchParams(props.searchParams)
+            next.set('sub_album', sub)
+            props.setSearchParams(next)
+          }}
+        />
       ) : feed.length === 0 ? (
         <Empty description="🎁 没有匹配的内容" />
       ) : (
@@ -492,5 +524,110 @@ function NoteCard({ note, token, onClick }: { note: StudyNote; token: string; on
         }
       />
     </Card>
+  )
+}
+
+/**
+ * 专辑 / 季横幅：优先 banner.jpg（来自 Emby 扫描），否则用专辑封面。
+ * 显示 16:5 横向横幅 + 底部暗色叠加 + 专辑 / 季名 + 描述。
+ */
+function AlbumBanner({ album, subAlbum, token }: { album: Album; subAlbum: string | null; token: string }) {
+  // 选中季时优先用季的 banner，否则用专辑的 banner
+  const subMeta = subAlbum ? album.sub_albums?.find((s) => s.sub_album === subAlbum) : undefined
+  const bannerPath = subMeta?.banner_path ?? album.banner_path
+  const coverPath = subMeta?.cover_path ?? album.cover_path
+  const bannerUrl = bannerPath ? mediaApi.albumBannerUrl(album.album, token, subAlbum ?? '') : ''
+  const coverUrl = coverPath ? mediaApi.albumCoverUrl(album.album, token, subAlbum ?? '') : ''
+  // 当季无 banner 时回退到季封面（或专辑封面）
+  const bgUrl = bannerUrl || coverUrl
+  return (
+    <div style={{
+      position: 'relative', height: 180,
+      background: bgUrl
+        ? `linear-gradient(to bottom, rgba(0,0,0,0.15), rgba(0,0,0,0.55)), url(${bgUrl}) center/cover no-repeat`
+        : 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
+    }}>
+      <div style={{ position: 'absolute', bottom: 12, left: 16, right: 16, color: '#fff' }}>
+        <Text style={{ color: '#fff', fontSize: 22, fontWeight: 800, textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
+          {subAlbum ?? album.album}
+        </Text>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 季选择网格：专辑下有多个子专辑时，进入专辑页默认展示。
+ * 每张季卡片：封面（cover_path 或 banner_path）+ 季名 + 数量徽标，点击进入该季。
+ * 类似 Emby "Seasons" 行。
+ */
+function SeasonGrid({ album, subAlbums, token, onPick }: {
+  album: Album; subAlbums: SubAlbum[]; token: string; onPick: (sub: string) => void
+}) {
+  return (
+    <div>
+      <div style={{ marginBottom: 12, color: '#8c8c8c', fontSize: 13 }}>
+        该专辑共 {subAlbums.length} 季，点击季卡片查看内容。
+      </div>
+      <Row gutter={[16, 16]}>
+        {subAlbums.map((s) => {
+          const cover = s.cover_path || s.banner_path
+          const coverUrl = cover ? mediaApi.albumCoverUrl(album.album, token, s.sub_album) : ''
+          return (
+            <Col xs={12} sm={8} md={6} lg={4} xxl={4} key={s.sub_album}>
+              <Card
+                hoverable
+                onClick={() => onPick(s.sub_album)}
+                styles={{ body: { padding: 12 } }}
+                style={{ overflow: 'hidden', borderRadius: 12 }}
+                cover={
+                  <div style={{ position: 'relative', height: 220, background: '#f0f0f0' }}>
+                    {coverUrl ? (
+                      <img
+                        src={coverUrl}
+                        alt={s.sub_album}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: '100%', height: '100%',
+                        background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <FolderOutlined style={{ fontSize: 48, color: 'rgba(255,255,255,0.8)' }} />
+                      </div>
+                    )}
+                    <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 8, fontWeight: 600, border: 'none' }}>
+                      📁 季
+                    </Tag>
+                    <div style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0,
+                      background: 'linear-gradient(to top, rgba(0,0,0,0.7), transparent)',
+                      padding: '20px 10px 8px',
+                    }}>
+                      <Text style={{ color: '#fff', fontWeight: 700, fontSize: 14, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>
+                        {s.sub_album}
+                      </Text>
+                    </div>
+                  </div>
+                }
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {(s.played ?? 0) > 0 ? `已看 ${s.played}/${s.count}` : `${s.count} 项`}
+                  </Text>
+                </div>
+                {s.description && (
+                  <Text type="secondary" ellipsis style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
+                    {s.description}
+                  </Text>
+                )}
+              </Card>
+            </Col>
+          )
+        })}
+      </Row>
+    </div>
   )
 }

@@ -98,6 +98,24 @@ type MediaRemark struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// AlbumMeta 专辑/季级别的元数据（封面、横幅、描述、nfo 路径）。
+// 联合唯一索引 (album, sub_album)：
+//   - sub_album 为空字符串 = 专辑本身
+//   - sub_album 非空 = 某个季（专辑下的子目录）
+// 用于适配 Emby / Jellyfin 风格的目录元数据刮削（folder.jpg / banner.jpg / season.nfo 等）。
+type AlbumMeta struct {
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	Album       string         `gorm:"size:255;uniqueIndex:idx_album_sub;not null" json:"album"`
+	SubAlbum    string         `gorm:"size:255;uniqueIndex:idx_album_sub;default:'';not null" json:"sub_album"`
+	CoverPath   *string        `gorm:"size:1024" json:"cover_path"`  // 专辑/季封面图绝对路径（folder.jpg 优先）
+	BannerPath  *string        `gorm:"size:1024" json:"banner_path"` // 横幅图绝对路径
+	NFOPath     *string        `gorm:"size:1024" json:"nfo_path"`    // 描述性 nfo 文件路径
+	Description string         `gorm:"type:text" json:"description"` // 来自 nfo 的 <plot> 描述
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
 // Setting 用户学习偏好
 type Setting struct {
 	ID             uint    `gorm:"primaryKey" json:"id"`

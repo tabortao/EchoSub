@@ -71,36 +71,187 @@ func (s *Scanner) findSubtitle(mediaPath string) string {
 	return ""
 }
 
-// findCover 在同目录下查找同名图片作为封面（.jpg/.jpeg/.png/.webp）
+// findCover 在同目录下查找视频/音频文件的封面图（Emby 风格）。
+// 优先级：
+//  1. <basename>-thumb.jpg/.png/.webp（Emby 视频缩略图命名）
+//  2. <basename>.jpg/.png/.webp（Kodi/Jellyfin 命名）
+//  3. cover.jpg/cover.png 同目录通用封面（兜底）
 func (s *Scanner) findCover(mediaPath string) string {
 	dir := filepath.Dir(mediaPath)
 	base := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath))
+	imgExts := make(map[string]bool, len(s.cfg.Media.SupportedImages))
+	for _, e := range s.cfg.Media.SupportedImages {
+		imgExts[strings.ToLower(e)] = true
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return ""
 	}
+	// Emby 缩略图（最优先）
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		name := e.Name()
 		ext := strings.ToLower(filepath.Ext(name))
-		matched := false
-		for _, img := range s.cfg.Media.SupportedImages {
-			if ext == img {
-				matched = true
-				break
-			}
-		}
-		if !matched {
+		if !imgExts[ext] {
 			continue
 		}
-		nameBase := strings.TrimSuffix(name, filepath.Ext(name))
+		// 去掉 -thumb 后再比 basename
+		stripped := strings.TrimSuffix(name, "-thumb"+ext)
+		if !imgExts[strings.ToLower(filepath.Ext(stripped))] && strings.EqualFold(filepath.Join(dir, stripped), base) {
+			return filepath.Join(dir, name)
+		}
+	}
+	// 同名图（Kodi 风格）
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if !imgExts[ext] {
+			continue
+		}
+		nameBase := strings.TrimSuffix(name, ext)
 		if strings.EqualFold(filepath.Join(dir, nameBase), base) {
 			return filepath.Join(dir, name)
 		}
 	}
 	return ""
+}
+
+// Emby / Jellyfin / Kodi 风格的专辑/季元数据文件名（不带扩展名）
+var albumCoverNames = []string{"folder", "poster", "cover", "albumart", "albumartwork"}
+var albumBannerNames = []string{"banner", "backdrop", "fanart"}
+
+// scanAlbumMeta 扫描指定目录，识别 Emby 风格元数据（folder.jpg / banner.jpg / season.nfo 等）
+// 写入或更新 AlbumMeta 表。subAlbum 为空表示专辑本身，非空表示季。
+// 安全：路径必须在 media root 下（防止误识别）。
+func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
+	if album == "" {
+		return
+	}
+	// 限制在 media root 下
+	root := s.cfg.Media.Dir
+	absDir, err := filepath.Abs(dir)
+	if err != nil || !strings.HasPrefix(strings.ToLower(absDir), strings.ToLower(root)) {
+		return
+	}
+	entries, err := os.ReadDir(absDir)
+	if err != nil {
+		return
+	}
+	imgExts := make(map[string]bool, len(s.cfg.Media.SupportedImages))
+	for _, e := range s.cfg.Media.SupportedImages {
+		imgExts[strings.ToLower(e)] = true
+	}
+
+	var coverPath, bannerPath, nfoPath *string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		lower := strings.ToLower(e.Name())
+		stem := strings.ToLower(strings.TrimSuffix(lower, filepath.Ext(lower)))
+		ext := strings.ToLower(filepath.Ext(lower))
+		// 封面
+		if coverPath == nil && imgExts[ext] {
+			for _, name := range albumCoverNames {
+				if stem == name {
+					p := filepath.Join(absDir, e.Name())
+					coverPath = &p
+					break
+				}
+			}
+		}
+		// 横幅
+		if bannerPath == nil && imgExts[ext] {
+			for _, name := range albumBannerNames {
+				if stem == name {
+					p := filepath.Join(absDir, e.Name())
+					bannerPath = &p
+					break
+				}
+			}
+		}
+		// nfo 文件
+		if nfoPath == nil && ext == ".nfo" {
+			// season.nfo 仅作季描述；tvshow.nfo / album.nfo / folder.nfo 任何位置都作专辑/季描述
+			if subAlbum != "" {
+				// 季目录：识别 season.nfo / seasonXX.nfo
+				if stem == "season" || strings.HasPrefix(stem, "season") {
+					p := filepath.Join(absDir, e.Name())
+					nfoPath = &p
+				}
+			} else {
+				// 专辑目录：识别 tvshow.nfo / album.nfo / folder.nfo
+				if stem == "tvshow" || stem == "album" || stem == "folder" || strings.HasPrefix(stem, "tvshow") {
+					p := filepath.Join(absDir, e.Name())
+					nfoPath = &p
+				}
+			}
+		}
+	}
+
+	// 解析 nfo 中的 <plot> 描述（Kodi 格式）
+	description := ""
+	if nfoPath != nil {
+		if data, err := os.ReadFile(*nfoPath); err == nil {
+			description = parseNFOPlot(string(data))
+		}
+	}
+
+	// upsert 到 AlbumMeta（album + sub_album 唯一）
+	var meta models.AlbumMeta
+	updates := map[string]interface{}{
+		"cover_path":  coverPath,
+		"banner_path": bannerPath,
+		"nfo_path":    nfoPath,
+		"description": description,
+	}
+	tx := database.DB.Where("album = ? AND sub_album = ?", album, subAlbum).First(&meta)
+	if tx.Error == nil {
+		// 若仅 None 字段也保留为 NULL，避免覆写已有值；这里直接更新（Emby 文件可能消失）
+		database.DB.Model(&meta).Updates(updates)
+	} else {
+		meta = models.AlbumMeta{
+			Album:       album,
+			SubAlbum:    subAlbum,
+			CoverPath:   coverPath,
+			BannerPath:  bannerPath,
+			NFOPath:     nfoPath,
+			Description: description,
+		}
+		database.DB.Create(&meta)
+	}
+}
+
+// parseNFOPlot 从 nfo 文本中提取 <plot>...</plot> 内容（Kodi 标准）。
+// 若无 plot 标签则返回空字符串。
+func parseNFOPlot(content string) string {
+	// 简单正则：忽略大小写、首尾空白
+	lower := strings.ToLower(content)
+	start := strings.Index(lower, "<plot>")
+	if start < 0 {
+		return ""
+	}
+	start += len("<plot>")
+	end := strings.Index(lower[start:], "</plot>")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(content[start : start+end])
+}
+
+// pruneAlbumMeta 清理 AlbumMeta 中磁盘已不存在的条目（目录被删时调用）。
+func (s *Scanner) pruneAlbumMeta(albumSubPairs [][2]string) {
+	if len(albumSubPairs) == 0 {
+		return
+	}
+	for _, p := range albumSubPairs {
+		database.DB.Where("album = ? AND sub_album = ?", p[0], p[1]).Delete(&models.AlbumMeta{})
+	}
 }
 
 // ScanFull 全量扫描媒体目录并入库
@@ -243,7 +394,19 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 
 	// 重新维护与同名（仅扩展名不同）、同目录、另一种类型媒体文件的配对关系。
 	s.linkPairedMedia(savedID, mediaType, dir, info.Name())
+
+	// 识别该目录的 Emby / Kodi 风格元数据并写入 AlbumMeta
+	absDir := filepath.Join(s.cfg.Media.Dir, dir)
+	s.scanAlbumMeta(absDir, getOrEmpty(album), getOrEmpty(subAlbum))
 	return nil
+}
+
+// getOrEmpty 安全取 *string，未设置时返回空串。
+func getOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // linkPairedMedia 维护 MediaFile 的同目录同名配对关系。
@@ -398,9 +561,27 @@ func (s *Scanner) handleEvent(event fsnotify.Event) {
 			database.DB.Model(&models.MediaFile{}).
 				Where("path LIKE ? AND paired_media_id IS NOT NULL", prefix+"%").
 				Update("paired_media_id", nil)
+			// 收集被删目录下所有 (album, sub_album) 组合，删除对应 AlbumMeta
+			type asp struct {
+				Album    string
+				SubAlbum string
+			}
+			var pairs []asp
+			database.DB.Model(&models.MediaFile{}).
+				Select("album, sub_album").
+				Where("path LIKE ? AND album IS NOT NULL", prefix+"%").
+				Group("album, sub_album").
+				Scan(&pairs)
 			res := database.DB.Where("path LIKE ?", prefix+"%").Delete(&models.MediaFile{})
 			if res.RowsAffected > 0 {
 				log.Printf("[INFO] 增量删除目录 %s: 软删除 %d 条媒体记录", event.Name, res.RowsAffected)
+			}
+			// 删除该目录及其子目录对应的 AlbumMeta
+			for _, p := range pairs {
+				if p.Album == "" {
+					continue
+				}
+				database.DB.Where("album = ? AND sub_album = ?", p.Album, p.SubAlbum).Delete(&models.AlbumMeta{})
 			}
 			// 同时尝试从 watcher 移除（目录已不存在，Add/Remove 都会失败，忽略即可）
 		}

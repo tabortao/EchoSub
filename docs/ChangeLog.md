@@ -7,6 +7,41 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.4.4] - 2026-07-04
+
+### Added
+
+#### Emby 风格专辑元数据识别 + 季视图
+
+- **后端 `models/models.go`** ✨新增 `AlbumMeta` 模型：专辑 / 季级别的元数据（封面 / 横幅 / 描述 / nfo 路径）。联合唯一索引 `(album, sub_album)`：sub_album 为空字符串表示专辑本身，非空表示该专辑下某季（子目录）。
+- **后端 `database/database.go`**：`AutoMigrate` 加入 `AlbumMeta`。
+- **后端 `scanner/scanner.go`**：
+  - `findCover` 新增 Emby 风格 `<basename>-thumb.jpg` 缩略图识别——剥离 `-thumb` 后缀匹配视频同基名（最优先），再回退到 Kodi 同名图、兜底首帧 / 颜色块。
+  - 新增 `scanAlbumMeta(dir, album, subAlbum)`：扫描指定目录识别 `folder.jpg/poster.jpg/cover.jpg`（封面）、`banner.jpg/backdrop.jpg/fanart.jpg`（横幅）、`season.nfo/tvshow.nfo/album.nfo`（描述），写入 / 更新 `AlbumMeta` 表。`upsertMedia` 完成后调用，将专辑与季的 Emby 元数据持久化。
+- **后端 `handlers/album_meta.go`** ✨新增：专辑 / 季元数据 API。
+  - `POST /albums/:name/cover?sub=xxx`：上传封面（multipart `file` 字段，限制 jpg/png/webp/gif ≤ 10MB），写入对应目录并统一命名为 `folder.<ext>`（同时清理旧的 `folder/poster/cover.*` 候选），更新 `AlbumMeta.cover_path`。
+  - `GET /albums/:name/cover?sub=xxx`：返回封面图片（Content-Type 按扩展名设置）。
+  - `GET /albums/:name/banner?sub=xxx`：返回横幅图片。
+  - 路径安全：`albumDir` 拒绝 `..` 与分隔符，并校验结果必须在 media root 内。
+- **后端 `handlers/media.go`**：`ListAlbums` 新增 `cover_path / banner_path / description / has_seasons` 字段。一次查询拉取所有 `AlbumMeta`，专辑本体 / 每个季分别关联对应元数据。
+- **后端 `router/router.go`**：注册 3 条新路由（cover 上传 + cover / banner 获取）。
+- **前端 `types/index.ts`**：`Album` / `SubAlbum` 新增 `cover_path? / banner_path? / description?` 字段；`Album` 新增 `has_seasons?` 标志。
+- **前端 `api/index.ts`**：`mediaApi` 新增 `uploadAlbumCover / albumCoverUrl / albumBannerUrl`，支持 `subAlbum` 参数。
+- **前端 `components/EmbyHome.tsx`**：
+  - `AlbumCard` 新增「⋮」菜单：重命名专辑（调用 `renameAlbum`） / 上传专辑封面（自动以 `folder.<ext>` 命名写入专辑目录）。
+  - 「我的专辑」卡片优先使用 `album.cover_path`（来自 Emby 扫描或用户上传），无则回退到自动挑选的代表媒体封面。
+- **前端 `pages/Home.tsx`**：
+  - 进入专辑页时若专辑有季（`has_seasons` 或 `sub_albums.length > 0`），默认进入「季选择视图」——以季卡片网格展示，仅显示季名、季封面（来自 `cover_path / banner_path`）、季描述与「已看 X/Y」徽标，点击季卡片进入对应季。整体风格类似 Emby「Seasons」行。
+  - 专辑详情页头部新增 `AlbumBanner` 组件：16:5 横向横幅，优先 `banner_path`，回退到 `cover_path`；底部叠加专辑 / 季名 + 描述。
+  - 季 Tabs 与子专辑 Tags 同步显示「已看 X/Y」。
+  - 修复 `SubAlbum` 类型与 `FolderOutlined` 图标缺失的 TypeScript 错误。
+
+### Notes
+
+- Emby 元数据优先级：`<basename>-thumb.jpg`（视频） > `folder.jpg/poster.jpg/cover.jpg`（专辑 / 季封面） > `banner.jpg/backdrop.jpg/fanart.jpg`（横幅） > `season.nfo/tvshow.nfo/album.nfo`（描述）。
+- 季视图触发条件：专辑下存在任何 `sub_album`（子目录）时自动启用；单层专辑（无季）保持原网格视图不受影响。
+- 用户上传封面会自动清理同目录已有的 `folder/poster/cover.*` 候选图，避免同名堆积；上传后首页与专辑页会即时刷新。
+
 ## [v0.4.3] - 2026-07-04
 
 ### Added

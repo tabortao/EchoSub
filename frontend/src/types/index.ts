@@ -73,6 +73,12 @@ export interface SubAlbum {
   count: number
   /** 当前用户有过播放记录的子专辑内媒体数量（后端 v0.3.1 起返回） */
   played?: number
+  /** 季封面绝对路径（来自 Emby 扫描：folder.jpg / poster.jpg 等） */
+  cover_path?: string | null
+  /** 季横幅绝对路径（banner.jpg / backdrop.jpg） */
+  banner_path?: string | null
+  /** 季描述（来自 season.nfo / tvshow.nfo 的 <plot> 段） */
+  description?: string
 }
 
 export interface Album {
@@ -80,6 +86,14 @@ export interface Album {
   count: number
   /** 当前用户有过播放记录的专辑内媒体数量（后端 v0.3.1 起返回） */
   played?: number
+  /** 专辑下存在季（sub_album）时为 true（v0.4.4 起） */
+  has_seasons?: boolean
+  /** 专辑封面绝对路径（来自 Emby 扫描：folder.jpg / poster.jpg / cover.jpg） */
+  cover_path?: string | null
+  /** 专辑横幅绝对路径（banner.jpg / backdrop.jpg） */
+  banner_path?: string | null
+  /** 专辑描述（来自 tvshow.nfo / album.nfo 的 <plot> 段） */
+  description?: string
   sub_albums?: SubAlbum[]
 }
 
