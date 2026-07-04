@@ -74,7 +74,13 @@ func ListRecords() gin.HandlerFunc {
 // ListRecent 列出当前用户每个媒体最近一条播放记录（按 media_id 去重），
 // 并按最后播放时间倒序。已软删除的媒体会被剔除。
 // 被配对的 audio（出现在 video.paired_media_id 中）也从结果中过滤，避免首页重复展示。
-// 路由：GET /records/recent?limit=20
+//
+// 查询参数：
+//   limit      — 返回数量上限，默认 20，最大 100
+//   unfinished — 是否只返回「未完成播放」的记录（last_position > 0 且 < duration * 0.95）。
+//               用于首页「继续学习 / 继续观看」区，只展示可继续播放的媒体。
+//               duration = 0（媒体元数据未就绪）的兜底为 last_position > 0 即视为未完成。
+// 路由：GET /records/recent?limit=20&unfinished=true
 func ListRecent() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
@@ -89,13 +95,21 @@ func ListRecent() gin.HandlerFunc {
 			Where("user_id = ?", uid).
 			Group("media_id")
 
-		var records []models.PlayRecord
-		err := database.DB.
+		q := database.DB.
 			Joins("JOIN (?) latest ON latest.media_id = play_records.media_id AND latest.max_ts = play_records.last_played_at", latestSub).
 			Joins("JOIN media_files mf ON mf.id = play_records.media_id AND mf.deleted_at IS NULL").
 			Where("play_records.user_id = ?", uid).
-			Where("NOT (mf.type = ? AND mf.id IN (SELECT paired_media_id FROM media_files WHERE paired_media_id IS NOT NULL AND deleted_at IS NULL AND type = ?))", "audio", "video").
-			Preload("Media").
+			Where("NOT (mf.type = ? AND mf.id IN (SELECT paired_media_id FROM media_files WHERE paired_media_id IS NOT NULL AND deleted_at IS NULL AND type = ?))", "audio", "video")
+
+		// unfinished=true：仅保留「未完成」的记录
+		// 条件：last_position > 0（已开始播放）AND (duration = 0 OR last_position < duration * 0.95)
+		// 0.95 阈值容忍用户提前一两句结束的情况，避免 99% 仍出现在「继续学习」列表
+		if c.Query("unfinished") == "true" {
+			q = q.Where("play_records.last_position > 0 AND (mf.duration = 0 OR play_records.last_position < mf.duration * 0.95)")
+		}
+
+		var records []models.PlayRecord
+		err := q.Preload("Media").
 			Order("play_records.last_played_at DESC").
 			Limit(limit).
 			Find(&records).Error

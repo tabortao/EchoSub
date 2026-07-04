@@ -203,12 +203,14 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
     }
   }, [mediaId])
 
-  // 保存播放位置（节流 5s）
-  const savePosition = useCallback((pos: number, increment = false) => {
+  // 保存播放位置（节流 5s）。
+  // - 普通模式 / 句复读模式 / 收藏模式都生效，确保用户从任何模式退出都能留下进度。
+  // - 卸载时使用 force=true 绕过节流，保证最后一次播放位置一定落库。
+  const savePosition = useCallback((pos: number, opts: { force?: boolean; incrementPlay?: boolean } = {}) => {
     const now = Date.now()
-    if (!increment && now - lastSaveRef.current < 5000) return
+    if (!opts.force && now - lastSaveRef.current < 5000) return
     lastSaveRef.current = now
-    recordApi.update(mediaId, pos, increment).catch(() => {})
+    recordApi.update(mediaId, pos, opts.incrementPlay ?? false).catch(() => {})
   }, [mediaId])
 
   // 时间更新处理：核心复读逻辑
@@ -217,6 +219,10 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
     if (!el || handlingEndRef.current) return
     const t = el.currentTime
     setCurrentTime(t)
+
+    // 节流保存当前位置：无论在哪个模式（normal / repeat / favorite），5s 内至少落库一次。
+    // 这是首页「继续观看」区显示未完成媒体的关键：用户退出时进度不丢。
+    savePosition(t)
 
     // 更新当前句子高亮
     const si = findSentenceIndex(t)
@@ -263,7 +269,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
             // 修复：最后一遍重复也需要计数 repeat_count
             incrementSentenceRepeat(curIdx)
             markSentenceCompleted(curIdx)
-            savePosition(t, true)
+            savePosition(t, { force: true, incrementPlay: true })
             handlingEndRef.current = false
             return
           }
@@ -308,7 +314,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                     }
                   } else {
                     setPlaying(false)
-                    savePosition(el.currentTime, true)
+                    savePosition(el.currentTime, { force: true, incrementPlay: true })
                     message.success('收藏句子播放完成')
                   }
                 }
@@ -422,7 +428,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
       el.play().then(() => setPlaying(true)).catch(() => {})
     } else {
       setPlaying(false)
-      savePosition(el.duration, true)
+      savePosition(el.duration, { force: true, incrementPlay: true })
       message.success('播放完成')
     }
   }
@@ -527,12 +533,13 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
     return () => document.removeEventListener('fullscreenchange', handler)
   }, [])
 
-  // 卸载时清理
+  // 卸载时清理：保存最后一次播放位置（force=true 绕过节流保证落库），
+  // 这样用户从播放器返回首页时，"继续观看"区能立刻看到该媒体。
   useEffect(() => {
     return () => {
       if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
       const el = mediaRef.current
-      if (el) savePosition(el.currentTime)
+      if (el) savePosition(el.currentTime, { force: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

@@ -292,7 +292,8 @@ func ListAlbums() gin.HandlerFunc {
 		// 2. 再合并 AlbumMeta 中只有封面/横幅但无媒体的「期望季」（Emby 部分刮削常见）
 		// 这样即使磁盘上 Season 2 目录还不存在，只要 season02-poster.jpg 存在，
 		// 前端也能看到「Season 2」占位卡片，方便用户后续补资源。
-		buildSubs := func(albumName string) []subAlbumRow {
+		// 3. 季自身无 banner 时继承专辑根的 banner（Emby 风格：所有季共用专辑横幅）
+		buildSubs := func(albumName string, albumBanner *string) []subAlbumRow {
 			var subs []subAlbumRow
 			database.DB.Model(&models.MediaFile{}).
 				Select("sub_album, count(*) as count, "+
@@ -314,7 +315,8 @@ func ListAlbums() gin.HandlerFunc {
 					Count:       0,
 					Played:      0,
 					CoverPath:   m.CoverPath,
-					BannerPath:  m.BannerPath,
+					// 期望季自身无 banner 时继承专辑横幅
+					BannerPath:  pickBanner(m.BannerPath, albumBanner),
 					Description: m.Description,
 				})
 				existing[m.SubAlbum] = true
@@ -326,14 +328,22 @@ func ListAlbums() gin.HandlerFunc {
 						if m.CoverPath != nil {
 							subs[i].CoverPath = m.CoverPath
 						}
+						// 季自身 banner 优先；缺失时回退到专辑横幅
 						if m.BannerPath != nil {
 							subs[i].BannerPath = m.BannerPath
+						} else if subs[i].BannerPath == nil {
+							subs[i].BannerPath = albumBanner
 						}
 						if m.Description != "" {
 							subs[i].Description = m.Description
 						}
 						break
 					}
+				}
+				// 兜底：季仍无 banner（如「Season 1」内无 banner，磁盘上只有 album 根的 banner.jpg），
+				// 直接继承专辑横幅，保证专辑页与季页都能展示统一的横幅。
+				if subs[i].BannerPath == nil {
+					subs[i].BannerPath = albumBanner
 				}
 			}
 			// 排序：按自然季号升序（"Season 1" 在 "Season 2" 前，"Season 10" 在 "Season 2" 后）
@@ -371,7 +381,7 @@ func ListAlbums() gin.HandlerFunc {
 					break
 				}
 			}
-			subs := buildSubs(r.Album)
+			subs := buildSubs(r.Album, albumBanner)
 			result = append(result, albumWithSubs{
 				Album: r.Album, Count: r.Count, Played: r.Played,
 				HasSeasons: len(subs) > 0,
@@ -397,7 +407,7 @@ func ListAlbums() gin.HandlerFunc {
 					break
 				}
 			}
-			subs := buildSubs(r.Album)
+			subs := buildSubs(r.Album, albumBanner)
 			result = append(result, albumWithSubs{
 				Album: r.Album, Count: r.Count, Played: r.Played,
 				HasSeasons: len(subs) > 0,
@@ -409,6 +419,14 @@ func ListAlbums() gin.HandlerFunc {
 		}
 		utils.OK(c, gin.H{"albums": result})
 	}
+}
+
+// pickBanner 优先返回 first（季自身 banner），否则返回 fallback（专辑横幅）。
+func pickBanner(first, fallback *string) *string {
+	if first != nil {
+		return first
+	}
+	return fallback
 }
 
 // seasonLess 比较两个子专辑名，按自然季号升序：

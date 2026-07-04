@@ -7,6 +7,73 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.4.9] - 2026-07-04
+
+### Added
+
+#### 未读媒体灰色蒙版 + 季封面缩放 + 横幅改用 <img> 渲染
+
+- **前端 `components/EmbyHome.tsx` (`MediaCard`)**：新增「未读」灰色蒙版。当媒体的 `play_count === 0` 且 `last_position === 0`（用户从未播放 / 学习）时，封面图覆盖半透明灰色蒙版 (`rgba(128,128,128,0.55)`) + 锁图标 + 「未开始」文字提示，鼠标仍可点击进入播放器；学习后（`play_count > 0` 或 `last_position > 0`）蒙版自动消失。
+- **前端 `pages/Home.tsx` (网格视图 MediaCard)**：与 EmbyHome 同步实现「未读蒙版」逻辑，专辑 / 标签筛选下所有未学习的媒体卡片都被半透明灰色蒙版覆盖。
+- **前端 `pages/Home.tsx` (`SeasonGrid`)**：季封面容器由固定 `height: 220` 改为 `aspectRatio: '2 / 3'`（竖版海报比例，与 Emby 一致），`objectFit` 由 `'cover'` 改为 `'contain'`。避免竖版 `seasonXX-poster.jpg` / `Season N/folder.jpg` 被裁剪，让季图标完整可见；容器背景由 `#f0f0f0` 调整为 `#f5f5f5` 衬托图片。「📁 季」徽标位置 / 样式与右下方 `SeasonCardMenu` 保持原状。
+
+### Changed
+
+- **前端 `pages/Home.tsx` (`AlbumBanner`)**：横幅渲染方式由 CSS `background-image: url(...) center/cover` 改为 `<img>` + `objectFit: cover` + 独立暗色叠加层。原因：背景图加载失败时浏览器反馈不直观（图片不可见但容器尺寸正常），用 `<img>` 可显式 `onError` 兜底隐藏并回退到纯渐变背景，确保 `小猪佩奇(2004)/banner.jpg` 等 16:5 横幅在专辑详情页一定能正常显示。
+
+### Notes
+
+- 「未读蒙版」使用 `pointerEvents: 'none'` 避免吞掉卡片的点击事件（仍可点击进入播放器开始学习）。
+- 季封面比例锁定 2:3 是 Emby / Plex 的标准海报比例；`objectFit: 'contain'` 保证 `seasonXX-poster.jpg` 这类竖版图不被裁剪、季图标完整可见。
+- 验证方式：在 `test-media\小猪佩奇(2004)` 目录下，确认 `banner.jpg` 通过 `GET /api/v1/albums/.../banner` 返回图片（之前 v0.4.7 已修复 Windows 路径 bug 并将 `banner_path` 正确入库）；`season02-poster.jpg` ~ `season08-poster.jpg` 通过 `seasonXX-poster` 映射到对应 `Season N`（v0.4.7 已实现），`Season 1/folder.jpg` 优先于 `season01-poster.jpg`（季根 `folder.jpg` 优先规则）。
+- 本次不涉及后端变更，扫描器与元数据识别沿用 v0.4.7 修复结果。
+
+## [v0.4.8] - 2026-07-04
+
+### Added
+
+#### 首页「继续观看」只显示未完成的媒体 + Player 支持 ?position= 覆盖
+
+- **后端 `handlers/record.go` (`ListRecent`)**：新增 `unfinished=true` 查询参数，过滤出「已开始但未完成」的播放记录：`(last_position > 0) AND (duration = 0 OR last_position < duration * 0.95)`。`duration = 0` 兜底（媒体元数据未就绪时只看 last_position > 0），0.95 阈值容忍用户提前一两句结束的情况。
+- **前端 `api/index.ts` (`recordApi.recent`)**：签名扩展为 `recent(limit, opts?: { unfinished?: boolean })`。
+- **前端 `components/EmbyHome.tsx`**：「继续学习」行改名为「▶️ 继续观看」，调用 `recordApi.recent(20, { unfinished: true })`，确保该行只显示未完成的媒体，已看完的不再占位。媒体卡片点击进入时仍走 `/play/:id`，由 Player 自动从 API 加载 `last_position` 续播。
+- **前端 `pages/Player.tsx`**：支持 URL `?position=X` 参数强制从指定秒数开始播放，覆盖数据库中的 `last_position`。典型用法：`/play/123?position=0` 强制重看、分享带进度的链接。`?position=0` 是合法的「重看」信号；负数 / NaN 会被规范化为 0。
+
+### Changed
+
+- **前端 `components/EmbyHome.tsx`**：「继续学习」→「继续观看」标题与注释同步更新，更准确反映该行内容（最近未完成的媒体 + 最近更新的学习页面）。
+
+## [v0.4.7] - 2026-07-04
+
+### Fixed
+
+#### 修复 `scanAlbumMeta` 在 Windows 上完全失效 + 专辑/季元数据按 Emby 标准重整
+
+- **后端 `scanner/scanner.go` (`scanAlbumMeta`)** ✨核心修复：改用 `filepath.Rel` 校验目录归属，**取代** `strings.HasPrefix(absDir, root)`。旧实现在 Windows 上当 `Media.Dir` 来自 yaml（用 `/` 分隔符）而 `absDir` 来自 `filepath.Abs`（用 `\`）时永远返回 `false`，导致函数**所有 Emby 元数据识别都早期 return**。这一 bug 自 v0.4.5 引入 Emby 风格专辑元数据以来一直存在。修复后 `小猪佩奇(2004)/folder.jpg`、`banner.jpg`、`tvshow.nfo`、`seasonXX-poster.jpg`、`Season 1/folder.jpg`、`<video>.nfo` 等元数据全部能被正确识别入库。
+
+- **后端 `scanner/scanner.go` (`scanAlbumMeta`)** ✨封面/横幅识别改为「候选收集 + 优先级选择」模式：循环中记录 `stem → 文件名` 候选 map，循环结束后按 `albumCoverNames`（`folder` > `poster` > `cover` > `albumart` > `albumartwork`）和 `albumBannerNames`（`banner` > `backdrop` > `fanart`）的优先级挑出最终值。`os.ReadDir` 顺序不保证按字母序返回，旧实现「先到先得」会导致 `backdrop.jpg` 抢先于 `banner.jpg` 被识别。`pickByPriority` 为新增辅助函数。
+
+- **后端 `scanner/scanner.go` (`scanAlbumMeta`)** ✨横幅不再在季目录识别：Emby 风格是「所有季共用专辑根的 `banner.jpg`」，季的 `AlbumMeta.banner_path` 保持 `nil`，由 `ServeAlbumBanner` 兜底到专辑横幅。季内即使有冗余的 `backdrop.jpg` / `banner.jpg` / `fanart.jpg` 也不会被错误地当作季横幅。
+
+- **后端 `scanner/scanner.go` (`scanAlbumMeta`)** ✨季描述 nfo 改为「内容优先」策略：新增 `pickNFOPathByContent`，若 `season.nfo`（Emby 标准）解析出非空 `<plot>` 则用它，否则回退到 `tvshow.nfo`（兼容 Emby 部分刮削后的冗余文件）。旧实现在季目录下用「先到先得」，导致 `season.nfo` 的空 `<plot />` 覆盖了 `tvshow.nfo` 的实际季描述。
+
+- **后端 `scanner/scanner.go` (`scanAlbumMeta`)** AlbumMeta upsert 改用 `Select("cover_path", "banner_path", "nfo_path", "description")` 显式指定更新字段：这样当 Emby 文件被用户删除、对应字段变为 `nil` 时，**旧值会被清空**而不是被 GORM 默默跳过 `nil` 值。
+
+- **后端 `scanner/scanner.go` (`upsertSeasonCover`)** 季封面回填改为「只在季自身没有封面时设置」：季根的 `folder.jpg` 优先于专辑根的 `seasonXX-poster.jpg`（Emby 标准），避免占位季封面把季根封面覆盖掉。
+
+- **后端 `scanner/scanner.go` (`parseNFOPlot`)** 自动去除 `<![CDATA[ ... ]]>` 包装：Emby 风格常把 `<plot>` 内容写成 CDATA，旧实现保留包装字符让前端展示 `<![CDATA[...]]>`。修复后单集描述（来自 `<video>.nfo`）和专辑/季描述（来自 `tvshow.nfo` / `season.nfo`）都能拿到干净的纯文本。
+
+### Notes
+
+- 验证脚本 `scripts/verify-emby.ps1` 已可通过：注册用户 → 触发扫描 → 拉取 `/api/v1/albums` + `/api/v1/media` 打印元数据。`小猪佩奇(2004)` 专辑的输出现在完全符合 Emby 标准：
+  - 专辑 `cover_path` = `folder.jpg`
+  - 专辑 `banner_path` = `banner.jpg`
+  - 专辑 `description` = `tvshow.nfo` 的 `<plot>`（去 CDATA）
+  - `Season 1` `cover` = `Season 1/folder.jpg`、`banner` 继承专辑 `banner.jpg`、`description` = `tvshow.nfo` 的内容（`season.nfo` 的 plot 为空，自动回退）
+  - `Season 2..8`（无目录）`cover` = 专辑根的 `seasonXX-poster.jpg`、`banner` 继承专辑 `banner.jpg`
+  - 单集 description 全部为干净的纯文本（无 CDATA 包装）
+- 调试工具 `backend/cmd/check-meta`：打印指定 DB 的 `AlbumMeta` + `MediaFile` 表内容，便于排查元数据问题。
+
 ## [v0.4.6] - 2026-07-04
 
 ### Added

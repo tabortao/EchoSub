@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message, Tabs } from 'antd'
 import type { MenuProps } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined, FolderOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined, FolderOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -387,61 +387,82 @@ function GridView(props: {
           {feed.map((f) => (
             <Col xs={24} sm={12} md={8} lg={6} xl={6} xxl={4} key={f.kind === 'media' ? `m-${f.item.media.id}` : `n-${f.note.id}`}>
               {f.kind === 'media' ? (
-                <Card
-                  hoverable
-                  onClick={() => navigate(`/play/${f.item.media.id}`)}
-                  cover={
-                    <div style={{ position: 'relative' }}>
-                      <MediaCover media={f.item.media} />
-                      <Tag
-                        color={f.item.media.type === 'video' ? 'magenta' : 'green'}
-                        style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}
-                      >
-                        {f.item.media.type === 'video' ? '🎬 视频' : '🎵 音频'}
-                      </Tag>
-                      {f.item.play_count > 0 && (
-                        <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 8 }}>
-                          ▶ {f.item.play_count}
-                        </Tag>
-                      )}
-                      <PlayCircleOutlined style={{
-                        position: 'absolute', top: '50%', left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        fontSize: 44, color: 'rgba(255,122,69,0.85)', pointerEvents: 'none',
-                      }} />
-                    </div>
-                  }
-                >
-                  <Card.Meta
-                    title={
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Tooltip title={f.item.media.name}>
-                          <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{f.item.media.name}</Text>
-                        </Tooltip>
-                        <Dropdown
-                          menu={{ items: buildMediaMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMediaMenuClick(f.item, key) } }}
-                          trigger={['click']}
-                          placement="bottomRight"
-                        >
-                          <button type="button" onClick={(e) => e.stopPropagation()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4, borderRadius: 8, fontSize: 18, color: '#999', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="更多操作">
-                            <MoreOutlined />
-                          </button>
-                        </Dropdown>
-                      </div>
-                    }
-                    description={
-                      <div>
-                        {f.item.media.tags && f.item.media.tags.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                            {f.item.media.tags.map((t) => (
-                              <Tag key={t.id} color="purple" style={{ marginRight: 0, borderRadius: 8 }}>{t.name}</Tag>
-                            ))}
+                (() => {
+                  // 未读：play_count=0 且 last_position=0 表示用户从未播放/学习过
+                  const isUnread = (f.item.play_count ?? 0) === 0 && (f.item.last_position ?? 0) === 0
+                  return (
+                    <Card
+                      hoverable
+                      onClick={() => navigate(`/play/${f.item.media.id}`)}
+                      cover={
+                        <div style={{ position: 'relative' }}>
+                          <MediaCover media={f.item.media} />
+                          <Tag
+                            color={f.item.media.type === 'video' ? 'magenta' : 'green'}
+                            style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}
+                          >
+                            {f.item.media.type === 'video' ? '🎬 视频' : '🎵 音频'}
+                          </Tag>
+                          {f.item.play_count > 0 && (
+                            <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 8 }}>
+                              ▶ {f.item.play_count}
+                            </Tag>
+                          )}
+                          {/* 未读灰色蒙版：从未播放/学习的媒体被半透明灰层覆盖 + 锁图标。
+                              学习后（play_count>0 或 last_position>0）自动消失。 */}
+                          {isUnread && (
+                            <div style={{
+                              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                              background: 'rgba(128,128,128,0.55)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              pointerEvents: 'none',
+                            }}>
+                              <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
+                                <LockOutlined style={{ fontSize: 48, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
+                                <span style={{ fontSize: 13, fontWeight: 600, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>未开始</span>
+                              </div>
+                            </div>
+                          )}
+                          <PlayCircleOutlined style={{
+                            position: 'absolute', top: '50%', left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            fontSize: 44, color: 'rgba(255,122,69,0.85)', pointerEvents: 'none',
+                          }} />
+                        </div>
+                      }
+                    >
+                      <Card.Meta
+                        title={
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Tooltip title={f.item.media.name}>
+                              <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{f.item.media.name}</Text>
+                            </Tooltip>
+                            <Dropdown
+                              menu={{ items: buildMediaMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMediaMenuClick(f.item, key) } }}
+                              trigger={['click']}
+                              placement="bottomRight"
+                            >
+                              <button type="button" onClick={(e) => e.stopPropagation()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4, borderRadius: 8, fontSize: 18, color: '#999', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="更多操作">
+                                <MoreOutlined />
+                              </button>
+                            </Dropdown>
                           </div>
-                        )}
-                      </div>
-                    }
-                  />
-                </Card>
+                        }
+                        description={
+                          <div>
+                            {f.item.media.tags && f.item.media.tags.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                                {f.item.media.tags.map((t) => (
+                                  <Tag key={t.id} color="purple" style={{ marginRight: 0, borderRadius: 8 }}>{t.name}</Tag>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        }
+                      />
+                    </Card>
+                  )
+                })()
               ) : (
                 <NoteCard note={f.note} token={token} onClick={() => navigate(`/notes/${f.note.id}`)} onChanged={load} />
               )}
@@ -543,6 +564,10 @@ function NoteCard({
 /**
  * 专辑 / 季横幅：优先 banner.jpg（来自 Emby 扫描），否则用专辑封面。
  * 显示 16:5 横向横幅 + 底部暗色叠加 + 专辑 / 季名 + 描述。
+ *
+ * 实现说明：使用 <img> + objectFit: cover 替代 CSS background-image url()，
+ * 因为 background-image 在某些浏览器对「图片加载失败 / 跨域 / 状态码非 200」的反馈
+ * 不直观（图片不可见但占位正常），用 <img> 可以显式 onError 兜底。
  */
 function AlbumBanner({ album, subAlbum, token }: { album: Album; subAlbum: string | null; token: string }) {
   // 选中季时优先用季的 banner，否则用专辑的 banner
@@ -553,14 +578,29 @@ function AlbumBanner({ album, subAlbum, token }: { album: Album; subAlbum: strin
   const bannerUrl = bannerPath ? mediaApi.albumBannerUrl(album.album, token, subAlbum ?? '') : ''
   const coverUrl = coverPath ? mediaApi.albumCoverUrl(album.album, token, subAlbum ?? '') : ''
   // 当季无 banner 时回退到季封面（或专辑封面）
-  const bgUrl = bannerUrl || coverUrl
+  const imgUrl = bannerUrl || coverUrl
   return (
     <div style={{
       position: 'relative', height: 220, width: '100%',
-      background: bgUrl
-        ? `linear-gradient(to bottom, rgba(0,0,0,0.15), rgba(0,0,0,0.55)), url(${bgUrl}) center/cover no-repeat`
-        : 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
+      overflow: 'hidden',
+      background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
     }}>
+      {imgUrl && (
+        <img
+          src={imgUrl}
+          alt={subAlbum ?? album.album}
+          // objectFit: cover 保证 banner.jpg（典型 16:5）能完整铺满整个横幅容器，
+          // 同时保持原图比例（不会拉伸变形）；onError 时隐藏，回退到纯渐变背景。
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+        />
+      )}
+      {/* 暗色叠加：保证底部文字可读 */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.55) 100%)',
+        pointerEvents: 'none',
+      }} />
       <div style={{ position: 'absolute', bottom: 14, left: 20, right: 20, color: '#fff' }}>
         <Text style={{ color: '#fff', fontSize: 24, fontWeight: 800, textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
           {subAlbum ?? album.album}
@@ -598,6 +638,9 @@ function AlbumBanner({ album, subAlbum, token }: { album: Album; subAlbum: strin
  * 每张季卡片：封面（cover_path 或 banner_path）+ 季名 + 数量徽标，点击季卡片查看内容。
  * 季卡片右下角 ⋮ 菜单：上传季封面、删除季（密码确认）。
  * 类似 Emby "Seasons" 行。
+ *
+ * 季封面（seasonXX-poster.jpg / Season N/folder.jpg）通常为竖版 2:3 海报，
+ * 容器固定 2:3 高度 + objectFit: 'contain' + 灰底填充，保证竖版图不被裁剪、图标完整可见。
  */
 function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
   album: Album; subAlbums: SubAlbum[]; token: string
@@ -621,12 +664,14 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
                 styles={{ body: { padding: 12 } }}
                 style={{ overflow: 'hidden', borderRadius: 12 }}
                 cover={
-                  <div style={{ position: 'relative', height: 220, background: '#f0f0f0' }}>
+                  // 季封面容器：2:3 竖向比例（与 Emby 海报同款），背景浅灰填充以衬托 objectFit: 'contain'
+                  // 防止竖版 seasonXX-poster.jpg 被裁剪，保证整张图（含季图标）完整可见。
+                  <div style={{ position: 'relative', width: '100%', aspectRatio: '2 / 3', background: '#f5f5f5' }}>
                     {coverUrl ? (
                       <img
                         src={coverUrl}
                         alt={s.sub_album}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                         onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                       />
                     ) : (
@@ -638,7 +683,7 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
                         <FolderOutlined style={{ fontSize: 48, color: 'rgba(255,255,255,0.8)' }} />
                       </div>
                     )}
-                    <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: 8, fontWeight: 600, border: 'none' }}>
+                    <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(0,0,0,0.65)', color: '#fff', borderRadius: 8, fontWeight: 600, border: 'none' }}>
                       📁 季
                     </Tag>
                     {/* 右下角 ⋮ 菜单：上传季封面 / 删除该季（密码确认） */}

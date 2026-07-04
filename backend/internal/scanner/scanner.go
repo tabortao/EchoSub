@@ -71,6 +71,34 @@ func (s *Scanner) findSubtitle(mediaPath string) string {
 	return ""
 }
 
+// findNfo 在同目录下查找视频/音频文件的同基名 .nfo（Emby / Kodi 风格 <basename>.nfo）。
+// 形如「小猪佩奇.S01E01.Muddy Puddles.nfo」对应「小猪佩奇.S01E01.Muddy Puddles.mp4」。
+// 命中后立即返回绝对路径；未找到返回空串。
+func (s *Scanner) findNfo(mediaPath string) string {
+	dir := filepath.Dir(mediaPath)
+	base := strings.TrimSuffix(mediaPath, filepath.Ext(mediaPath))
+	baseName := filepath.Base(base)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if ext != ".nfo" {
+			continue
+		}
+		nameBase := strings.TrimSuffix(name, filepath.Ext(name))
+		if strings.EqualFold(nameBase, baseName) {
+			return filepath.Join(dir, name)
+		}
+	}
+	return ""
+}
+
 // findCover 在同目录下查找视频/音频文件的封面图（Emby 风格）。
 // 优先级：
 //  1. <basename>-thumb.jpg/.png/.webp（Emby 视频缩略图命名）
@@ -122,9 +150,38 @@ func (s *Scanner) findCover(mediaPath string) string {
 	return ""
 }
 
-// Emby / Jellyfin / Kodi 风格的专辑/季元数据文件名（不带扩展名）
+// Emby / Jellyfin / Kodi 风格的专辑/季元数据文件名（不带扩展名）。
+// 优先级：albumCoverNames 列表中下标越小优先级越高（folder > poster > cover > albumart > albumartwork）。
+// 同样地，albumBannerNames 中 banner 优先于 backdrop 优先于 fanart。
+// 注意：os.ReadDir 顺序不保证文件按字母序返回，所以 scanAlbumMeta 内部会记录所有候选，
+// 在循环结束后再按这些列表的优先级选择最终值。
 var albumCoverNames = []string{"folder", "poster", "cover", "albumart", "albumartwork"}
 var albumBannerNames = []string{"banner", "backdrop", "fanart"}
+
+// pickByPriority 在 candidates 中按 priority 列表的顺序选最优先的（priority[0] 最优先）。
+// candidates 是 stem（小写、不带扩展名）到文件名的映射；返回最终选中的文件名。
+func pickByPriority(candidates map[string]string, priority []string) string {
+	for _, name := range priority {
+		if v, ok := candidates[name]; ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// pickNFOPathByContent 季目录 nfo 路径选择：内容优先。
+// 若 first 存在且 plot 非空，返回 first（Emby 标准 season.nfo）；
+// 否则回退到 fallback（兼容 Emby 部分刮削后的 tvshow.nfo 冗余文件）。
+func pickNFOPathByContent(first, fallback *string) *string {
+	if first != nil {
+		if data, err := os.ReadFile(*first); err == nil {
+			if plot := parseNFOPlot(string(data)); plot != "" {
+				return first
+			}
+		}
+	}
+	return fallback
+}
 
 // scanAlbumMeta 扫描指定目录，识别 Emby 风格元数据（folder.jpg / banner.jpg / season.nfo 等）
 // 写入或更新 AlbumMeta 表。subAlbum 为空表示专辑本身，非空表示季。
@@ -134,14 +191,24 @@ var albumBannerNames = []string{"banner", "backdrop", "fanart"}
 //   - 季目录识别 tvshow.nfo（Emby 把整季描述放在这里）
 //   - 季目录识别 backdrop.jpg / fanart.jpg 作为横幅
 //   - 专辑目录识别 seasonXX-poster.jpg 自动关联到对应季的 cover_path
+//
+// 修复（v0.4.7）：
+//   - 改用 filepath.Rel 校验目录归属，兼容 Windows 反斜杠与配置里的正斜杠。
+//     旧实现 `strings.HasPrefix(absDir, root)` 在 Windows 上当 root 来自 yaml（用 `/`）
+//     而 absDir 来自 filepath.Abs（用 `\`）时永远为 false，导致所有 Emby 元数据识别全部失效。
 func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 	if album == "" {
 		return
 	}
-	// 限制在 media root 下
-	root := s.cfg.Media.Dir
+	// 限制在 media root 下：用 filepath.Rel 而非 strings.HasPrefix 校验归属，
+	// 避免 Windows 上 root（来自 yaml 用 /）与 absDir（来自 filepath.Abs 用 \）分隔符不一致。
 	absDir, err := filepath.Abs(dir)
-	if err != nil || !strings.HasPrefix(strings.ToLower(absDir), strings.ToLower(root)) {
+	if err != nil {
+		return
+	}
+	rootAbs, _ := filepath.Abs(s.cfg.Media.Dir)
+	rel, err := filepath.Rel(rootAbs, absDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return
 	}
 	entries, err := os.ReadDir(absDir)
@@ -156,6 +223,12 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 	var coverPath, bannerPath, nfoPath *string
 	// seasonXX-poster.<ext>：专辑根目录下的季封面图，关联到对应季
 	seasonCovers := make(map[string]string) // seasonXX -> abs path
+	// 季目录的 nfo 候选：season.nfo / seasonXX.nfo（Emby 标准） 与 tvshow.nfo（Emby 部分刮削的冗余文件）。
+	// ReadDir 顺序不保证文件按字母序返回，因此同时记录所有候选，循环结束后按优先级选择。
+	var seasonNFOCandidate, tvshowNFOCandidate *string
+	// 封面 / 横幅候选：记录 stem → 文件名，循环结束后按 albumCoverNames / albumBannerNames 优先级选择。
+	coverCandidates := make(map[string]string)
+	bannerCandidates := make(map[string]string)
 
 	for _, e := range entries {
 		if e.IsDir() {
@@ -164,22 +237,22 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 		lower := strings.ToLower(e.Name())
 		stem := strings.ToLower(strings.TrimSuffix(lower, filepath.Ext(lower)))
 		ext := strings.ToLower(filepath.Ext(lower))
-		// 封面
-		if coverPath == nil && imgExts[ext] {
+		// 封面候选（专辑和季都识别，folder 优先于 poster 优先于 cover）
+		if imgExts[ext] {
 			for _, name := range albumCoverNames {
 				if stem == name {
-					p := filepath.Join(absDir, e.Name())
-					coverPath = &p
+					coverCandidates[name] = e.Name()
 					break
 				}
 			}
 		}
-		// 横幅
-		if bannerPath == nil && imgExts[ext] {
+		// 横幅候选（仅在专辑根目录识别 banner / backdrop / fanart）。
+		// 季目录不识别自身的横幅图（Emby 风格：所有季共用专辑根的 banner.jpg），
+		// 季的 AlbumMeta.banner_path 保持 nil，由 ServeAlbumBanner 兜底到专辑横幅。
+		if subAlbum == "" && imgExts[ext] {
 			for _, name := range albumBannerNames {
 				if stem == name {
-					p := filepath.Join(absDir, e.Name())
-					bannerPath = &p
+					bannerCandidates[name] = e.Name()
 					break
 				}
 			}
@@ -208,12 +281,15 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 			}
 		}
 		// nfo 文件
-		if nfoPath == nil && ext == ".nfo" {
+		if ext == ".nfo" {
 			if subAlbum != "" {
-				// 季目录：识别 season.nfo / seasonXX.nfo / tvshow.nfo（Emby 把整季描述放这里）
-				if stem == "season" || strings.HasPrefix(stem, "season") || stem == "tvshow" {
+				// 季目录：分别记录 season.nfo（Emby 标准，季描述）与 tvshow.nfo（兼容 Emby 部分刮削后的冗余文件）。
+				if stem == "tvshow" {
 					p := filepath.Join(absDir, e.Name())
-					nfoPath = &p
+					tvshowNFOCandidate = &p
+				} else if stem == "season" || strings.HasPrefix(stem, "season") {
+					p := filepath.Join(absDir, e.Name())
+					seasonNFOCandidate = &p
 				}
 			} else {
 				// 专辑目录：识别 tvshow.nfo / album.nfo / folder.nfo
@@ -223,6 +299,24 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 				}
 			}
 		}
+	}
+
+	// 封面 / 横幅最终选择：按 albumCoverNames / albumBannerNames 优先级挑最优先的文件名。
+	if name := pickByPriority(coverCandidates, albumCoverNames); name != "" {
+		p := filepath.Join(absDir, name)
+		coverPath = &p
+	}
+	if subAlbum == "" {
+		if name := pickByPriority(bannerCandidates, albumBannerNames); name != "" {
+			p := filepath.Join(absDir, name)
+			bannerPath = &p
+		}
+	}
+
+	// 季目录 nfo 选择：内容优先——若 season.nfo（Emby 标准）解析出非空 plot 则用它，
+	// 否则回退到 tvshow.nfo（兼容 Emby 部分刮削后的冗余文件）。
+	if subAlbum != "" {
+		nfoPath = pickNFOPathByContent(seasonNFOCandidate, tvshowNFOCandidate)
 	}
 
 	// 解析 nfo 中的 <plot> 描述（Kodi 格式）
@@ -243,8 +337,9 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 	}
 	tx := database.DB.Where("album = ? AND sub_album = ?", album, subAlbum).First(&meta)
 	if tx.Error == nil {
-		// 若仅 None 字段也保留为 NULL，避免覆写已有值；这里直接更新（Emby 文件可能消失）
-		database.DB.Model(&meta).Updates(updates)
+		// 用 Select 显式指定要更新的字段，确保 banner_path / nfo_path / cover_path 为 nil 时也会清空旧值
+		// （Emby 文件可能被用户删除，需要同步反映到数据库）
+		database.DB.Model(&meta).Select("cover_path", "banner_path", "nfo_path", "description").Updates(updates)
 	} else {
 		meta = models.AlbumMeta{
 			Album:       album,
@@ -272,8 +367,13 @@ func (s *Scanner) scanAlbumMeta(dir string, album string, subAlbum string) {
 		if matched != "" {
 			upsertSeasonCover(album, matched, p)
 		} else {
-			// 季目录尚未创建时，也预创建 AlbumMeta 记录（让 UI 能展示该季的占位封面）
-			expected := "Season " + num
+			// 季目录尚未创建时，预创建 AlbumMeta 记录（让 UI 能展示该季的占位封面）。
+			// 统一用规范命名「Season N」（不带前导零），与已有 Season 1 / Season 2 风格一致。
+			trimmed := strings.TrimLeft(num, "0")
+			if trimmed == "" {
+				trimmed = "0"
+			}
+			expected := "Season " + trimmed
 			upsertSeasonCover(album, expected, p)
 		}
 	}
@@ -308,11 +408,16 @@ func seasonDirCandidates(num string) []string {
 	return out
 }
 
-// upsertSeasonCover 把 seasonXX-poster.jpg 写入对应季的 cover_path（仅设置，不覆盖其他字段）。
+// upsertSeasonCover 把 seasonXX-poster.jpg 写入对应季的 cover_path。
+// 仅在季自身没有封面（meta 不存在或 cover_path 为空）时设置，避免覆盖季根的 folder.jpg（Emby 标准：季根 folder.jpg 优先）。
 func upsertSeasonCover(album, subAlbum, coverPath string) {
 	var meta models.AlbumMeta
 	tx := database.DB.Where("album = ? AND sub_album = ?", album, subAlbum).First(&meta)
 	if tx.Error == nil {
+		// 季已有封面（通常来自季根的 folder.jpg）→ 跳过，避免被专辑根的 seasonXX-poster 覆盖
+		if meta.CoverPath != nil && *meta.CoverPath != "" {
+			return
+		}
 		database.DB.Model(&meta).Update("cover_path", coverPath)
 	} else {
 		p := coverPath
@@ -325,9 +430,9 @@ func upsertSeasonCover(album, subAlbum, coverPath string) {
 }
 
 // parseNFOPlot 从 nfo 文本中提取 <plot>...</plot> 内容（Kodi 标准）。
+// 自动去除 CDATA 包装（Emby 风格常写成 <![CDATA[...]]>）。
 // 若无 plot 标签则返回空字符串。
 func parseNFOPlot(content string) string {
-	// 简单正则：忽略大小写、首尾空白
 	lower := strings.ToLower(content)
 	start := strings.Index(lower, "<plot>")
 	if start < 0 {
@@ -338,7 +443,12 @@ func parseNFOPlot(content string) string {
 	if end < 0 {
 		return ""
 	}
-	return strings.TrimSpace(content[start : start+end])
+	plot := strings.TrimSpace(content[start : start+end])
+	// 去除 CDATA 包装：<![CDATA[ ... ]]>
+	if strings.HasPrefix(plot, "<![CDATA[") && strings.HasSuffix(plot, "]]>") {
+		plot = strings.TrimSpace(plot[len("<![CDATA[") : len(plot)-len("]]>")])
+	}
+	return plot
 }
 
 // pruneAlbumMeta 清理 AlbumMeta 中磁盘已不存在的条目（目录被删时调用）。
@@ -455,6 +565,17 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 		coverPtr = &coverPath
 	}
 
+	// 单集 nfo（Emby 风格 <basename>.nfo）：用于存储每一集的 plot 描述
+	nfoPath := s.findNfo(path)
+	var nfoPtr *string
+	var description string
+	if nfoPath != "" {
+		nfoPtr = &nfoPath
+		if data, err := os.ReadFile(nfoPath); err == nil {
+			description = parseNFOPlot(string(data))
+		}
+	}
+
 	var savedID uint
 	if result.Error == nil {
 		// 已存在，更新必要字段
@@ -464,6 +585,8 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 			"file_modified_at": info.ModTime(),
 			"subtitle_path":    subPtr,
 			"cover_path":       coverPtr,
+			"nfo_path":         nfoPtr,
+			"description":      description,
 			"album":            album,
 			"sub_album":        subAlbum,
 		}
@@ -482,6 +605,8 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 			FileModifiedAt: info.ModTime(),
 			SubtitlePath:   subPtr,
 			CoverPath:      coverPtr,
+			NfoPath:        nfoPtr,
+			Description:    description,
 		}
 		if err := database.DB.Create(&media).Error; err != nil {
 			return err

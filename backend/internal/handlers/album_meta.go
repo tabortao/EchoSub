@@ -186,6 +186,8 @@ func ServeAlbumCover(cfg *config.Config) gin.HandlerFunc {
 
 // ServeAlbumBanner 提供专辑或季的横幅图。
 // GET /albums/:name/banner?sub=xxx
+// 季自身无横幅时，回退到专辑根目录的 banner.jpg / backdrop.jpg / fanart.jpg，
+// 保证 Emby 风格「所有季共用专辑横幅」的效果。
 func ServeAlbumBanner(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		album := c.Param("name")
@@ -194,6 +196,7 @@ func ServeAlbumBanner(cfg *config.Config) gin.HandlerFunc {
 			utils.Fail(c, http.StatusBadRequest, "缺少专辑名")
 			return
 		}
+		// 1. 优先返回季 / 专辑自身的 banner_path
 		var meta models.AlbumMeta
 		if err := database.DB.Where("album = ? AND sub_album = ?", album, sub).First(&meta).Error; err == nil {
 			if meta.BannerPath != nil {
@@ -201,6 +204,7 @@ func ServeAlbumBanner(cfg *config.Config) gin.HandlerFunc {
 				return
 			}
 		}
+		// 2. 季无 banner：尝试直接读季目录的 banner / backdrop / fanart
 		dir, err := albumDir(cfg, album, sub)
 		if err != nil {
 			utils.Fail(c, http.StatusBadRequest, err.Error())
@@ -212,6 +216,21 @@ func ServeAlbumBanner(cfg *config.Config) gin.HandlerFunc {
 				if _, err := os.Stat(p); err == nil {
 					serveImage(c, p)
 					return
+				}
+			}
+		}
+		// 3. 季完全无 banner：回退到专辑根目录的横幅（Emby 风格所有季共用专辑横幅）
+		if sub != "" {
+			rootDir, err := albumDir(cfg, album, "")
+			if err == nil {
+				for _, name := range []string{"banner", "backdrop", "fanart"} {
+					for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp"} {
+						p := filepath.Join(rootDir, name+ext)
+						if _, err := os.Stat(p); err == nil {
+							serveImage(c, p)
+							return
+						}
+					}
 				}
 			}
 		}

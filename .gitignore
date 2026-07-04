@@ -35,6 +35,7 @@ Thumbs.db
 
 # Trae
 .trae/
+.nezha/
 
 # Build artifacts
 *.log

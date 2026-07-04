@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Spin, Empty, Tag, Typography, Tooltip, Button, Modal, Input, message, Dropdown, Upload } from 'antd'
-import { PlayCircleOutlined, ReadOutlined, FolderOutlined, MoreOutlined, EditOutlined, PictureOutlined, PushpinFilled, PushpinOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, ReadOutlined, FolderOutlined, MoreOutlined, EditOutlined, PictureOutlined, PushpinFilled, PushpinOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons'
 import type { UploadProps } from 'antd'
 import type { MenuProps } from 'antd'
 import { mediaApi, noteApi, recordApi } from '@/api'
@@ -65,7 +65,9 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
     setLoading(true)
     try {
       const [recordRes, noteRes, mediaRes, albumRes] = await Promise.all([
-        recordApi.recent(20),
+        // 只拉取「未完成播放」的媒体（后端过滤：last_position > 0 且 < duration * 0.95），
+        // 已看完的媒体不再出现在首页「继续观看」行，避免重复。
+        recordApi.recent(20, { unfinished: true }),
         noteApi.list(),
         mediaApi.list({ sort: 'file_modified_at', order: 'desc', page: 1, size: 200 }),
         mediaApi.albums(),
@@ -140,10 +142,10 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
 
   return (
     <div>
-      {/* 继续学习行 */}
+      {/* 继续观看行：未完成的媒体（recordApi 已过滤 unfinished）+ 最近更新的学习页面 */}
       {recent.length > 0 && (
         <ScrollRow
-          title="▶️ 继续学习"
+          title="▶️ 继续观看"
           items={recent}
           renderItem={(f) =>
             f.kind === 'media' ? (
@@ -544,6 +546,7 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
 
 /**
  * 媒体海报卡片：竖向布局，封面 + 标题 + 可选进度条。
+ * 未读状态：play_count=0 且 last_position=0 时覆盖半透明灰色蒙版 + 锁图标，提示用户还未学习。
  */
 function MediaCard({
   item, showProgress, onClick,
@@ -556,6 +559,8 @@ function MediaCard({
   const progress = m.duration > 0 && item.last_position > 0
     ? Math.min(100, (item.last_position / m.duration) * 100)
     : 0
+  // 未读：play_count=0 且 last_position=0 表示用户从未播放/学习过
+  const isUnread = (item.play_count ?? 0) === 0 && (item.last_position ?? 0) === 0
   return (
     <div
       onClick={onClick}
@@ -580,6 +585,21 @@ function MediaCard({
           <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}>
             ▶ {item.play_count}
           </Tag>
+        )}
+        {/* 未读灰色蒙版：从未播放/学习的媒体被半透明灰层覆盖 + 锁图标，提示尚未开始。
+            学习后（play_count>0 或 last_position>0）自动消失。 */}
+        {isUnread && (
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(128,128,128,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'none',
+          }}>
+            <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
+              <LockOutlined style={{ fontSize: 40, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
+              <span style={{ fontSize: 12, fontWeight: 600, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>未开始</span>
+            </div>
+          </div>
         )}
         <PlayCircleOutlined style={{
           position: 'absolute', top: '50%', left: '50%',

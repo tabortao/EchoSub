@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Spin, Button, Typography, message, Tooltip } from 'antd'
 import { ArrowLeftOutlined, StepBackwardOutlined, StepForwardOutlined } from '@ant-design/icons'
 import { mediaApi } from '@/api'
@@ -13,9 +13,16 @@ const { Title } = Typography
  * 切换按钮基于当前媒体所在专辑的媒体列表（按存入时间排序）计算相邻项。
  * 若当前媒体存在同目录同基名的另一种类型配对（如 a.mp4 ↔ a.mp3），
  * 会将配对项传给 MediaPlayer，渲染时在播放器内提供视频/音频切换 tab。
+ *
+ * URL 参数：
+ *   ?position=X  — 覆盖数据库中的 last_position，强制从 X 秒处开始播放。
+ *                   典型用法：首页「继续观看」卡片点击进入时为 0 强制重看，
+ *                   或者分享带进度的链接。
+ *                   不带时，沿用数据库中保存的 last_position（默认行为）。
  */
 export default function Player() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [media, setMedia] = useState<MediaFile | null>(null)
@@ -23,6 +30,15 @@ export default function Player() {
   const [record, setRecord] = useState<MediaListItem | null>(null)
   const [pairedMedia, setPairedMedia] = useState<PairedMedia | null>(null)
   const [siblingIds, setSiblingIds] = useState<{ prev?: number; next?: number }>({})
+
+  // 解析 ?position=X 覆盖：负数/NaN 当作 0
+  const positionOverride = (() => {
+    const raw = searchParams.get('position')
+    if (raw == null) return null
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n < 0) return 0
+    return n
+  })()
 
   useEffect(() => {
     if (!id) return
@@ -131,7 +147,7 @@ export default function Player() {
         mediaId={media.id}
         mediaType={media.type}
         pairedMedia={pairedMedia}
-        initialPosition={record?.last_position ?? 0}
+        initialPosition={positionOverride ?? record?.last_position ?? 0}
         sentences={sentences}
         playCount={record?.play_count ?? 0}
       />

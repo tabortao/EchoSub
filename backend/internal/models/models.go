@@ -30,6 +30,10 @@ type MediaFile struct {
 	FileModifiedAt time.Time      `json:"file_modified_at"`
 	SubtitlePath   *string        `gorm:"size:1024" json:"subtitle_path"`
 	CoverPath      *string        `gorm:"size:1024" json:"cover_path"`
+	// NfoPath 指向同目录同名 .nfo 文件（Emby 风格 <basename>.nfo，存单集 plot 描述）
+	NfoPath        *string        `gorm:"size:1024" json:"nfo_path"`
+	// Description 单集描述（来自 <basename>.nfo 的 <plot> 段）
+	Description    string         `gorm:"type:text" json:"description"`
 	// PairedMediaID 指向同目录同基名（仅扩展名不同）的另一种类型媒体。
 	// 仅当一组中同时存在 video 与 audio 时，video.paired_media_id 指向 audio，
 	// audio.paired_media_id 保持 NULL；这样列表查询时可直接 WHERE 排除被配对的 audio。

@@ -170,9 +170,16 @@ export const tagApi = {
 // ===== 学习记录 =====
 export const recordApi = {
   list: () => client.get<ApiResponse<{ records: PlayRecord[] }>>('/records'),
-  /** 按 media_id 去重，每个媒体返回最近一条播放记录（已过滤软删除媒体） */
-  recent: (limit = 20) =>
-    client.get<ApiResponse<{ records: PlayRecord[] }>>('/records/recent', { params: { limit } }),
+  /**
+   * 按 media_id 去重，每个媒体返回最近一条播放记录（已过滤软删除媒体）
+   * @param limit 返回数量上限
+   * @param opts.unfinished 是否只返回「未完成播放」的记录（last_position > 0 且 < duration * 0.95）。
+   *                       首页「继续观看」区使用 unfinished=true，避免已看完的媒体占位。
+   */
+  recent: (limit = 20, opts: { unfinished?: boolean } = {}) =>
+    client.get<ApiResponse<{ records: PlayRecord[] }>>('/records/recent', {
+      params: { limit, unfinished: opts.unfinished },
+    }),
   update: (mediaId: number, lastPosition: number, incrementPlay = false) =>
     client.put<ApiResponse>(`/records/${mediaId}`, {
       last_position: lastPosition,
