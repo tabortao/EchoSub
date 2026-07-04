@@ -18,11 +18,14 @@ import (
 	"github.com/yaole/EchoSub/backend/pkg/subtitle"
 )
 
-// ListMedia 列出媒体，支持 album/tag/keyword 过滤与排序
+// ListMedia 列出媒体，支持 album/tag/keyword 过滤与排序。
+// 同目录同名（仅扩展名不同）的 video + audio 自动配对，配对的 audio 在列表中隐藏，
+// 由 video 的 paired_media_id 指向它，播放器内可在 video/audio tab 间切换。
 func ListMedia() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
-		q := database.DB.Model(&models.MediaFile{}).Preload("Tags", "user_id = ?", uid)
+		q := database.DB.Model(&models.MediaFile{}).Preload("Tags", "user_id = ?", uid).
+			Where("NOT (type = ? AND id IN (SELECT paired_media_id FROM media_files WHERE paired_media_id IS NOT NULL AND deleted_at IS NULL))", "audio")
 
 		if album := c.Query("album"); album != "" {
 			q = q.Where("album = ?", album)
@@ -82,7 +85,9 @@ func ListMedia() gin.HandlerFunc {
 	}
 }
 
-// GetMedia 获取单个媒体详情
+// GetMedia 获取单个媒体详情。
+// 若当前媒体被配对为 video（含 paired_media_id）或自身为 audio 且存在引用它的 video，
+// 返回 paired_media 字段（媒体基础信息），供播放器展示 video/audio 切换 tab。
 func GetMedia() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
@@ -94,12 +99,30 @@ func GetMedia() gin.HandlerFunc {
 		}
 		var rec models.PlayRecord
 		database.DB.Where("user_id = ? AND media_id = ?", uid, m.ID).First(&rec)
-		utils.OK(c, gin.H{
+
+		// 查找配对的另一种类型媒体：当前是 video 找其 paired_media_id；当前是 audio 找引用它的 video
+		var paired *models.MediaFile
+		if m.Type == "video" && m.PairedMediaID != nil {
+			database.DB.First(&paired, *m.PairedMediaID)
+		} else if m.Type == "audio" {
+			database.DB.Where("paired_media_id = ? AND deleted_at IS NULL", m.ID).First(&paired)
+		}
+
+		resp := gin.H{
 			"media":          m,
 			"play_count":     rec.PlayCount,
 			"last_position":  rec.LastPosition,
 			"last_played_at": rec.LastPlayedAt,
-		})
+		}
+		if paired != nil {
+			resp["paired_media"] = gin.H{
+				"id":   paired.ID,
+				"name": paired.Name,
+				"type": paired.Type,
+				"path": paired.Path,
+			}
+		}
+		utils.OK(c, resp)
 	}
 }
 
@@ -204,9 +227,13 @@ func GetSubtitle() gin.HandlerFunc {
 
 // ListAlbums 列出所有专辑（含子专辑），带已看进度。
 // played 字段表示该专辑下，当前用户有过播放记录的媒体数量。
+// 同目录同名 video+audio 视为配对，列表计数时只算 video 一份，避免重复。
 func ListAlbums() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
+
+		// 排除被配对的 audio（id 出现在其他 video 的 paired_media_id 字段中）
+		excludePaired := "AND id NOT IN (SELECT paired_media_id FROM media_files WHERE paired_media_id IS NOT NULL AND deleted_at IS NULL AND type = 'video')"
 
 		type albumRow struct {
 			Album  string `json:"album"`
@@ -217,7 +244,7 @@ func ListAlbums() gin.HandlerFunc {
 		database.DB.Model(&models.MediaFile{}).
 			Select("album, count(*) as count, "+
 				"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
-			Where("album IS NOT NULL AND album <> '' AND deleted_at IS NULL").
+			Where("album IS NOT NULL AND album <> '' AND deleted_at IS NULL "+excludePaired).
 			Group("album").
 			Order("album ASC").
 			Scan(&rows)
@@ -239,7 +266,7 @@ func ListAlbums() gin.HandlerFunc {
 			database.DB.Model(&models.MediaFile{}).
 				Select("sub_album, count(*) as count, "+
 					"count(case when exists (select 1 from play_records pr where pr.media_id = media_files.id and pr.user_id = ?) then 1 end) as played", uid).
-				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> '' AND deleted_at IS NULL", r.Album).
+				Where("album = ? AND sub_album IS NOT NULL AND sub_album <> '' AND deleted_at IS NULL "+excludePaired, r.Album).
 				Group("sub_album").
 				Order("sub_album ASC").
 				Scan(&subs)

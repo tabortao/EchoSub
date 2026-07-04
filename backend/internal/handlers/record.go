@@ -73,6 +73,7 @@ func ListRecords() gin.HandlerFunc {
 
 // ListRecent 列出当前用户每个媒体最近一条播放记录（按 media_id 去重），
 // 并按最后播放时间倒序。已软删除的媒体会被剔除。
+// 被配对的 audio（出现在 video.paired_media_id 中）也从结果中过滤，避免首页重复展示。
 // 路由：GET /records/recent?limit=20
 func ListRecent() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -93,6 +94,7 @@ func ListRecent() gin.HandlerFunc {
 			Joins("JOIN (?) latest ON latest.media_id = play_records.media_id AND latest.max_ts = play_records.last_played_at", latestSub).
 			Joins("JOIN media_files mf ON mf.id = play_records.media_id AND mf.deleted_at IS NULL").
 			Where("play_records.user_id = ?", uid).
+			Where("NOT (mf.type = ? AND mf.id IN (SELECT paired_media_id FROM media_files WHERE paired_media_id IS NOT NULL AND deleted_at IS NULL AND type = ?))", "audio", "video").
 			Preload("Media").
 			Order("play_records.last_played_at DESC").
 			Limit(limit).

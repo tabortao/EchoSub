@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Spin, Button, Typography, message, Tooltip } from 'antd'
 import { ArrowLeftOutlined, StepBackwardOutlined, StepForwardOutlined } from '@ant-design/icons'
 import { mediaApi } from '@/api'
-import type { MediaFile, Sentence, MediaListItem, MediaListResponse } from '@/types'
+import type { MediaFile, Sentence, MediaListItem, MediaListResponse, MediaDetailResponse, PairedMedia } from '@/types'
 import MediaPlayer from '@/components/MediaPlayer'
 
 const { Title } = Typography
@@ -11,6 +11,8 @@ const { Title } = Typography
 /**
  * 播放器页面：加载单个媒体 + 字幕，并提供同专辑内上一个/下一个切换。
  * 切换按钮基于当前媒体所在专辑的媒体列表（按存入时间排序）计算相邻项。
+ * 若当前媒体存在同目录同基名的另一种类型配对（如 a.mp4 ↔ a.mp3），
+ * 会将配对项传给 MediaPlayer，渲染时在播放器内提供视频/音频切换 tab。
  */
 export default function Player() {
   const { id } = useParams<{ id: string }>()
@@ -19,6 +21,7 @@ export default function Player() {
   const [media, setMedia] = useState<MediaFile | null>(null)
   const [sentences, setSentences] = useState<Sentence[]>([])
   const [record, setRecord] = useState<MediaListItem | null>(null)
+  const [pairedMedia, setPairedMedia] = useState<PairedMedia | null>(null)
   const [siblingIds, setSiblingIds] = useState<{ prev?: number; next?: number }>({})
 
   useEffect(() => {
@@ -30,9 +33,15 @@ export default function Player() {
           mediaApi.get(Number(id)),
           mediaApi.subtitle(Number(id)).catch(() => null),
         ])
-        const d = mediaRes.data.data as { media: MediaFile; play_count: number; last_position: number; last_played_at: string }
+        const d = mediaRes.data.data as MediaDetailResponse
         setMedia(d.media)
-        setRecord({ media: d.media, play_count: d.play_count, last_position: d.last_position, last_played_at: d.last_played_at })
+        setPairedMedia(d.paired_media ?? null)
+        setRecord({
+          media: d.media,
+          play_count: d.play_count,
+          last_position: d.last_position,
+          last_played_at: d.last_played_at,
+        })
         if (subRes) {
           setSentences(subRes.data.data.sentences ?? [])
         }
@@ -121,6 +130,7 @@ export default function Player() {
       <MediaPlayer
         mediaId={media.id}
         mediaType={media.type}
+        pairedMedia={pairedMedia}
         initialPosition={record?.last_position ?? 0}
         sentences={sentences}
         playCount={record?.play_count ?? 0}

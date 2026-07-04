@@ -18,7 +18,7 @@ import {
 import { mediaApi, recordApi } from '@/api'
 import { useSettingsStore } from '@/store/settings'
 import { useAuthStore } from '@/store/auth'
-import type { Sentence } from '@/types'
+import type { Sentence, PairedMedia, MediaType } from '@/types'
 import { formatDuration } from '@/utils'
 import MarkdownEditor from '@/components/MarkdownEditor'
 
@@ -26,7 +26,13 @@ const { Text } = Typography
 
 interface MediaPlayerProps {
   mediaId: number
-  mediaType: 'video' | 'audio'
+  mediaType: MediaType
+  /**
+   * 同目录同基名的配对媒体（如 a.mp4 ↔ a.mp3）。若存在，播放器顶部展示
+   * 视频/音频切换 tab，切换时只换 streamUrl 与媒体元素，媒体 id、字幕、播放记录
+   * 仍以主媒体（视频优先）为准。
+   */
+  pairedMedia?: PairedMedia | null
   initialPosition: number
   sentences: Sentence[]
   playCount: number
@@ -44,7 +50,7 @@ const RATE_MIN = 0.5
 const RATE_MAX = 2.0
 const RATE_STEP = 0.1
 
-export default function MediaPlayer({ mediaId, mediaType, initialPosition, sentences, playCount }: MediaPlayerProps) {
+export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPosition, sentences, playCount }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
   const videoContainerRef = useRef<HTMLDivElement>(null)
   const subtitleListRef = useRef<HTMLDivElement>(null)
@@ -76,6 +82,10 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
   // 文件备注：默认预览态；切换媒体时从后端拉取
   const [remark, setRemark] = useState('')
   const [remarkLoaded, setRemarkLoaded] = useState(false)
+  // 当前正在播放的媒体类型与 id：有配对时支持手动切换 video↔audio
+  const [activeType, setActiveType] = useState<MediaType>(mediaType)
+  // 切换 tab 时记录上一个进度，待新元素 ready 后回放
+  const pendingSeekRef = useRef<number | null>(null)
 
   // 可变状态（不触发渲染）
   const handlingEndRef = useRef(false)
@@ -128,6 +138,11 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
       .finally(() => { if (!cancelled) setRemarkLoaded(true) })
     return () => { cancelled = true }
   }, [mediaId])
+
+  // 切换到不同媒体时，重置 activeType 为该媒体默认类型
+  useEffect(() => {
+    setActiveType(mediaType)
+  }, [mediaId, mediaType])
 
   // 备注失焦保存
   const saveRemark = useCallback(async (next: string) => {
@@ -319,14 +334,26 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     }
   }, [findSentenceIndex, markSentenceCompleted, savePosition, incrementSentenceRepeat])
 
-  // 媒体加载完成
+  // 媒体加载完成：处理初始进度 + video/audio tab 切换时记录的续播点
   const onLoadedMetadata = () => {
     const el = mediaRef.current
     if (!el) return
     setDuration(el.duration)
-    if (initialPosition > 0 && initialPosition < el.duration) {
+    if (pendingSeekRef.current != null && pendingSeekRef.current < el.duration) {
+      el.currentTime = pendingSeekRef.current
+      pendingSeekRef.current = null
+    } else if (initialPosition > 0 && initialPosition < el.duration) {
       el.currentTime = initialPosition
     }
+  }
+
+  // 手动切换 video ↔ audio tab：在新 src 加载完成后从原进度继续
+  const switchMediaType = (next: MediaType) => {
+    if (next === activeType) return
+    const el = mediaRef.current
+    if (el) pendingSeekRef.current = el.currentTime
+    setActiveType(next)
+    setPlaying(false)
   }
 
   // 播放/暂停
@@ -510,19 +537,46 @@ export default function MediaPlayer({ mediaId, mediaType, initialPosition, sente
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const streamUrl = token ? mediaApi.streamUrl(mediaId, token) : ''
+  // 当前激活的媒体 id：有配对时根据 tab 选择 video 或 audio 的 id；否则就是主媒体。
+  const activeMediaId = pairedMedia && activeType !== mediaType && pairedMedia.type === activeType
+    ? pairedMedia.id
+    : mediaId
+  const streamUrl = token ? mediaApi.streamUrl(activeMediaId, token) : ''
   const hasSubtitle = localSentences.length > 0
   const currentSentence = currentSentenceIdx >= 0 ? localSentences[currentSentenceIdx] : null
   const currentMasked = maskMode && currentSentence ? !revealed.has(currentSentence.index) : false
 
   return (
     <div>
+      {/* 视频/音频 tab 切换：仅在存在配对时展示 */}
+      {pairedMedia && pairedMedia.type !== mediaType && (
+        <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Tag.CheckableTag
+            checked={activeType === mediaType}
+            onChange={(checked) => checked && switchMediaType(mediaType)}
+            style={{ padding: '4px 12px', border: '1px solid var(--ant-color-border)', borderRadius: 6 }}
+          >
+            🎬 视频
+          </Tag.CheckableTag>
+          <Tag.CheckableTag
+            checked={activeType === pairedMedia.type}
+            onChange={(checked) => checked && switchMediaType(pairedMedia.type)}
+            style={{ padding: '4px 12px', border: '1px solid var(--ant-color-border)', borderRadius: 6 }}
+          >
+            🎵 音频
+          </Tag.CheckableTag>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            （同专辑同基名配对：{mediaType === 'video' ? pairedMedia.name : '视频'}）
+          </Text>
+        </div>
+      )}
+
       {/* 媒体元素 */}
       <div
         ref={videoContainerRef}
         style={{ position: 'relative', background: '#000', borderRadius: 8, overflow: 'hidden', marginBottom: 16, display: 'flex', justifyContent: 'center' }}
       >
-        {mediaType === 'video' ? (
+        {activeType === 'video' ? (
           <>
             <video
               ref={mediaRef as React.RefObject<HTMLVideoElement>}

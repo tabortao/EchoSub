@@ -67,6 +67,10 @@ func DeleteMedia(cfg *config.Config) gin.HandlerFunc {
 			utils.Fail(c, http.StatusInternalServerError, "删除数据库记录失败: "+err.Error())
 			return
 		}
+		// 4. 清理配对关系：若被删的是 audio，引用它的 video 需清空 paired_media_id 让其独立展示
+		database.DB.Model(&models.MediaFile{}).
+			Where("paired_media_id = ?", m.ID).
+			Update("paired_media_id", nil)
 		utils.OK(c, gin.H{"deleted": true, "id": m.ID})
 	}
 }

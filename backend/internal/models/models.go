@@ -30,6 +30,10 @@ type MediaFile struct {
 	FileModifiedAt time.Time      `json:"file_modified_at"`
 	SubtitlePath   *string        `gorm:"size:1024" json:"subtitle_path"`
 	CoverPath      *string        `gorm:"size:1024" json:"cover_path"`
+	// PairedMediaID 指向同目录同基名（仅扩展名不同）的另一种类型媒体。
+	// 仅当一组中同时存在 video 与 audio 时，video.paired_media_id 指向 audio，
+	// audio.paired_media_id 保持 NULL；这样列表查询时可直接 WHERE 排除被配对的 audio。
+	PairedMediaID  *uint          `gorm:"index" json:"paired_media_id"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`

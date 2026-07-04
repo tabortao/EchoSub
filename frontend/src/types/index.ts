@@ -33,6 +33,16 @@ export interface MediaFile {
   subtitle_path: string | null
   cover_path: string | null
   tags: Tag[]
+  /** 同目录同基名（仅扩展名不同）的配对媒体 id（仅 video 端可能存在，指向 audio） */
+  paired_media_id?: number | null
+}
+
+/** 单条媒体详情中返回的配对媒体摘要（GetMedia 附带） */
+export interface PairedMedia {
+  id: number
+  name: string
+  type: MediaType
+  path: string
 }
 
 export interface MediaListItem {
@@ -47,6 +57,15 @@ export interface MediaListResponse {
   total: number
   page: number
   size: number
+}
+
+export interface MediaDetailResponse {
+  media: MediaFile
+  play_count: number
+  last_position: number
+  last_played_at: string
+  /** 若当前媒体有同目录同基名的另一种类型配对（如 a.mp4 ↔ a.mp3），此字段返回配对项基础信息 */
+  paired_media?: PairedMedia | null
 }
 
 export interface SubAlbum {

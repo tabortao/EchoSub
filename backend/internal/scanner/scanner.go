@@ -207,6 +207,7 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 		coverPtr = &coverPath
 	}
 
+	var savedID uint
 	if result.Error == nil {
 		// 已存在，更新必要字段
 		updates := map[string]interface{}{
@@ -218,21 +219,90 @@ func (s *Scanner) upsertMedia(path string, info os.FileInfo, mediaType string) e
 			"album":            album,
 			"sub_album":        subAlbum,
 		}
-		return database.DB.Model(&existing).Updates(updates).Error
+		if err := database.DB.Model(&existing).Updates(updates).Error; err != nil {
+			return err
+		}
+		savedID = existing.ID
+	} else {
+		media := models.MediaFile{
+			Path:           path,
+			Name:           info.Name(),
+			Type:           mediaType,
+			Album:          album,
+			SubAlbum:       subAlbum,
+			FileSize:       info.Size(),
+			FileModifiedAt: info.ModTime(),
+			SubtitlePath:   subPtr,
+			CoverPath:      coverPtr,
+		}
+		if err := database.DB.Create(&media).Error; err != nil {
+			return err
+		}
+		savedID = media.ID
 	}
 
-	media := models.MediaFile{
-		Path:           path,
-		Name:           info.Name(),
-		Type:           mediaType,
-		Album:          album,
-		SubAlbum:       subAlbum,
-		FileSize:       info.Size(),
-		FileModifiedAt: info.ModTime(),
-		SubtitlePath:   subPtr,
-		CoverPath:      coverPtr,
+	// 重新维护与同名（仅扩展名不同）、同目录、另一种类型媒体文件的配对关系。
+	s.linkPairedMedia(savedID, mediaType, dir, info.Name())
+	return nil
+}
+
+// linkPairedMedia 维护 MediaFile 的同目录同名配对关系。
+// 规则：同目录 + 去扩展名同基名 + 媒体类型不同（video↔audio）的两条记录视为配对。
+// 仅在 video 上写 paired_media_id 指向 audio；audio 上保持 NULL，便于列表 SQL 直接过滤被配对项。
+// savedID：刚 upsert 的记录 ID；mediaType：video/audio；name：文件名（含扩展名）。
+func (s *Scanner) linkPairedMedia(savedID uint, mediaType, _ string, name string) {
+	base := strings.TrimSuffix(name, filepath.Ext(name))
+
+	// 取当前媒体所在绝对目录，作为配对的硬性约束（同名可能在多目录出现）
+	var current models.MediaFile
+	if err := database.DB.First(&current, savedID).Error; err != nil {
+		return
 	}
-	return database.DB.Create(&media).Error
+	currentDir := filepath.Dir(current.Path)
+
+	// 找同基名 + 不同类型 的所有未删除记录
+	var peers []models.MediaFile
+	if err := database.DB.Where("name LIKE ? AND type <> ? AND deleted_at IS NULL", base+".%", mediaType).
+		Find(&peers).Error; err != nil || len(peers) == 0 {
+		// 没有候选 → 若是 video 则清空其配对；若是 audio 则把引用它的 video 配对清空
+		if mediaType == "video" {
+			database.DB.Model(&models.MediaFile{}).Where("id = ?", savedID).Update("paired_media_id", nil)
+		} else {
+			database.DB.Model(&models.MediaFile{}).Where("paired_media_id = ?", savedID).Update("paired_media_id", nil)
+		}
+		return
+	}
+
+	// 过滤：同目录 + 去扩展名同基名 + 类型互补
+	var videoPeer, audioPeer *models.MediaFile
+	for i := range peers {
+		if !strings.EqualFold(filepath.Dir(peers[i].Path), currentDir) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSuffix(peers[i].Name, filepath.Ext(peers[i].Name)), base) {
+			continue
+		}
+		switch peers[i].Type {
+		case "video":
+			videoPeer = &peers[i]
+		case "audio":
+			audioPeer = &peers[i]
+		}
+	}
+
+	if mediaType == "video" {
+		if audioPeer != nil {
+			database.DB.Model(&models.MediaFile{}).Where("id = ?", savedID).Update("paired_media_id", audioPeer.ID)
+		} else {
+			database.DB.Model(&models.MediaFile{}).Where("id = ?", savedID).Update("paired_media_id", nil)
+		}
+	} else {
+		// 当前是 audio：找互补 video 并将其 paired_media_id 指向当前
+		if videoPeer != nil {
+			database.DB.Model(&models.MediaFile{}).Where("id = ?", videoPeer.ID).Update("paired_media_id", savedID)
+		}
+		// 若 videoPeer 不存在，无需操作（audio 保持 NULL，独立展示）
+	}
 }
 
 // StartWatcher 启动文件系统监控
@@ -315,11 +385,19 @@ func (s *Scanner) handleEvent(event fsnotify.Event) {
 		// 路径有媒体扩展名视为文件删除；否则视为目录删除，做前缀批量清理。
 		isFile, _, _ := s.IsMediaFile(event.Name)
 		if isFile {
+			// 先清理引用关系：若有 video.paired_media_id 指向此文件则置空，避免列表展示死链
+			database.DB.Model(&models.MediaFile{}).
+				Where("paired_media_id IN (SELECT id FROM media_files WHERE path = ?)", event.Name).
+				Update("paired_media_id", nil)
 			database.DB.Where("path = ?", event.Name).Delete(&models.MediaFile{})
 			log.Printf("[INFO] 增量删除文件: %s", event.Name)
 		} else {
 			// 目录被删除：前缀匹配该目录下所有媒体记录
 			prefix := event.Name + string(os.PathSeparator)
+			// 先把目录内所有 video 记录的配对置空（被配对的 audio 也会一并删除，无需单独处理）
+			database.DB.Model(&models.MediaFile{}).
+				Where("path LIKE ? AND paired_media_id IS NOT NULL", prefix+"%").
+				Update("paired_media_id", nil)
 			res := database.DB.Where("path LIKE ?", prefix+"%").Delete(&models.MediaFile{})
 			if res.RowsAffected > 0 {
 				log.Printf("[INFO] 增量删除目录 %s: 软删除 %d 条媒体记录", event.Name, res.RowsAffected)

@@ -111,8 +111,12 @@ func DeleteDir(cfg *config.Config) gin.HandlerFunc {
 			utils.Fail(c, http.StatusInternalServerError, "删除目录失败: "+err.Error())
 			return
 		}
-		// 软删除该目录下所有 MediaFile 记录（按 path 前缀匹配）
+		// 先清空目录内视频记录的配对（被配对的 audio 也会一并被删除，无需独立处理）
 		pathPrefix := filepath.ToSlash(filepath.Join(full, ""))
+		database.DB.Model(&models.MediaFile{}).
+			Where("path LIKE ? AND paired_media_id IS NOT NULL", pathPrefix+"%").
+			Update("paired_media_id", nil)
+		// 软删除该目录下所有 MediaFile 记录（按 path 前缀匹配）
 		database.DB.Where("path LIKE ?", pathPrefix+"%").Delete(&models.MediaFile{})
 		fs, _ := filepath.Rel(root, full)
 		utils.OK(c, gin.H{"deleted": true, "path": filepath.ToSlash(fs)})
@@ -141,8 +145,17 @@ func DeleteFile(cfg *config.Config) gin.HandlerFunc {
 		}
 		// 删除磁盘文件
 		_ = os.Remove(full)
+		// 先取出要删的记录 ID（用于清理配对）
+		var m models.MediaFile
+		database.DB.Where("path = ?", full).First(&m)
 		// 删除 DB 中对应的记录（按精确路径匹配）
 		database.DB.Where("path = ?", full).Delete(&models.MediaFile{})
+		// 清理配对：若有 video 引用此文件则置空
+		if m.ID > 0 {
+			database.DB.Model(&models.MediaFile{}).
+				Where("paired_media_id = ?", m.ID).
+				Update("paired_media_id", nil)
+		}
 		// 关联媒体一并删除同 basename 的字幕/封面文件
 		dir := filepath.Dir(full)
 		base := strings.TrimSuffix(filepath.Base(full), filepath.Ext(full))

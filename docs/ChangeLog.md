@@ -7,6 +7,30 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.4.3] - 2026-07-04
+
+### Added
+
+#### 同名媒体配对（视频 ↔ 音频 tab 切换）
+
+- **后端 `models/models.go`**：`MediaFile` 新增 `PairedMediaID *uint` 字段（带索引）。约定：仅在 video 上指向同目录同基名（仅扩展名不同）的 audio；audio 端保持 NULL，便于列表 SQL 直接过滤被配对项。
+- **后端 `scanner/scanner.go`**：`upsertMedia` 完成后调用新增的 `linkPairedMedia`，按"同目录 + 去扩展名同基名 + 类型互补"规则建立配对；`handleEvent` 删除事件中先清理被删文件的 `paired_media_id` 引用，避免死链。
+- **后端 `handlers/filemanager.go` / `handlers/delete.go`**：手动删除（按 id / 路径 / 目录）路径同步清理 `paired_media_id`，被删 audio 不会留下野 video 配对。
+- **后端 `handlers/media.go`**：
+  - `ListMedia` SQL 层 `WHERE NOT (type='audio' AND id IN (SELECT paired_media_id ...))` 排除被配对的 audio。
+  - `ListAlbums` count/played 统计同样排除被配对 audio，避免同一内容计两次。
+  - `GetMedia` 返回 `paired_media` 字段（id/name/type/path），供播放器渲染 video/audio 切换 tab。
+- **后端 `handlers/record.go`**：`ListRecent` 同步排除被配对 audio，首页最近播放行不重复展示。
+- **前端 `types/index.ts`**：`MediaFile` 新增 `paired_media_id?`；新增 `PairedMedia` 与 `MediaDetailResponse` 类型。
+- **前端 `pages/Player.tsx`**：从 `GetMedia` 读取 `paired_media` 并下传给 `MediaPlayer`。
+- **前端 `components/MediaPlayer.tsx`**：新增 video/audio 切换区（`Tag.CheckableTag`，仅在存在配对时显示）。切换时记录原 currentTime 写入 `pendingSeekRef`，新 `onLoadedMetadata` 用该值回放（视频/音频时长不同，按当前媒体 duration 自动收敛）。媒体 id、字幕、播放进度与历史记录仍以主媒体为准，切换不影响学习统计。
+
+### Notes
+
+- 仅"同目录 + 同基名 + 类型互补"才会配对；`a.mp3` 与 `a.mp4` 在不同目录时各自独立展示。
+- 配对 audio 仍保留自己的 `SentenceProgress / PlayRecord`（历史学习数据），不级联删除；列表与最近播放行只展示主媒体（视频优先）。
+- 切换 tab 仅换流 URL 与 `<video>/<audio>` 元素；字幕、收藏、句末停顿、循环次数等状态保持。
+
 ## [v0.4.2] - 2026-07-03
 
 ### Added
