@@ -54,6 +54,40 @@
   - 修复（后端 `handlers/entity_tag.go`）：将 `notes` / `medias` 显式初始化为 `make([]T, 0)`，确保空结果序列化为 `[]` 而非 `null`
   - 修复（前端 `pages/Tags.tsx`）：即使后端遗漏字段，前端也通过 `r.albums ?? []` / `r.seasons ?? []` / `r.medias ?? []` / `r.notes ?? []` 兜底；`tag` 字段统一为 `Tag | null`，渲染时使用 `filterResult?.tag?.name ?? ''`
   - 验证方式：标签页正常打开，新建空标签、点击空标签均无崩溃
+- **README.md 全面更新以反映 v0.4.x ~ v0.5.0 新增能力**
+  - 功能特性按「媒体与播放 / 学习与笔记 / 标签管理 / 专辑季编辑 / 账户认证 / 部署」6 个子章节组织
+  - 新增 Emby 风格专辑扫描、季、配对媒体、未读蒙版、继续观看、TTS、学习页、媒体备注、多态标签等特性的描述
+  - 目录结构按当前实际文件清单刷新（含 `note.go` / `remark.go` / `entity_tag.go` / `album_meta.go` / `album_pin.go` / `delete.go` / `NoteCardMenu` / `SeasonCardMenu` / `TagManagerModal` / `NoteEditor` 等）
+  - API 概览从 24 条扩到 50+ 条，按 账户 / 媒体 / 专辑季 / 学习页 / 标签 / 播放记录 / 文件扫描设置 6 个子表格分组
+  - 新增「标签管理（v0.5.0 多态）」专章，描述 UI 流程
+  - 新增「版本管理」章节说明 Keep a Changelog 1.0.0 规范与当前活跃版本 v0.5.0
+  - 顶部新增 [AI 协作指南](CLAUDE.md) 链接
+- **README.md 顶部添加徽标 + shields.io 徽章栏（参考 LynxOCR 风格）**
+  - 顶部居中显示 🎬🎧 大标题 + 中文副标题 + 5 项关键特性关键词
+  - 语言 / 文档 / 日志 / 协作指南 5 个导航链接居中排列
+  - 9 个 shields.io 徽章：Release / License / Platform / Changelog / Backend (Go) / Frontend (React) / Database (SQLite) / Deploy (Docker) / CI (GitHub Actions)
+  - 新增「📑 目录」快速跳转锚点
+  - 全文章节标题加 emoji 前缀（✨ 概述 / 🚀 功能特性 / 🧰 技术栈 / 📁 目录结构 / ✅ 前置要求 / 🏃 快速开始 / ⚙️ 配置说明 / 🧪 测试方法 / 🏗️ 生产构建 / 📚 API 概览 / 📊 学习记录 / 🏷️ 标签管理 / 🐳 Docker 部署 / 🗂️ 版本管理 / 📄 许可证）
+  - 子节加 emoji 前缀（1️⃣ / 2️⃣ / 🔐 / 🎬 / 🗂️ / 📝 / 🏷️ / 📊 / ⚙️ / 🇨🇳 / ⚠️）
+  - 底部添加「用 ❤️ 打造 · 欢迎 Star ⭐️ 与 Issue 反馈」+ 回到顶部链接
+  - 仓库归属修正：徽章 / 镜像引用从 `yaole/EchoSub` 修正为 `tabortao/EchoSub`，与 `docker-compose.yml` 中 `ghcr.io/tabortao/echosub:latest` 保持一致
+- **README.md「NAS 媒体目录映射」章节与 `docker-compose.yml` 对齐**
+  - 之前示例 volumes 块（`/mnt/nas/EchoSub:/media` 等）与仓库实际 `./Media:/media` 不符，重写为**开箱即用**模式：直接展示 `docker-compose.yml` 中的相对路径卷挂载
+  - 新增「🔀 NAS 路径映射示例」子节：列出 4 种常见 NAS 挂载方式（群晖 / 通用 NFS / Windows SMB / Windows 映射盘），仅需替换 `volumes` 中 `- ./Media:/media` 的左侧路径
+  - 新增 `mkdir Media Data` + `ln -s` / `New-Item Junction` 软链示例，避免拷贝大量媒体文件
+  - 修正挂载模式说明：上传 / 专辑重命名 / 封面写入功能需**读写**挂载；只读播放可加 `:ro`
+- **CLAUDE.md 改写为完整汉语版（v0.5.0）**
+  - 10 条核心原则扩为 11 章结构（核心原则 / 项目概述 / 常用命令 / 开发环境 / 架构 / 关键约定 / 代码风格 / 测试清单 / 变更日志 / 调试指引 / 项目记忆）
+  - 关键约定从 9 条扩为 13 条，新增：跨平台路径验证（v0.4.7 教训）、媒体配对（v0.4.3）、多态标签系统（v0.5.0）、Emby 元数据识别优先级
+  - 目录结构按当前实际文件清单刷新（含 `entity_tag.go` / `note.go` / `remark.go` / `album_meta.go` / `album_pin.go` / `delete.go` / `TagManagerModal` / `NoteCardMenu` / `SeasonCardMenu` 等）
+  - 测试清单补 2 条：新增 / 修改 API 需同步 README；新增 / 修改功能需同步 PLAN / TASKS
+  - 调试指引新增「前端 `.length` 崩溃」与「专辑封面未显示」两条
+  - 项目记忆章节指向 `~/.trae-cn/memory/` 沉淀路径，便于 AI 跨会话复用历史经验
+- **README.md 新增「📸 应用预览」章节**
+  - 在徽章栏与目录之间插入独立「应用预览」章节，居中展示 `docs/images/UI-01.png`（首页 Emby 风格预览）与 `docs/images/UI-02.png`（播放器 / 学习页预览）
+  - 每张图下方加 `<em>` 简短说明（首屏 / 播放器 + 学习页）
+  - 图片宽度统一 `90%`，大屏可清晰查看细节
+  - 目录新增「📸 应用预览」锚点链接，便于快速跳转
 
 ## [v0.4.9] - 2026-07-04
 

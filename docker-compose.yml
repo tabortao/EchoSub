@@ -19,7 +19,7 @@
 
 services:
   echosub:
-    image: ghcr.io/yaole/echosub:latest
+    image: ghcr.io/tabortao/echosub:latest
     # 如需本地构建可改用：build: .
     container_name: echosub
     restart: unless-stopped
