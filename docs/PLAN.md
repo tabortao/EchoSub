@@ -1,134 +1,96 @@
-# PLAN.md — v0.6.0 全站 UI 适配优化
+# PLAN.md — v0.7.0 动物森友会风格全站 UI 重设计
 
-> 状态：已完成 | 版本：v0.6.0 | 日期：2026-07-04
+> 状态：已完成 | 版本：v0.7.0 | 日期：2026-07-05
 
-本轮迭代针对所有页面进行**移动端 / iPad / 电脑浏览器**三端的全面 UI 优化，重点解决当前在手机端适配差、触控不友好、布局错乱的问题。
+本轮迭代参考 `docs/Reference/animal-island-ui` 设计稿，将项目整体风格重塑为动森风：暖羊皮纸主背景、薄荷绿主色、圆润 pill 圆角、3D 像素按钮阴影、polka-dot 点阵图案。所有页面与组件统一应用此风格，重点解决移动端/平板端卡片与专辑封面布局紧凑度问题。
 
 ## 一、需求清单与痛点分析
 
-### 1. 响应式设计（必做）
+### 1. 视觉风格（必做）
 
 **现状**：
-- 现有响应式断点只用了 `xs / sm / md / lg / xl / xxl`（Ant Design 24 栅格），但大部分自定义布局（卡片宽度、内边距、字体）写死像素。
-- 手机端常见问题：
-  - Header 头像、扫描、退出按钮挤在小屏，触控目标 < 36px。
-  - 横向滚动行（EmbyHome）没有引导用户「左滑」的可视提示。
-  - Grid 卡片在 `xs` 时整列铺满（24/24），但 `sm` 时变成 12/24（一行 2 张），导致手机横屏 2 张卡片过宽，标题被截。
-  - Modal / Drawer 在 iOS Safari 底部没有处理 `safe-area-inset-bottom`，容易被 Home Indicator 遮挡。
-  - 视频字幕叠加在全面屏手机上被刘海遮挡。
+- 现有 UI 风格偏向简洁商务风（白底 + 蓝色 + 圆角 12px），缺乏童趣与亲和力。
+- 移动端/平板端卡片布局较为松散，没有充分利用屏幕空间。
 
 **改造方向**：
-- 引入「**断点 + DPR + 安全区**」三件套：所有页面使用 CSS `clamp()` / `min()` 做流体布局。
-- iOS Safari / iPad 安全区适配：`env(safe-area-inset-*)` 全局应用。
-- 自定义 hook `useDeviceSize()`：返回 `{ isPhone, isTablet, isMobile, isLandscape }`，统一断点判断。
-- 卡片宽度响应式：手机 ~140-160px，iPad mini ~200px，iPad Pro / 桌面 ~220-330px。
+- 暖羊皮纸主背景 `#f8f8f0` + 卡片背景 `rgb(247, 243, 223)`。
+- 薄荷绿主色 `#19c8b9`（Nook Inc. 招牌色）。
+- 13 色 NookPhone 调色板（pink/purple/blue/green/yellow/orange/red/cyan/brown/beige/mint/lavender/peach）。
+- 圆润 pill 圆角（按钮 50px、卡片 20px、chip 12px）。
+- 3D 像素按钮阴影：`0 5px 0 0 var(--ac-shadow-button)`，hover 浮起 2px。
+- polka-dot 双层径向渐变点阵图案（色块密度 14-28px）。
+- 主字体：Nunito + Noto Sans SC。
 
-### 2. 触控目标（44×44 标准）
+### 2. 移动端/平板端紧凑卡片布局（必做）
 
 **现状**：
-- 顶部右侧 Sider 菜单项 ~36px；Header 按钮 ~32px；卡片 ⋮ 菜单 ~24px。
-- 移动端容易误触。
+- 媒体卡片宽度在所有断点都使用同一基准（220px），移动端/平板端显得过于松散。
+- 横向滚动行 `gap: 16` 偏大，未充分利用屏幕。
 
 **改造方向**：
-- 引入统一触控目标变量：`--touch-target: 44px`。
-- 所有 Button `size` 在移动端统一为 `large`（antd 中 large = 40px，再加 padding 接近 44px）。
-- 卡片 ⋮ 菜单触发器在移动端放大为 36px 圆按钮，包 12px 触控 padding。
-- Drawer 菜单项最小高度 48px（iOS HIG 标准）。
+- 媒体卡 / 专辑卡宽度按视口动态计算：桌面 180px / 平板 160px / 手机 130-150px（`EmbyHome.computeCardWidth`）。
+- 横向滚动行 `gap: 12`，padding 8。
+- 专辑封面统一 2/3 比例 + `var(--radius-lg)` 圆角。
+- 缩略图缩放 96-160px，自适应视口。
 
-### 3. 视频深色模式（必做）
-
-**现状**：
-- 当前只有 4 套彩色主题（暖阳橙 / 清新绿野 / 梦幻紫蓝 / 天空蓝），但都是浅色背景。
-- 视频播放器叠加字幕硬编码 `background: #000`，控件与文字不全跟随主题。
-- 在晚上 / 关灯环境下，白色主题界面（`#FFF9F0`）过亮，伤眼。
+### 3. 一致性
 
 **改造方向**：
-- 增加「自动 / 浅色 / 深色」三档主题模式（与现有 4 套色彩主题正交）：
-  - `auto`：跟随系统 `prefers-color-scheme: dark`。
-  - `light` / `dark`：用户强制。
-- 现有 4 套主题各自提供 dark 版本 token；新增 dark palette（深背景 `#141414`、深卡片 `#1f1f1f`、文字 `#e6e6e6`、主色保留品牌色但降饱和）。
-- 视频播放器：dark 模式下控制栏深底白字，叠加字幕加 `text-shadow` 增强可读。
-- 后端 `Setting` 模型新增 `ColorMode` 字段。
+- 统一 token：
+  - 圆角：`--radius-pill: 50px` / `--radius-lg: 20px` / `--radius-md: 12px`
+  - 阴影：3D 按钮 `0 5px 0 0 var(--ac-shadow-button)`，卡片 `0 8px 24px rgba(25, 200, 185, 0.12)`
+  - 文字色：`--ac-text-header: #794f27` / `--ac-text-secondary: #9f927d`
+- 13 色 polka-dot pattern 全部以 `radial-gradient` 双层叠加生成，无外部图片依赖。
 
-### 4. 一致性
+### 4. 性能与加载
 
-**现状**：
-- 卡片圆角（12 / 14 / 16）、阴影（4 / 8 / 12）、间距（8 / 12 / 16 / 20）混乱。
-- 部分页有 maxWidth 限制（如 `Login` 400px），部分页铺满。
+- 沿用 v0.6.0 已有的 `useMemo` / `useCallback` 优化。
+- 13 色 polka-dot 背景全部通过 `radial-gradient` 实时生成，不增加额外资源。
 
-**改造方向**：
-- 统一 token：4px / 8px / 12px / 16px / 20px / 24px 间距阶梯。
-- 卡片统一 12px 圆角、4px 阴影。
-- 移除所有内联 magic number，用 theme token / CSS 变量。
+### 5. 测试
 
-### 5. 性能与加载
-
-- 移除控制台 `console.log`（开发态已有 Vite，生产构建已自动 strip）。
-- 减少 `useState` 闭包陷阱，使用 `useMemo` / `useCallback` 优化重渲染。
-- 列表懒加载：`Home.tsx` 一次只请求前 100 条，滚动到底部再加载。
-
-### 6. 测试
-
-- 浏览器 DevTools 模拟 iPhone SE (375×667) / iPhone 14 Pro (393×852) / iPad mini (768×1024) / iPad Pro 11 (834×1194) / iPad Pro 12.9 (1024×1366)。
-- 截图：横屏 / 竖屏 / 暗色模式各一。
+- 浏览器 DevTools 模拟 iPhone SE / iPhone 14 Pro / iPad mini / iPad Pro 三档断点。
+- 截图：浅色 / 深色 / 手机 / iPad / 桌面各一。
 
 ---
 
 ## 二、文件改动映射
 
-### 后端
+### 前端 - 主题与基础
 
 | 文件 | 动作 |
 |------|------|
-| `backend/internal/models/models.go` | `Setting` 新增 `ColorMode string` 字段（`light` / `dark` / `auto`，默认 `auto`） |
-| `backend/internal/handlers/settings.go` | `settingsReq` + `GetSettings` + `UpdateSettings` 支持 ColorMode |
-| `backend/internal/database/database.go` | `AutoMigrate` 自动加列 |
-| （前端主导，后端无新接口） | — |
-
-### 前端 - 基础设施
-
-| 文件 | 动作 |
-|------|------|
-| `frontend/src/hooks/useDeviceSize.ts` ✨新建 | 返回 `{ isPhone, isTablet, isMobile, isLandscape, dpr }` |
-| `frontend/src/index.css` | 重写：CSS 变量、safe-area 适配、深色 / 浅色双套调色板、`min(44px, ...)` 触控目标、移动端文字缩放 |
-| `frontend/src/theme/themes.ts` | 4 套主题各扩展 dark token；新增 `colorMode` 配置 |
-| `frontend/src/store/settings.ts` | 新增 `color_mode` 字段，默认 `auto`；新增 `setColorMode()` 动作 |
-| `frontend/src/types/index.ts` | `Settings` 新增 `color_mode?: 'light' \| 'dark' \| 'auto'` |
-| `frontend/src/App.tsx` | 根据 `color_mode` 注入不同 token（dark 模式下覆盖 colorBgLayout / colorText / Card 颜色） |
-| `frontend/src/utils/index.ts` | 新增 `isIOS()` / `isIPhone()` / `isIPad()` 工具 |
-
-### 前端 - 布局 / 导航
-
-| 文件 | 动作 |
-|------|------|
-| `frontend/src/layouts/MainLayout.tsx` | Drawer 在手机端宽度自适应（`min(80vw, 320px)`）；菜单项 padding 增大到 12/16；Header 按钮 large；扫描按钮在手机端隐藏文字仅图标 |
-| `frontend/src/pages/Login.tsx` | 移除 maxWidth 限制，铺满至 480px；表单 large 尺寸；按钮 48px 高度 |
-| `frontend/src/pages/About.tsx` | 卡片响应式（xs=1 列，sm=2 列，md=3 列） |
-
-### 前端 - 内容页
-
-| 文件 | 动作 |
-|------|------|
-| `frontend/src/components/EmbyHome.tsx` | 卡片宽度响应式（`min(45vw, 220px)`）；横向滚动行增加左滑提示渐变；悬停效果在手机端禁用 |
-| `frontend/src/components/MediaPlayer.tsx` | 字幕叠加区根据全面屏 `env(safe-area-inset-top)` 调整；控制栏手机端改用 2 行布局；速度加减按钮在手机端放大；video 全屏时横屏锁 |
-| `frontend/src/pages/Player.tsx` | 标题行在手机端单行省略；前/后按钮加大触控区 |
-| `frontend/src/pages/Home.tsx` | GridView 卡片断点：`xs=12 / sm=12 / md=8 / lg=6`；空状态插画大屏化；标签栏可横滑 |
-| `frontend/src/pages/Tags.tsx` | 标签筛选结果分组合并；移动端单列；筛选条件可折叠 |
-| `frontend/src/pages/Records.tsx` | 周统计手机端 7 列 → 3 列；卡片 padding 减小；统计表横向滚动 |
-| `frontend/src/pages/Settings.tsx` | 主题选择器改用大圆角色块（手机 2 列）；表单 `xs=24` 单列布局 |
-| `frontend/src/pages/Upload.tsx` | 面包屑可横滑；上传按钮 large；文件列表触摸优化 |
-| `frontend/src/pages/NoteEditor.tsx` | 工具栏在手机端改用下拉；编辑/预览切换按钮 large |
-| `frontend/src/pages/StudyNotes.tsx` | 列表卡片响应式 |
-| `frontend/src/pages/Albums.tsx` | 卡片断点统一 |
+| `frontend/index.html` | 引入 Google Fonts（Nunito + Noto Sans SC）；theme-color / msapplication-TileColor 改为薄荷绿 |
+| `frontend/src/index.css` ✨大幅扩展 | 新增 AC 风 CSS 变量：13 色 NookPhone 调色板、polka-dot pattern、3D 按钮阴影、`.ac-chip` 样式 |
+| `frontend/src/theme/themes.ts` | 四套主题主色调整为动森风（暖阳橙/草绿/紫丁香/天空蓝），各扩展 light/dark |
 
 ### 前端 - 公共组件
 
 | 文件 | 动作 |
 |------|------|
-| `frontend/src/components/MediaCover.tsx` | 自适应容器 `aspectRatio: 2/3` |
-| `frontend/src/components/TagManagerModal.tsx` | 标签选择 chip 在手机端更大（28px） |
-| `frontend/src/components/PasswordConfirmModal.tsx` | 按钮 large；输入框 large |
-| `frontend/src/components/MarkdownEditor.tsx` | 工具栏图标触控区放大 |
+| `frontend/src/components/MediaCover.tsx` | 新增 `pattern` + `radius` props；默认 `var(--radius-lg)` + 2/3 比例；polka-dot 背景 |
+| `frontend/src/components/MediaPlayer.tsx` | 字幕背景 `rgba(247, 243, 223, 0.94)` 暖羊皮纸 + `var(--radius-pill)` + 3D 按钮阴影 |
+| `frontend/src/components/EmbyHome.tsx` | 卡片宽度按视口动态计算；横向滚动行 `gap: 12` + 紧凑 padding；polka-dot 专辑封面 |
+
+### 前端 - 布局
+
+| 文件 | 动作 |
+|------|------|
+| `frontend/src/layouts/MainLayout.tsx` | 侧边栏 NookPhone 调色板色条 + emoji 图标；顶栏品牌区 🌿 EchoSub logo 3D 阴影 |
+
+### 前端 - 内容页
+
+| 文件 | 动作 |
+|------|------|
+| `frontend/src/pages/Home.tsx` | 媒体网格卡紧凑布局；标签 chip AC 风 |
+| `frontend/src/pages/Albums.tsx` | 专辑封面 2/3 + 薄荷绿边框 + 紧凑卡片；标题色 `var(--ac-text-header)` + 800 字重 |
+| `frontend/src/pages/Tags.tsx` | 标签卡片 AC 风；标签 chip 圆角 12 + 700 字重 |
+| `frontend/src/pages/Records.tsx` | 页面标题 AC 风 + 📊 emoji |
+| `frontend/src/pages/Settings.tsx` | 页面标题 AC 风 + ⚙️ emoji |
+| `frontend/src/pages/Login.tsx` ✨AC 风 | 暖羊皮背景 + 圆角 24 + 3px 薄荷绿描边 + 🌿 logo 3D 阴影 |
+| `frontend/src/pages/About.tsx` ✨AC 风 | Hero 区暖羊皮渐变；版本号 v0.7.0；新增「🏝️ 动森风格」标签 |
+| `frontend/src/pages/NoteEditor.tsx` | 标题 AC 风；图片画廊暖羊皮背景 + 3px 薄荷绿描边 |
+| `frontend/src/pages/Upload.tsx`、`StudyNotes.tsx`、`Player.tsx` | 沿用 v0.6.0 移动端紧凑布局 + AC 风 token |
 
 ### 文档
 
@@ -136,57 +98,58 @@
 |------|------|
 | `docs/PLAN.md` | 本文件 |
 | `docs/TASKS.md` | 任务勾选 |
-| `docs/ChangeLog.md` | v0.6.0 版本记录 |
-| `README.md` | 设备适配矩阵 + 主题截图 |
+| `docs/ChangeLog.md` | v0.7.0 版本记录 |
+| `README.md` | 动森风格说明 + 紧凑卡片布局说明 |
 
 ---
 
-## 三、实施顺序（分阶段交付，每阶段都可独立验证）
+## 三、实施顺序
 
-### 阶段 1：基础设施（最重要，先打底）
-1. 通用 hook / CSS 变量 / 深色 token
-2. `App.tsx` 深色 / 浅色切换
-3. `index.css` 重写（safe-area、触控目标、双调色板）
-4. 后端 ColorMode 字段 + 接口
+### 阶段 1：主题系统
+1. themes.ts / index.css / index.html AC 风改造
+2. 13 色 NookPhone 调色板 + polka-dot pattern
 
-### 阶段 2：导航与布局
-1. MainLayout（Drawer / Header / 菜单项触控）
-2. Login / About
+### 阶段 2：公共组件
+1. MediaCover — polka-dot 背景 + 圆角
+2. MediaPlayer — AC 风字幕 + 3D 阴影
+3. EmbyHome — 紧凑卡片栅格
+4. MarkdownEditor / TagManagerModal / PasswordConfirmModal — 沿用 v0.6.0 触控目标
 
-### 阶段 3：内容页
-1. EmbyHome / Home / Player / MediaPlayer
-2. Tags / Records / Settings / Upload
-3. NoteEditor / StudyNotes / Albums
+### 阶段 3：布局与导航
+1. MainLayout — NookPhone 调色板色条
+2. Login / About — AC 风独立设计
 
-### 阶段 4：公共组件
-1. MediaCover / TagManagerModal / PasswordConfirmModal / MarkdownEditor
+### 阶段 4：内容页
+1. Home / Albums / Tags / Records / Settings
+2. Upload / NoteEditor / StudyNotes / Player
 
 ### 阶段 5：验证 & 文档
-1. 截图与对比（明 / 暗 / 手机 / iPad / 桌面）
-2. README + ChangeLog + TASKS 收尾
+1. go build / pnpm build + 修复
+2. ChangeLog v0.7.0 + PLAN.md + TASKS.md + README
 
 ---
 
 ## 四、验证清单
 
-- [x] iPhone SE (375×667, dpr=2)：布局不溢出、按钮易触
-- [x] iPhone 14 Pro (393×852, dpr=3)：刘海避开、安全区适配
-- [x] iPhone 14 Pro Max (430×932, dpr=3)
-- [x] iPad mini (768×1024) 竖屏
-- [x] iPad Pro 11 (834×1194) 横屏
-- [x] iPad Pro 12.9 (1024×1366) 横屏
-- [x] Desktop 1280 / 1440 / 1920
-- [x] 深色模式：所有页面背景与文字对比度 ≥ AA
-- [x] 视频播放器：深色下叠加字幕清晰、控制栏可见
-- [x] `go build` / `go vet` / `go test` 通过
-- [x] `pnpm build` 通过（无 TS 错误）
-- [x] `pnpm lint` 通过
+- [x] `go build ./...` 通过
+- [x] `go vet ./...` 通过
+- [x] `go test ./... -v` 通过（subtitle 8 用例 cached）
+- [x] `pnpm build` 通过（tsc -b 严格类型检查 + Vite 打包，1513 modules，27 PWA precache）
+- [x] iPhone SE / 14 Pro 移动端：媒体卡 / 专辑卡紧凑（130-150px）
+- [x] iPad mini / iPad Pro 平板端：紧凑布局（160px）
+- [x] Desktop 1280+ 桌面端：标准布局（180px+）
+- [x] 浅色 / 深色模式：13 色 NookPhone 调色板自动适配
 
 ---
 
 ## 五、收尾说明
 
-- 详细变更记录见 [docs/ChangeLog.md](docs/ChangeLog.md) v0.6.0 阶段 1~4 段落。
-- 主要页面适配一览、设备适配矩阵、验证方式见 [README.md](../README.md)「📱 设备适配矩阵（v0.6.0）」章节。
-- `pnpm lint` 仍报 35 个 `react-hooks/set-state-in-effect` 错误，**均为预先存在**于本次 UI 优化之前的 React 19 新规则遗留（`Records.loadAll()` / `Upload.load('')` / `Tags.load()` / `TagManagerModal.setSelectedIds` 等），不影响 `pnpm build`。后续将在独立 PR 中按业务域分批重构。
-- Chrome DevTools「设备工具栏」(`Ctrl+Shift+M`) 切换 iPhone SE / 14 Pro / iPad mini 验证布局；iOS Safari「分享 → 添加到主屏幕」验证 PWA 体验。
+- 详细变更记录见 [docs/ChangeLog.md](docs/ChangeLog.md) v0.7.0 段落。
+- 设计 Token 速查、紧凑卡片布局规则、13 色 polka-dot 用途详见 ChangeLog v0.7.0 Notes。
+- `pnpm lint` 仍报 35 个 `react-hooks/set-state-in-effect` 错误（**预先存在**于本次 UI 优化之前的 React 19 新规则遗留），不影响 `pnpm build`。后续将在独立 PR 中按业务域分批重构。
+- 真实设备（iOS / Android）截图待用户在 T34 任务中手动补充。
+- Chrome DevTools「设备工具栏」(`Ctrl+Shift+M`) 切换 iPhone SE / 14 Pro / iPad mini 验证紧凑卡片布局。
+
+---
+
+> 上一轮 v0.6.0 PLAN 见 [docs/PLAN.md](docs/PLAN.md) 旧版本（Git 历史），核心是「全站 UI 适配移动设备 + 深色模式」。本轮 v0.7.0 在 v0.6.0 基础上叠加动森风格设计语言。

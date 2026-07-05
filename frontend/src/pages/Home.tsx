@@ -307,12 +307,12 @@ function GridView(props: {
         </Button>
       </div>
 
-      {/* 专辑详情：横幅 + 季选择视图 / 季内容视图 */}
+      {/* 专辑详情：横幅 + 季选择视图 / 季内容视图（AC 风卡片） */}
       {albumFilter && currentAlbum && (
         <Card
           size="small"
           styles={{ body: { padding: 0 } }}
-          style={{ marginBottom: 16, overflow: 'hidden', borderRadius: 12 }}
+          style={{ marginBottom: 16, overflow: 'hidden', borderRadius: 'var(--radius-lg)' }}
         >
           {/* 横幅区：有 banner_path 时显示 16:5 横幅，否则用专辑封面作为小背景 */}
           <AlbumBanner album={currentAlbum} token={token} subAlbum={subAlbumFilter ?? null} />
@@ -408,7 +408,7 @@ function GridView(props: {
       ) : feed.length === 0 ? (
         <Empty description="🎁 没有匹配的内容" />
       ) : (
-        <Row gutter={[16, 16]}>
+        <Row gutter={[12, 12]}>
           {feed.map((f) => (
             <Col xs={12} sm={8} md={6} lg={4} xl={4} xxl={4} key={f.kind === 'media' ? `m-${f.item.media.id}` : `n-${f.note.id}`}>
               {f.kind === 'media' ? (
@@ -424,12 +424,12 @@ function GridView(props: {
                           <MediaCover media={f.item.media} />
                           <Tag
                             color={f.item.media.type === 'video' ? 'magenta' : 'green'}
-                            style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}
+                            style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}
                           >
                             {f.item.media.type === 'video' ? '🎬 视频' : '🎵 音频'}
                           </Tag>
                           {f.item.play_count > 0 && (
-                            <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 8 }}>
+                            <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}>
                               ▶ {f.item.play_count}
                             </Tag>
                           )}
@@ -438,9 +438,10 @@ function GridView(props: {
                           {isUnread && (
                             <div style={{
                               position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                              background: 'rgba(128,128,128,0.55)',
+                              background: 'var(--color-mask-unread, rgba(40,30,20,0.55))',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               pointerEvents: 'none',
+                              borderRadius: 'var(--radius-lg)',
                             }}>
                               <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
                                 <LockOutlined style={{ fontSize: 48, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
@@ -460,14 +461,14 @@ function GridView(props: {
                         title={
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <Tooltip title={f.item.media.name}>
-                              <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{f.item.media.name}</Text>
+                              <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 700, color: 'var(--ac-text-header, #794f27)' }}>{f.item.media.name}</Text>
                             </Tooltip>
                             <Dropdown
                               menu={{ items: buildMediaMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMediaMenuClick(f.item, key) } }}
                               trigger={['click']}
                               placement="bottomRight"
                             >
-                              <button type="button" onClick={(e) => e.stopPropagation()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4, borderRadius: 8, fontSize: 18, color: '#999', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="更多操作">
+                              <button type="button" onClick={(e) => e.stopPropagation()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4, borderRadius: 8, fontSize: 18, color: 'var(--ac-text-secondary, #9f927d)', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="更多操作">
                                 <MoreOutlined />
                               </button>
                             </Dropdown>
@@ -478,7 +479,7 @@ function GridView(props: {
                             {f.item.media.tags && f.item.media.tags.length > 0 && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                                 {f.item.media.tags.map((t) => (
-                                  <Tag key={t.id} color="purple" style={{ marginRight: 0, borderRadius: 8 }}>{t.name}</Tag>
+                                  <Tag key={t.id} color="purple" style={{ marginRight: 0, borderRadius: 10, fontSize: 11 }}>{t.name}</Tag>
                                 ))}
                               </div>
                             )}
@@ -707,7 +708,7 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
       <div style={{ marginBottom: 12, color: '#8c8c8c', fontSize: 13 }}>
         该专辑共 {subAlbums.length} 季，点击季卡片查看内容。
       </div>
-      <Row gutter={[16, 16]}>
+      <Row gutter={[12, 12]}>
         {subAlbums.map((s) => {
           const cover = s.cover_path || s.banner_path
           const coverUrl = cover ? mediaApi.albumCoverUrl(album.album, token, s.sub_album) : ''
@@ -718,8 +719,8 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
               <Card
                 hoverable
                 onClick={() => onPick(s.sub_album)}
-                styles={{ body: { padding: 12 } }}
-                style={{ overflow: 'hidden', borderRadius: 12 }}
+                styles={{ body: { padding: 10 } }}
+                style={{ overflow: 'hidden', borderRadius: 'var(--radius-lg)' }}
                 cover={
                   // 季封面容器：2:3 竖向比例（与 Emby 海报同款），背景浅灰填充以衬托 objectFit: 'contain'
                   // 防止竖版 seasonXX-poster.jpg 被裁剪，保证整张图（含季图标）完整可见。
@@ -734,13 +735,13 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
                     ) : (
                       <div style={{
                         width: '100%', height: '100%',
-                        background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
+                        background: 'var(--ac-pattern-blue, #e6ecff)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
-                        <FolderOutlined style={{ fontSize: 48, color: 'rgba(255,255,255,0.8)' }} />
+                        <FolderOutlined style={{ fontSize: 48, color: 'rgba(43,58,153,0.7)' }} />
                       </div>
                     )}
-                    <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(0,0,0,0.65)', color: '#fff', borderRadius: 8, fontWeight: 600, border: 'none' }}>
+                    <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(0,0,0,0.65)', color: '#fff', borderRadius: 12, fontWeight: 700, border: 'none', fontSize: 12, padding: '2px 8px' }}>
                       📁 季
                     </Tag>
                     {/* 季未读灰色蒙版：played=0 且 count>0（季内所有媒体都未开始学习）。
@@ -748,9 +749,10 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
                     {isUnread && (
                       <div style={{
                         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                        background: 'rgba(128,128,128,0.55)',
+                        background: 'var(--color-mask-unread, rgba(40,30,20,0.55))',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         pointerEvents: 'none',
+                        borderRadius: 'var(--radius-lg)',
                       }}>
                         <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
                           <LockOutlined style={{ fontSize: 48, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
@@ -779,12 +781,12 @@ function SeasonGrid({ album, subAlbums, token, onPick, onChanged }: {
                 }
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text type="secondary" style={{ fontSize: 12, color: 'var(--ac-text-secondary, #9f927d)' }}>
                     {(s.played ?? 0) > 0 ? `已看 ${s.played}/${s.count}` : `${s.count} 项`}
                   </Text>
                 </div>
                 {s.description && (
-                  <Text type="secondary" ellipsis style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
+                  <Text type="secondary" ellipsis style={{ fontSize: 11, marginTop: 4, display: 'block', color: 'var(--ac-text-secondary, #9f927d)' }}>
                     {s.description}
                   </Text>
                 )}

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Card, Form, Input, Button, Tabs, message, Typography, Checkbox } from 'antd'
-import { AudioOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { authApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -176,8 +175,8 @@ export default function Login() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      // 背景：CSS 变量，深色模式自动跟随
-      background: 'var(--color-bg-page, #f0f2f5)',
+      // AC 风暖羊皮纸背景，深色模式自动跟随
+      background: 'var(--ac-bg-page, #f8f8f0)',
       padding: isPhone
         ? 'calc(var(--safe-top, 0px) + 12px) 12px calc(var(--safe-bottom, 0px) + 12px)'
         : (isTablet ? '32px 20px' : '48px 24px'),
@@ -188,15 +187,22 @@ export default function Login() {
           width: '100%',
           // 手机端满宽（不限制 400px），桌面端最大 400
           maxWidth: isPhone ? '100%' : 400,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.09)',
-          background: 'var(--color-bg-elevated, #fff)',
+          // AC 风圆润大圆角 + 羊皮纸卡片背景
+          borderRadius: 24,
+          background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+          border: '3px solid rgba(25, 200, 185, 0.25)',
+          boxShadow: '0 8px 24px rgba(25, 200, 185, 0.15)',
         }}
         styles={{ body: { padding: isPhone ? 20 : 24 } }}
       >
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <AudioOutlined style={{ fontSize: isPhone ? 36 : 40, color: 'var(--ant-color-primary, #1677ff)' }} />
-          <Title level={3} style={{ marginTop: 8, marginBottom: 0 }}>EchoSub</Title>
-          <p style={{ color: 'var(--color-text-tertiary, #888)' }}>语言学习与课文背诵</p>
+          {/* AC 风品牌色 Logo（薄荷绿） */}
+          <div style={{
+            fontSize: isPhone ? 48 : 56, marginBottom: 4,
+            filter: 'drop-shadow(0 4px 8px rgba(25, 200, 185, 0.3))',
+          }}>🌿</div>
+          <Title level={3} style={{ marginTop: 0, marginBottom: 4, color: 'var(--ac-text-header, #794f27)', fontWeight: 800 }}>EchoSub</Title>
+          <p style={{ color: 'var(--ac-text-secondary, #9f927d)', fontSize: 13 }}>🍃 语言学习与课文背诵</p>
         </div>
         <Tabs items={items} defaultActiveKey="login" centered />
       </Card>

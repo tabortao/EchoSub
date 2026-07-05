@@ -17,7 +17,7 @@ import type { MediaListItem, Album, StudyNote, PlayRecord, MediaFile } from '@/t
 const { Text, Title } = Typography
 
 // 媒体卡片宽度基准值（实际宽度按视口动态计算）
-// - 手机端：min(45vw, 160px) — 紧凑但仍可点
+// - 手机端：min(45vw, 150px) — 紧凑但仍可点
 // - 桌面端：固定 180px
 const CARD_WIDTH_DESKTOP = 180
 // 专辑入口卡片宽度（更大更突出）
@@ -26,14 +26,14 @@ const ALBUM_CARD_WIDTH_DESKTOP = 220
 /** 根据视口宽度计算媒体卡片宽度（手机端自适应，桌面端固定） */
 function computeCardWidth(isPhone: boolean, vw: number): number {
   if (!isPhone) return CARD_WIDTH_DESKTOP
-  // 手机端：约一半视口宽（两张卡片可见），不超过 160
-  return Math.min(Math.max(vw * 0.45, 140), 160)
+  // 手机端：约一半视口宽（两张卡片可见），不超过 150
+  return Math.min(Math.max(vw * 0.44, 130), 150)
 }
 
 /** 根据视口宽度计算专辑卡片宽度 */
 function computeAlbumCardWidth(isPhone: boolean, vw: number): number {
   if (!isPhone) return ALBUM_CARD_WIDTH_DESKTOP
-  return Math.min(Math.max(vw * 0.45, 160), 200)
+  return Math.min(Math.max(vw * 0.45, 150), 190)
 }
 
 // 继续学习行的混排项
@@ -266,6 +266,7 @@ function makeEntry(album: Album, cover: MediaListItem | null, count: number, las
 
 /**
  * 横向滚动行：标题 + 可水平滚动的卡片列表。
+ * v0.7.0 AC 风：标题区使用 pill 形 chip 样式（暖羊皮纸 + 圆角）+ 卡片间距 12px（紧凑）。
  */
 function ScrollRow<T>({
   title, items, renderItem, extra,
@@ -277,8 +278,12 @@ function ScrollRow<T>({
 }) {
   return (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <Title level={5} style={{ margin: 0, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>{title}</Title>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
+        <Title level={5} style={{
+          margin: 0, fontWeight: 800, color: 'var(--ac-text-header, #794f27)',
+          fontSize: 'clamp(15px, 2.4vw, 18px)',
+          letterSpacing: '0.02em',
+        }}>{title}</Title>
         {extra}
       </div>
       <div className="scroll-row" style={scrollRowStyle}>
@@ -289,9 +294,9 @@ function ScrollRow<T>({
 }
 
 const scrollRowStyle: React.CSSProperties = {
-  display: 'flex', gap: 16,
+  display: 'flex', gap: 12, /* AC 风紧凑间距 */
   overflowX: 'auto', overflowY: 'hidden',
-  paddingBottom: 8, scrollbarWidth: 'thin',
+  paddingBottom: 8, paddingRight: 8, scrollbarWidth: 'thin',
 }
 
 /**
@@ -430,13 +435,15 @@ function AlbumCard({ entry, onClick, onChanged, token, cardWidth, coverHeight }:
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      className="ac-card"
       style={{
         width: cardWidth, flexShrink: 0, cursor: 'pointer',
-        borderRadius: 14, overflow: 'hidden',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-        transform: hovered ? 'translateY(-6px) scale(1.02)' : 'none',
-        transition: 'transform 0.25s, box-shadow 0.25s',
+        borderRadius: 'var(--radius-lg)', /* AC 风 20px 圆角 */
+        overflow: 'hidden',
+        transform: hovered ? 'translateY(-4px)' : 'none',
+        transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s',
         position: 'relative',
+        background: 'var(--ac-bg-content, rgb(247, 243, 223))',
       }}
     >
       {/* 封面区 */}
@@ -611,26 +618,33 @@ function MediaCard({
   return (
     <div
       onClick={onClick}
+      className="ac-card"
       style={{
         width: cardWidth, flexShrink: 0, cursor: 'pointer',
-        borderRadius: 12, overflow: 'hidden',
-        background: 'var(--color-bg-elevated, #fff)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        transition: 'transform 0.2s, box-shadow 0.2s',
+        borderRadius: 'var(--radius-lg)', /* AC 风 20px 圆角 */
+        overflow: 'hidden',
+        background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+        transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s',
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = `0 8px 20px color-mix(in srgb, var(--ant-color-primary) 18%, transparent)` }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)' }}
     >
       <div style={{ position: 'relative' }}>
         <MediaCover media={m} height={240} colorKey={m.album ?? m.id} />
         <Tag
           color={m.type === 'video' ? 'magenta' : 'green'}
-          style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}
+          style={{
+            position: 'absolute', top: 8, left: 8, margin: 0,
+            background: 'rgba(255,255,255,0.92)', fontWeight: 700,
+            borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none',
+          }}
         >
           {m.type === 'video' ? '🎬' : '🎵'}
         </Tag>
         {item.play_count > 0 && (
-          <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600, borderRadius: 8 }}>
+          <Tag color="orange" style={{
+            position: 'absolute', top: 8, right: 8, margin: 0,
+            background: 'rgba(255,255,255,0.92)', fontWeight: 700,
+            borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none',
+          }}>
             ▶ {item.play_count}
           </Tag>
         )}
@@ -639,9 +653,10 @@ function MediaCard({
         {isUnread && (
           <div style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(128,128,128,0.55)',
+            background: 'var(--color-mask-unread, rgba(40,30,20,0.55))',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             pointerEvents: 'none',
+            borderRadius: 'var(--radius-lg)',
           }}>
             <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
               <LockOutlined style={{ fontSize: 40, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
@@ -655,18 +670,21 @@ function MediaCard({
           fontSize: 44, color: 'rgba(255,255,255,0.9)',
           opacity: 0, transition: 'opacity 0.2s', pointerEvents: 'none',
           filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.5))',
-        }} />
+        }} className="play-overlay" />
         {showProgress && progress > 0 && (
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 4, background: 'rgba(0,0,0,0.3)' }}>
             <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))' }} />
           </div>
         )}
       </div>
-      <div style={{ padding: '8px 10px' }}>
+      <div style={{ padding: '10px 12px' }}>
         <Tooltip title={m.name}>
-          <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13, lineHeight: '18px' }}>{m.name}</Text>
+          <Text ellipsis style={{
+            display: 'block', fontWeight: 700, fontSize: 13, lineHeight: '18px',
+            color: 'var(--ac-text-header, #794f27)',
+          }}>{m.name}</Text>
         </Tooltip>
-        <Text type="secondary" style={{ fontSize: 11 }}>
+        <Text type="secondary" style={{ fontSize: 11, color: 'var(--ac-text-secondary, #9f927d)' }}>
           {showProgress && item.last_played_at ? formatRelative(item.last_played_at) : (m.sub_album || m.album || '')}
         </Text>
       </div>
@@ -691,16 +709,15 @@ function NoteCard({
   return (
     <div
       onClick={onClick}
+      className="ac-card"
       style={{
         width: cardWidth, flexShrink: 0, cursor: 'pointer',
-        borderRadius: 12, overflow: 'hidden',
-        background: 'var(--color-bg-elevated, #fff)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        transition: 'transform 0.2s, box-shadow 0.2s',
+        borderRadius: 'var(--radius-lg)', /* AC 风 20px 圆角 */
+        overflow: 'hidden',
+        background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+        transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s',
         position: 'relative',
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(250,173,20,0.18)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)' }}
     >
       <div style={{ position: 'relative', height: 240 }}>
         {hasImg ? (
@@ -713,28 +730,41 @@ function NoteCard({
         ) : (
           <div style={{
             height: '100%',
-            background: 'linear-gradient(135deg, #fff7e6, #ffe7ba)',
+            background: 'var(--ac-pattern-pink, #fde4e8)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <ReadOutlined style={{ fontSize: 56, color: '#FAAD14' }} />
+            <ReadOutlined style={{ fontSize: 56, color: '#a85565' }} />
           </div>
         )}
-        <Tag color="gold" style={{ position: 'absolute', top: 8, left: 8, margin: 0, fontWeight: 600, borderRadius: 8, background: 'rgba(255,255,255,0.9)' }}>
+        <Tag color="gold" style={{
+          position: 'absolute', top: 8, left: 8, margin: 0,
+          fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px',
+          background: 'rgba(255,255,255,0.92)', border: 'none',
+        }}>
           📖 学习页
         </Tag>
         {note.pinned && (
-          <Tag color="gold" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(250,173,20,0.95)', color: '#fff', fontWeight: 700, borderRadius: 8, border: 'none' }}>
+          <Tag color="gold" style={{
+            position: 'absolute', top: 8, right: 8, margin: 0,
+            background: 'rgba(250,173,20,0.95)', color: '#fff', fontWeight: 700,
+            borderRadius: 12, fontSize: 12, border: 'none', padding: '2px 8px',
+          }}>
             📌 置顶
           </Tag>
         )}
         {/* 右下角 ⋮ 菜单：置顶、重命名、上传封面、删除（密码确认） */}
         <NoteCardMenu note={note} onChanged={onChanged} />
       </div>
-      <div style={{ padding: '8px 10px' }}>
+      <div style={{ padding: '10px 12px' }}>
         <Tooltip title={note.title}>
-          <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13, lineHeight: '18px' }}>{note.title}</Text>
+          <Text ellipsis style={{
+            display: 'block', fontWeight: 700, fontSize: 13, lineHeight: '18px',
+            color: 'var(--ac-text-header, #794f27)',
+          }}>{note.title}</Text>
         </Tooltip>
-        <Text type="secondary" style={{ fontSize: 11 }}>{formatRelative(note.updated_at)}</Text>
+        <Text type="secondary" style={{ fontSize: 11, color: 'var(--ac-text-secondary, #9f927d)' }}>
+          {formatRelative(note.updated_at)}
+        </Text>
       </div>
     </div>
   )

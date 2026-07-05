@@ -185,19 +185,21 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => { if (title !== note.title) save({ title }) }}
             style={{
-              fontSize: isPhone ? 16 : 18,
-              fontWeight: 600,
+              fontSize: isPhone ? 16 : 20,
+              fontWeight: 800,
+              color: 'var(--ac-text-header, #794f27)',
               width: isPhone ? '100%' : 400,
               maxWidth: isPhone ? '100%' : 400,
               minWidth: 0,
               flex: 1,
+              borderRadius: 12,
             }}
           />
           {/* 标签展示（v0.5.0 起）：直接显示当前笔记的所有标签，紧贴标题便于一眼查看 */}
           {(note.tags?.length ?? 0) > 0 && (
             <Space size={4} wrap>
               {note.tags!.map((t) => (
-                <Tag key={t.id} color="purple" style={{ borderRadius: 8, margin: 0 }}>{t.name}</Tag>
+                <Tag key={t.id} color="purple" style={{ borderRadius: 10, margin: 0, fontWeight: 600 }}>{t.name}</Tag>
               ))}
             </Space>
           )}
@@ -268,7 +270,7 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
         </div>
 
         {hasImages ? (
-          <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#000', borderRadius: 8, overflow: 'hidden', minHeight: 200 }}>
+          <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'var(--ac-bg-content, rgb(247, 243, 223))', borderRadius: 16, overflow: 'hidden', minHeight: 200, border: '3px solid rgba(25, 200, 185, 0.2)' }}>
             <Image
               src={noteApi.imageUrl(note.id, currentImg!, token)}
               alt={currentImg!}
@@ -282,20 +284,20 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
                   size={isPhone ? 'large' : 'middle'}
                   icon={<LeftOutlined />}
                   onClick={() => setImgIndex((i) => (i - 1 + images.length) % images.length)}
-                  style={{ position: 'absolute', left: isPhone ? 8 : 12, minWidth: 44, minHeight: 44 }}
+                  style={{ position: 'absolute', left: isPhone ? 8 : 12, minWidth: 44, minHeight: 44, background: 'rgba(255,255,255,0.92)' }}
                 />
                 <Button
                   shape="circle"
                   size={isPhone ? 'large' : 'middle'}
                   icon={<RightOutlined />}
                   onClick={() => setImgIndex((i) => (i + 1) % images.length)}
-                  style={{ position: 'absolute', right: isPhone ? 8 : 12, minWidth: 44, minHeight: 44 }}
+                  style={{ position: 'absolute', right: isPhone ? 8 : 12, minWidth: 44, minHeight: 44, background: 'rgba(255,255,255,0.92)' }}
                 />
               </>
             )}
           </div>
         ) : (
-          <div style={{ padding: isPhone ? 24 : 40, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 8, color: '#999' }}>
+          <div style={{ padding: isPhone ? 24 : 40, textAlign: 'center', border: '2px dashed rgba(25, 200, 185, 0.35)', borderRadius: 16, color: 'var(--ac-text-secondary, #9f927d)', background: 'var(--ac-bg-page, #f8f8f0)' }}>
             暂无图片，点击"上传图片"添加
           </div>
         )}

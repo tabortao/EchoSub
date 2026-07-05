@@ -40,8 +40,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
     <!-- 主题色：浏览器顶栏 / Android 状态栏 -->
-    <meta name="theme-color" content="#FF7A45" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1F1F1F" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#19c8b9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1f1d18" media="(prefers-color-scheme: dark)" />
 
     <meta name="description" content="EchoSub - 语言学习与课文背诵" />
 
@@ -55,8 +55,19 @@
     <meta name="format-detection" content="telephone=no, email=no, address=no" />
 
     <!-- Windows 磁贴 -->
-    <meta name="msapplication-TileColor" content="#FF7A45" />
+    <meta name="msapplication-TileColor" content="#19c8b9" />
     <meta name="msapplication-config" content="/browserconfig.xml" />
+
+    <!--
+      动物森友会风格字体：Nunito（圆润西文）+ Noto Sans SC（中文兜底）
+      由 index.html 提前加载，避免 FOIT（无样式字体闪烁）
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
 
     <title>EchoSub - 语言学习与课文背诵</title>
   </head>

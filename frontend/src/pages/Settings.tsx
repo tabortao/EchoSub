@@ -96,7 +96,8 @@ export default function SettingsPage() {
 
   return (
     <div>
-      {/* 页面标题由 MainLayout Header 显示，此处不再重复 */}
+      {/* AC 风页面标题 */}
+      <Typography.Title level={4} style={{ marginBottom: 16, color: 'var(--ac-text-header, #794f27)', fontWeight: 800, letterSpacing: '0.02em' }}>⚙️ 设置</Typography.Title>
       <div style={{ marginBottom: isPhone ? 12 : 20 }} />
 
       {/* 外观主题 —— 大圆角色块 + 响应式栅格 */}
@@ -113,7 +114,7 @@ export default function SettingsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <span style={{ fontSize: 22 }}>🎨</span>
           <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>外观主题</span>
-          <Text type="secondary" style={{ fontSize: 12 }}>选择你喜欢的界面风格</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>🏝️ 4 套主题均为动森风格，仅主色不同；也可用右上角主题色块快速切换</Text>
         </div>
         <Row gutter={[12, 16]}>
           {(Object.keys(THEMES) as ThemeKey[]).map((key) => {

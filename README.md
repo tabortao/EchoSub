@@ -559,9 +559,81 @@ volumes:
 
 ## 🗂️ 版本管理
 
-- 每个自然日的所有变更合并为 **一个** 版本号（如 `v0.5.0`），详见 [docs/ChangeLog.md](docs/ChangeLog.md)。
+- 每个自然日的所有变更合并为 **一个** 版本号（如 `v0.7.0`），详见 [docs/ChangeLog.md](docs/ChangeLog.md)。
 - 版本遵循 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范，仅使用 `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` 六类。
-- 当前活跃版本：**v0.5.0**（多态标签系统 + 季未读蒙版 + 多项 UI 增强）。
+- 当前活跃版本：**v0.7.0**（动物森友会风格全站 UI 重设计）。
+
+## 🏝️ 动森风格设计语言（v0.7.0）
+
+参考 `docs/Reference/animal-island-ui` 设计稿，本项目采用动物森友会（Animal Crossing）风格设计语言，营造温暖、童趣、亲和的视觉氛围。
+
+### 设计 Token 速查
+
+| Token | 值 | 用途 |
+|------|------|------|
+| `--ac-bg-page` | `#f8f8f0` 暖羊皮 | 页面底色 |
+| `--ac-bg-content` | `rgb(247, 243, 223)` 羊皮纸 | 卡片 / Modal / Table 内容区 |
+| `--ac-primary` | `#19c8b9` 薄荷绿 | 主色（Nook Inc. 招牌色） |
+| `--ac-text-header` | `#794f27` 深咖 | 标题文字 |
+| `--ac-text-secondary` | `#9f927d` 米灰 | 副标题 / 描述文字 |
+| `--radius-pill` | `50px` | 按钮 / 输入框 |
+| `--radius-lg` | `20px` | 卡片 |
+| `--radius-md` | `12px` | chip / 小标签 |
+| 3D 按钮阴影 | `0 5px 0 0 var(--ac-shadow-button)` | 主按钮按下感 |
+| 卡片阴影 | `0 8px 24px rgba(25, 200, 185, 0.12)` | 卡片浮起 |
+| 主字体 | Nunito + Noto Sans SC | 全局字体 |
+
+### 13 色 NookPhone 调色板
+
+通过 `radial-gradient` 双层叠加生成 polka-dot 点阵背景色块，无需任何外部图片资源：
+
+| 颜色 | 色值 | 配色类 |
+|------|------|------|
+| 樱花粉 | `#f8a6b2` | `.ac-pattern-pink` |
+| 紫丁香 | `#b77dee` | `.ac-pattern-purple` |
+| 天空蓝 | `#889df0` | `.ac-pattern-blue` |
+| 草绿 | `#6fba2c` | `.ac-pattern-green` |
+| 柠檬黄 | `#ffe066` | `.ac-pattern-yellow` |
+| 暖阳橙 | `#ff9f5a` | `.ac-pattern-orange` |
+| 番茄红 | `#ff7575` | `.ac-pattern-red` |
+| 薄荷青 | `#5ed3c7` | `.ac-pattern-cyan` |
+| 树皮棕 | `#b5926b` | `.ac-pattern-brown` |
+| 沙米色 | `#e6d4a3` | `.ac-pattern-beige` |
+| 嫩薄荷 | `#a8e6cf` | `.ac-pattern-mint` |
+| 薰衣草 | `#c8a8e9` | `.ac-pattern-lavender` |
+| 蜜桃 | `#ffb5a7` | `.ac-pattern-peach` |
+
+### 紧凑卡片布局规则（移动端/平板端）
+
+| 断点 | 视口宽度 | 媒体卡宽度 | 专辑卡宽度 | 横向滚动 gap |
+|------|---------|-----------|-----------|------------|
+| 手机 | `< 768px` | 130-150px | 130-150px | 12px |
+| 平板 | `768-1280px` | 160px | 160px | 12px |
+| 桌面 | `≥ 1280px` | 180px+ | 180px+ | 12px |
+
+- 专辑封面统一 `aspect-ratio: 2/3` + `border-radius: var(--radius-lg)`（20px）
+- 卡片标题统一 14px / 700 字重 / `var(--ac-text-header)` 颜色
+- 缩略图尺寸 96-160px，自适应视口
+- 横向滚动行 `padding: 8` + `gap: 12`，右部渐变遮罩提示可左滑
+
+### 4 套主题主色（动森风调整）
+
+| 主题 | 主色 | 风格 |
+|------|------|------|
+| 暖阳橙 | `#FF9F5A` | 温暖活泼（推荐） |
+| 草绿 | `#6fba2c` | 自然清新 |
+| 紫丁香 | `#b77dee` | 梦幻神秘 |
+| 天空蓝 | `#889df0` | 宁静治愈 |
+
+每套主题均提供 light / dark 双调色板，与 AC 风 token 协同切换。
+
+### 验证方式
+
+- `go build ./...` / `go vet ./...` / `go test ./... -v`（subtitle 8 用例）全部通过
+- `pnpm build` 通过：tsc -b 严格类型检查 + Vite 打包，1513 modules，27 PWA precache
+- 浏览器 DevTools 切换 iPhone SE / 14 Pro / iPad mini 验证紧凑卡片布局
+
+> 上一轮 v0.6.0 的设备适配矩阵、深色模式适配、PWA 等基础设施详见 Git 历史。本轮 v0.7.0 在 v0.6.0 基础上叠加动森风格设计语言。
 
 ## 📄 许可证
 

@@ -1,4 +1,5 @@
-import { Layout, Button, Space, Drawer, Tooltip, Avatar, Spin } from 'antd'
+import { Layout, Button, Space, Drawer, Tooltip, Avatar, Spin, Dropdown } from 'antd'
+import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
   TagOutlined,
@@ -10,6 +11,8 @@ import {
   UploadOutlined,
   ReloadOutlined,
   InfoCircleOutlined,
+  BgColorsOutlined,
+  CheckOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -19,26 +22,30 @@ import { useSettingsStore } from '@/store/settings'
 import { useScanStore } from '@/store/scan'
 import { authApi } from '@/api'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
+import { THEMES, type ThemeKey } from '@/theme/themes'
 
 const { Sider, Content, Header } = Layout
 
-// 每个菜单项配一个鲜艳颜色，小学生喜欢多彩视觉
+// 每个菜单项配一个鲜艳颜色（动物森友会风 NookPhone 13 色 + 薄荷绿主色）
 interface MenuItemCfg {
   key: string
   icon: ReactNode
   label: string
+  /** 分类色（区分不同菜单功能） */
   color: string
   emoji: string
 }
 
 // 侧边栏取消「专辑」入口，专辑改为首页按行展示（emby 风格）
+// v0.7.0 AC 风：使用 13 色 NookPhone 调色板
+// 颜色是「分类色」—— 区分不同菜单功能，不随主题切换而变化
 const menuItems: MenuItemCfg[] = [
-  { key: '/', icon: <HomeOutlined />, label: '首页', color: '#FF7A45', emoji: '🏠' },
-  { key: '/tags', icon: <TagOutlined />, label: '标签', color: '#52C41A', emoji: '🏷️' },
-  { key: '/upload', icon: <UploadOutlined />, label: '上传', color: '#722ED1', emoji: '⬆️' },
-  { key: '/records', icon: <HistoryOutlined />, label: '学习记录', color: '#EB2F96', emoji: '📊' },
-  { key: '/settings', icon: <SettingOutlined />, label: '设置', color: '#13C2C2', emoji: '⚙️' },
-  { key: '/about', icon: <InfoCircleOutlined />, label: '关于', color: '#FAAD14', emoji: '💡' },
+  { key: '/', icon: <HomeOutlined />, label: '首页', color: '#19c8b9', emoji: '🏠' },
+  { key: '/tags', icon: <TagOutlined />, label: '标签', color: '#6fba2c', emoji: '🏷️' },
+  { key: '/upload', icon: <UploadOutlined />, label: '上传', color: '#b77dee', emoji: '⬆️' },
+  { key: '/records', icon: <HistoryOutlined />, label: '学习记录', color: '#f8a6b2', emoji: '📊' },
+  { key: '/settings', icon: <SettingOutlined />, label: '设置', color: '#82d5bb', emoji: '⚙️' },
+  { key: '/about', icon: <InfoCircleOutlined />, label: '关于', color: '#f7cd67', emoji: '💡' },
 ]
 
 /**
@@ -82,6 +89,66 @@ export default function MainLayout() {
     }
   }
 
+  // 快速切换主题（v0.7.1 起 Header 直接可切换，无需进入设置页）
+  const currentThemeKey = (useSettingsStore((s) => s.theme ?? 'default') as ThemeKey)
+  const updateSettings = useSettingsStore((s) => s.update)
+  const loopCount = useSettingsStore((s) => s.loop_count)
+  const sentenceRepeat = useSettingsStore((s) => s.sentence_repeat)
+  const pauseSeconds = useSettingsStore((s) => s.pause_seconds)
+  const ttsVoice = useSettingsStore((s) => s.tts_voice)
+  const ttsSpeed = useSettingsStore((s) => s.tts_speed)
+  const colorMode = useSettingsStore((s) => s.color_mode)
+
+  // v0.7.1：侧边栏「首页」菜单项的颜色跟随当前主题
+  // 这样切换主题时，整页主色（按钮、菜单、卡片、3D 阴影）都跟着变，
+  // 用户能直观看到主题切换生效。
+  const themePrimary = THEMES[currentThemeKey]?.primary ?? '#19c8b9'
+  const menuItemsDynamic: MenuItemCfg[] = menuItems.map((m) =>
+    m.key === '/' ? { ...m, color: themePrimary } : m
+  )
+
+  const handleQuickThemeChange = async (key: ThemeKey) => {
+    if (key === currentThemeKey) return
+    try {
+      await updateSettings({
+        loop_count: loopCount,
+        sentence_repeat: sentenceRepeat,
+        pause_seconds: pauseSeconds,
+        tts_voice: ttsVoice,
+        tts_speed: ttsSpeed,
+        theme: key,
+        color_mode: colorMode ?? 'auto',
+      })
+      message.success(`已切换到「${THEMES[key].label}」主题`)
+    } catch {
+      message.error('主题切换失败')
+    }
+  }
+
+  // 主题下拉菜单项
+  const themeMenuItems: MenuProps['items'] = (Object.keys(THEMES) as ThemeKey[]).map((key) => {
+    const t = THEMES[key]
+    const active = currentThemeKey === key
+    return {
+      key,
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 140 }}>
+          <div
+            style={{
+              width: 22, height: 22, borderRadius: '50%',
+              background: `linear-gradient(135deg, ${t.primary}, ${t.primary}cc)`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, boxShadow: `0 2px 4px ${t.primary}40`,
+            }}
+          >
+            {active && <CheckOutlined style={{ color: '#fff', fontSize: 11 }} />}
+          </div>
+          <span style={{ flex: 1, fontWeight: active ? 700 : 500, color: active ? t.primary : undefined }}>{t.emoji} {t.label}</span>
+        </div>
+      ),
+    }
+  })
+
   const handleLogout = () => {
     logout()
     navigate('/login', { replace: true })
@@ -96,7 +163,7 @@ export default function MainLayout() {
     if (isPhone) setDrawerOpen(false)
   }
 
-  // 渲染单个菜单项（彩色图标 + 选中态彩色背景）
+  // 渲染单个菜单项（AC 风：薄荷绿圆角选中态 + 暖羊皮纸 hover 背景）
   const renderMenuItem = (item: MenuItemCfg, showLabel: boolean) => {
     const active = current === item.key
     return (
@@ -107,21 +174,22 @@ export default function MainLayout() {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          // 手机端菜单项触控目标 48px（>44 满足 HIG）
-          padding: isPhone ? '14px 16px' : (showLabel ? '10px 16px' : '10px 0'),
-          margin: isPhone ? '2px 8px' : '4px 8px',
-          borderRadius: 12,
+          // AC 风：菜单项 padding 略大一点（视觉舒适）
+          padding: isPhone ? '12px 16px' : (showLabel ? '10px 14px' : '10px 0'),
+          margin: isPhone ? '2px 8px' : '3px 8px',
+          borderRadius: 14, /* AC 风 14px 圆角 */
           cursor: 'pointer',
-          background: active ? item.color + '18' : 'transparent',
-          color: active ? item.color : 'var(--color-text-secondary, #595959)',
-          fontWeight: active ? 600 : 400,
+          background: active ? `color-mix(in srgb, ${item.color} 16%, var(--ac-bg-content-deep))` : 'transparent',
+          color: active ? item.color : 'var(--ac-text-secondary, #9f927d)',
+          fontWeight: active ? 700 : 500,
           fontSize: isPhone ? 16 : 15,
           minHeight: isPhone ? 48 : undefined,
-          transition: 'background 0.2s',
+          transition: 'background 0.2s, color 0.2s, transform 0.2s',
           justifyContent: showLabel ? 'flex-start' : 'center',
+          letterSpacing: '0.01em',
         }}
         onMouseEnter={(e) => {
-          if (!active) e.currentTarget.style.background = 'var(--color-border-soft, rgba(0,0,0,0.04))'
+          if (!active) e.currentTarget.style.background = 'var(--ac-bg-content, rgb(247, 243, 223))'
         }}
         onMouseLeave={(e) => {
           if (!active) e.currentTarget.style.background = 'transparent'
@@ -133,7 +201,7 @@ export default function MainLayout() {
     )
   }
 
-  // 侧边栏内容（手机抽屉 + 桌面 Sider 共用）
+  // 侧边栏内容（手机抽屉 + 桌面 Sider 共用）—— AC 风
   const renderSidebar = (showLogoText: boolean) => (
     <>
       <div style={{
@@ -141,29 +209,29 @@ export default function MainLayout() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: showLogoText ? 'flex-start' : 'center',
-        gap: 8,
+        gap: 10,
         padding: showLogoText ? '0 16px' : 0,
-        borderBottom: `1px solid color-mix(in srgb, var(--ant-color-primary) 12%, transparent)`,
+        borderBottom: `1.5px solid var(--color-border-soft)`,
       }}>
         <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
+          width: 38, height: 38, borderRadius: 12, /* AC 风圆角 */
+          // v0.7.1：Logo 块渐变与 3D 阴影跟随当前主题（避免切主题后仍是薄荷绿）
+          background: `linear-gradient(135deg, ${themePrimary}, ${themePrimary}cc)`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: `0 2px 8px color-mix(in srgb, var(--ant-color-primary) 30%, transparent)`,
+          boxShadow: `0 3px 0 0 ${themePrimary}99, 0 4px 8px ${themePrimary}4D`, /* 3D 像素堆叠 */
         }}>
           <AudioOutlined style={{ fontSize: 20, color: '#fff' }} />
         </div>
         {showLogoText && (
           <span style={{
-            fontSize: 20, fontWeight: 800,
-            background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
+            fontSize: 20, fontWeight: 900,
+            color: 'var(--ac-text-header, #794f27)',
+            letterSpacing: '0.02em',
           }}>EchoSub</span>
         )}
       </div>
       <div style={{ paddingTop: 8 }}>
-        {menuItems.map((item) => renderMenuItem(item, showLogoText))}
+        {menuItemsDynamic.map((item) => renderMenuItem(item, showLogoText))}
       </div>
     </>
   )
@@ -172,7 +240,7 @@ export default function MainLayout() {
   const siderWidth = isDesktop ? 240 : 220
 
   return (
-    <Layout style={{ minHeight: '100svh' }}>
+    <Layout style={{ minHeight: '100svh', background: 'var(--color-bg-page, #f8f8f0)' }}>
       {isPhone ? (
         <Drawer
           placement="left"
@@ -180,7 +248,7 @@ export default function MainLayout() {
           onClose={() => setDrawerOpen(false)}
           width={Math.min(window.innerWidth * 0.8, 320)}
           styles={{
-            body: { padding: 0, background: 'var(--color-bg-elevated, #fff)' },
+            body: { padding: 0, background: 'var(--ac-bg-content, rgb(247, 243, 223))' },
             header: { display: 'none' },
           }}
           // 抽屉层级与触摸滚动体验
@@ -194,20 +262,22 @@ export default function MainLayout() {
           collapsible
           collapsed={collapsed}
           onCollapse={setCollapsed}
-          // 桌面亮色 Sider 背景：使用 elevated 变量，深色模式自动跟随
+          // v0.7.1：trigger 颜色由全局 CSS .ant-layout-sider-trigger 控制
+          // 跟随当前主题主色 --ac-primary（避免 antd 默认深色背景与 AC 风冲突）
+          // AC 风 Sider 背景：暖羊皮纸内容区
           style={{
-            background: 'var(--color-bg-elevated, #fff)',
-            borderRight: `1px solid color-mix(in srgb, var(--ant-color-primary) 12%, transparent)`,
+            background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+            borderRight: '1.5px solid var(--color-border-soft)',
           }}
         >
           {renderSidebar(!collapsed)}
         </Sider>
       )}
-      <Layout>
+      <Layout style={{ background: 'var(--color-bg-page, #f8f8f0)' }}>
         <Header style={{
-          // 背景：CSS 变量，深色模式自动跟随
-          background: 'var(--color-bg-elevated, #fff)',
-          // 手机端紧凑 padding + 顶部安全区
+          // 背景：暖羊皮纸内容区
+          background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+          // AC 风：手机端紧凑 padding + 顶部安全区
           padding: isPhone
             ? '0 8px 0 8px'
             : '0 24px',
@@ -217,8 +287,7 @@ export default function MainLayout() {
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: 8,
-          borderBottom: `1px solid color-mix(in srgb, var(--ant-color-primary) 12%, transparent)`,
-          boxShadow: `0 1px 4px color-mix(in srgb, var(--ant-color-primary) 4%, transparent)`,
+          borderBottom: '1.5px solid var(--color-border-soft)',
         }}>
           {isPhone ? (
             // 手机端：菜单按钮 + 当前页标题
@@ -241,6 +310,47 @@ export default function MainLayout() {
             </span>
           )}
           <Space size={isPhone ? 0 : 8} wrap={false}>
+            {/* 快速主题切换（v0.7.1 起）：Header 直接可切换主题 */}
+            <Dropdown
+              menu={{
+                items: themeMenuItems,
+                onClick: ({ key }) => handleQuickThemeChange(key as ThemeKey),
+                selectedKeys: [currentThemeKey],
+              }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Tooltip title={`当前主题：${THEMES[currentThemeKey].label}（点击切换）`}>
+                <Button
+                  type="text"
+                  size={isPhone ? 'large' : 'middle'}
+                  aria-label="切换主题"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minWidth: isPhone ? 44 : undefined,
+                    minHeight: isPhone ? 44 : undefined,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: `linear-gradient(135deg, ${THEMES[currentThemeKey].primary}, ${THEMES[currentThemeKey].primary}cc)`,
+                      boxShadow: `0 2px 6px ${THEMES[currentThemeKey].primary}50, inset 0 -2px 4px rgba(0,0,0,0.15)`,
+                      display: 'inline-block',
+                      flexShrink: 0,
+                    }}
+                  />
+                  {!isPhone && (
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {THEMES[currentThemeKey].emoji} {THEMES[currentThemeKey].label}
+                    </span>
+                  )}
+                  {!isPhone && <BgColorsOutlined style={{ fontSize: 12, opacity: 0.55 }} />}
+                </Button>
+              </Tooltip>
+            </Dropdown>
             {/* 扫描媒体目录按钮：手机端仅图标，平板以上展示文字 */}
             <Tooltip title={scanning ? '正在扫描…' : '重新扫描媒体文件夹'}>
               <Spin spinning={scanning} size="small">
@@ -305,10 +415,10 @@ export default function MainLayout() {
           </Space>
         </Header>
         <Content style={{ margin: 0 }}>
-          {/* 页面内容容器：流体 padding，深色模式自动跟随 */}
+          {/* 页面内容容器：AC 风暖羊皮纸背景 + 紧凑 padding */}
           <div style={{
-            padding: isPhone ? '8px 8px calc(8px + var(--safe-bottom, 0px))' : (isTablet ? '16px 20px' : '20px 24px'),
-            background: 'var(--color-bg-page, #FFF9F0)',
+            padding: isPhone ? '8px 8px calc(12px + var(--safe-bottom, 0px))' : (isTablet ? '16px 16px' : '20px 20px'),
+            background: 'var(--color-bg-page, #f8f8f0)',
             minHeight: `calc(100svh - ${isPhone ? 56 : 64}px)`,
             width: '100%',
             maxWidth: 'var(--content-max-width, 1600px)',

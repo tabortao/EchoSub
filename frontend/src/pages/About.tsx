@@ -76,36 +76,38 @@ const steps = [
 export default function About() {
   return (
     <div>
-      {/* 顶部 Hero 区 */}
+      {/* 顶部 Hero 区 - AC 风暖羊皮纸背景 */}
       <Card
         style={{
           marginBottom: 24,
           borderRadius: 24,
-          border: 'none',
-          background: 'linear-gradient(135deg, color-mix(in srgb, var(--ant-color-primary) 8%, transparent), color-mix(in srgb, #F2920C 8%, transparent))',
+          border: '3px solid rgba(25, 200, 185, 0.25)',
+          background: 'linear-gradient(135deg, var(--ac-bg-content, rgb(247, 243, 223)), var(--ac-bg-page, #f8f8f0))',
           overflow: 'hidden',
+          boxShadow: '0 8px 24px rgba(25, 200, 185, 0.12)',
         }}
         styles={{ body: { padding: 0 } }}
       >
         <div style={{ padding: 'clamp(20px, 4vw, 32px) clamp(12px, 3vw, 24px)', textAlign: 'center' }}>
-          <div style={{ fontSize: 'clamp(48px, 12vw, 64px)', marginBottom: 12 }}>🎓</div>
-          <Title level={2} style={{ margin: 0, fontWeight: 800, fontSize: 'clamp(24px, 5vw, 32px)' }}>
+          <div style={{ fontSize: 'clamp(48px, 12vw, 64px)', marginBottom: 12, filter: 'drop-shadow(0 4px 8px rgba(25, 200, 185, 0.3))' }}>🏝️</div>
+          <Title level={2} style={{ margin: 0, fontWeight: 800, fontSize: 'clamp(24px, 5vw, 32px)', color: 'var(--ac-text-header, #794f27)' }}>
             EchoSub
             <Text type="secondary" style={{ fontSize: 16, fontWeight: 400, marginLeft: 12 }}>
-              v0.6.0
+              v0.7.0
             </Text>
           </Title>
-          <Paragraph style={{ color: 'var(--color-text-secondary, #595959)', fontSize: 15, marginTop: 12, maxWidth: 600, margin: '12px auto 0' }}>
+          <Paragraph style={{ color: 'var(--ac-text-secondary, #9f927d)', fontSize: 15, marginTop: 12, maxWidth: 600, margin: '12px auto 0' }}>
             语言学习与课文背诵的自主托管 Web 应用。
             把视频/音频 + 字幕文件放入目录，自动识别专辑，提供逐句复读、TTS 朗读、
             学习进度跟踪等功能，让语言学习更高效有趣。
           </Paragraph>
           <Space wrap style={{ marginTop: 16, justifyContent: 'center' }}>
-            <Tag color="orange">🚀 自托管</Tag>
-            <Tag color="green">🔒 隐私优先</Tag>
-            <Tag color="blue">🎨 4 套主题</Tag>
-            <Tag color="purple">📱 响应式设计</Tag>
-            <Tag color="cyan">🌗 深色模式</Tag>
+            <Tag color="orange" style={{ borderRadius: 12, fontWeight: 600 }}>🚀 自托管</Tag>
+            <Tag color="green" style={{ borderRadius: 12, fontWeight: 600 }}>🔒 隐私优先</Tag>
+            <Tag color="blue" style={{ borderRadius: 12, fontWeight: 600 }}>🎨 4 套主题</Tag>
+            <Tag color="purple" style={{ borderRadius: 12, fontWeight: 600 }}>📱 响应式设计</Tag>
+            <Tag color="cyan" style={{ borderRadius: 12, fontWeight: 600 }}>🌗 深色模式</Tag>
+            <Tag color="magenta" style={{ borderRadius: 12, fontWeight: 600 }}>🏝️ 动森风格</Tag>
           </Space>
         </div>
       </Card>

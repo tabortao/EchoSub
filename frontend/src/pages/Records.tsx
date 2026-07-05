@@ -408,7 +408,8 @@ export default function Records() {
 
   return (
     <div>
-      {/* 页面标题由 MainLayout Header 显示，此处不再重复 */}
+      {/* AC 风页面标题 */}
+      <Typography.Title level={4} style={{ marginBottom: 16, color: 'var(--ac-text-header, #794f27)', fontWeight: 800, letterSpacing: '0.02em' }}>📊 学习记录</Typography.Title>
 
       {/* 加载错误提示 + 重试 */}
       {loadError && (

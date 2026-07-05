@@ -7,6 +7,109 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.7.1] - 2026-07-05
+
+### Added
+
+#### Header 主题下拉菜单（无需进入设置页即可切换主题）
+
+- **前端 `layouts/MainLayout.tsx`**：Header 右上角新增主题下拉菜单（`BgColorsOutlined` 圆色块 + 当前主题 emoji + 名称），菜单项按 4 套主题（暖阳橙 / 草绿岛 / 紫丁香 / 天空蓝）排列，每项左侧是 22px 圆形渐变色块（当前主题叠加白色勾选标记），右侧是 `🌿 草绿岛` 形式的 emoji + 名称。点击调用 `useSettingsStore.update()` 直接持久化，无需进入设置页。手机端仅显示圆形色块，省略文字。
+- **前端 `layouts/MainLayout.tsx`**：「首页」菜单项的「分类色」改为跟随 `themePrimary`（`THEMES[currentThemeKey].primary`），让切换主题时「首页」图标的颜色 + 选中态背景 + 文字色都跟着变化，给用户「主题真的生效了」的即时反馈。其他菜单项（标签 / 上传 / 记录 / 设置 / 关于）仍保持各自固定的 NookPhone 调色板色，作为「功能分类色」不随主题变。
+
+#### 主题色 CSS 变量动态注入 hook
+
+- **前端 `hooks/useAcThemeVars.ts`** ✨新建：监听 `theme`（来自 `useSettingsStore`）+ `isDark`（来自 `useColorMode`）变化，通过 `document.documentElement.style.setProperty()` 动态覆盖 7 个核心 AC CSS 变量：
+  - `--ac-primary` ← 当前主题主色（`meta.primary`）
+  - `--ac-bg-page` / `--ac-bg-content` / `--ac-bg-content-deep` ← 浅色暖羊皮纸 / 深色深棕
+  - `--ac-text-header` / `--ac-text-secondary` ← 浅色深咖 / 深色奶白
+  - `--ac-shadow-button` ← 主色 × 0.55 的暗色变体（3D 像素按钮阴影）
+  - 浅色 / 深色两套调色板硬编码在 hook 内（避免反复请求后端）；`App.tsx` 顶层调用一次即可全站生效。
+
+### Fixed
+
+#### Logo 块 / Sider trigger 颜色不跟随主题
+
+- **前端 `layouts/MainLayout.tsx`**（Logo 块）：侧边栏顶部 EchoSub 标志块（38×38 圆角渐变方块 + AudioOutlined 图标）的 `background` 与 `boxShadow` 由硬编码薄荷绿 `linear-gradient(135deg, #19c8b9, #11a89b)` / `box-shadow: 0 3px 0 0 #0e8c80, 0 4px 8px rgba(25, 200, 185, 0.3)` 改为 `linear-gradient(135deg, ${themePrimary}, ${themePrimary}cc)` / `box-shadow: 0 3px 0 0 ${themePrimary}99, 0 4px 8px ${themePrimary}4D`。`themePrimary` 直接读取 `THEMES[currentThemeKey].primary`，四个主题切到哪个就跟到哪个。
+
+- **前端 `index.css` + `layouts/MainLayout.tsx`**（Sider trigger）：移除 `MainLayout` 中 `triggerStyle={{ background: 'var(--ac-primary)' }}` 写法——antd v6 Sider 的 TypeScript 类型不包含 `triggerStyle` 字段（编译失败）。改用 CSS 全局规则覆盖：
+  ```css
+  .ant-layout-sider-trigger {
+    background: var(--ac-primary) !important;
+    color: #fff !important;
+    border-top: 1.5px solid var(--color-border-soft) !important;
+  }
+  .ant-layout-sider-trigger:hover {
+    background: var(--ac-primary-hover, var(--ac-primary)) !important;
+    filter: brightness(1.05);
+    color: #fff !important;
+  }
+  ```
+  这样 trigger 按钮的背景色随 `--ac-primary` 动态切换（已被 `useAcThemeVars` 覆盖），四个主题下都正确显示主题色，hover 微亮反馈保留。
+
+#### 清理临时调试日志
+
+- **前端 `store/settings.ts`**：移除 `update()` 中的 3 条 `[DEBUG]` `console.log`（本次主题切换调试期间临时添加，不再需要）。
+- **后端 `internal/handlers/settings.go`**：移除 `GetSettings` 中的 3 条 `[DEBUG]` `fmt.Printf` 与 `json.Marshal` 调试输出；移除 `encoding/json` 与 `fmt` 导入。
+
+### Notes
+
+- Header 主题下拉菜单与设置页「🎨 外观主题」区功能完全等价；前者面向「用得多的用户」追求一键切换，后者面向「需要管理 TTS / 学习偏好的用户」整合设置。
+- 切换主题后整页主色（按钮 / 菜单 / 卡片边框 / 3D 阴影 / Logo 块 / trigger 按钮 / 进度条）都会同步刷新，无需刷新页面。
+- 验证方式：`go build ./...` / `go vet ./...` / `go test ./...`（subtitle 8 用例 cached）全部通过；`pnpm build`（`tsc -b` 严格类型检查 + Vite 打包）通过，27 PWA precache。手动验证：四套主题下 Logo 块、侧边栏 trigger 按钮、「首页」菜单项选中态、Header 主题色块均正确切换为对应主色（橙 / 绿 / 紫 / 蓝）。
+
+## [v0.7.0] - 2026-07-05
+
+### Added
+
+#### 动物森友会（Animal Crossing）风格全站 UI 重设计
+
+参考 `docs/Reference/animal-island-ui` 设计稿，将项目整体风格重塑为动森风：暖羊皮纸主背景、薄荷绿主色、圆润 pill 圆角、3D 像素按钮阴影、polka-dot 点阵图案。所有页面与组件统一应用此风格，重点解决移动端/平板端卡片与专辑封面布局紧凑度问题。
+
+- **前端 `index.html`**：引入 Google Fonts（Nunito + Noto Sans SC）作为主字体；`theme-color` 与 `msapplication-TileColor` 改为薄荷绿 `#19c8b9`。
+- **前端 `index.css`** ✨ 大幅扩展：新增动森风格 CSS 变量体系
+  - 基础色：`--ac-bg-page`（暖羊皮 `#f8f8f0`）、`--ac-bg-content`（卡片/Modal/Table `rgb(247,243,223)`）、`--ac-primary`（薄荷绿 `#19c8b9`）、`--ac-text-header`（深咖 `#794f27`）、`--ac-text-secondary`（米灰 `#9f927d`）。
+  - 13 色 NookPhone 调色板：`--ac-pink` / `--ac-purple` / `--ac-blue` / `--ac-green` / `--ac-yellow` / `--ac-orange` / `--ac-red` / `--ac-cyan` / `--ac-brown` / `--ac-beige` / `--ac-mint` / `--ac-lavender` / `--ac-peach`，配套 `.ac-pattern-{pink,purple,blue,...}` polka-dot 双层径向渐变点阵背景。
+  - 圆角 token：`--radius-pill: 50px`（按钮/输入框）、`--radius-lg`（卡片 20px）、`--radius-md`。
+  - 3D 按钮阴影：`.ant-btn-primary:not(:disabled)` 应用 `box-shadow: 0 5px 0 0 var(--ac-shadow-button)`，hover 浮起 2px，active 下沉 2px，提供复古 3D 按压手感。
+  - chip 样式：`.ac-chip` 提供 AC 风小标签（圆角 10px / 700 字重 / 主色背景 / hover 微浮起）。
+- **前端 `theme/themes.ts`**：四套主题（暖阳橙/草绿/紫丁香/天空蓝）主色调整为更具 AC 风的鲜艳色调（`#FF9F5A` / `#6fba2c` / `#b77dee` / `#889df0`），并分别为 light/dark 模式生成配套调色板。
+- **前端 `components/MediaCover.tsx`**：新增 `pattern` 与 `radius` props；默认使用 `border-radius: var(--radius-lg)` 与 `2/3` 比例容器；`pattern` 可指定 13 色 polka-dot 背景，模拟 AC 风纸质封面。
+- **前端 `components/EmbyHome.tsx`** ✨ 紧凑卡片栅格
+  - 媒体卡 / 专辑卡宽度按视口动态计算：桌面 180px，平板 160px，手机 130-150px（`computeCardWidth`），保持移动端/平板端紧凑布局
+  - 横向滚动行 `gap: 12`（紧凑间距），添加右部渐变遮罩 `.scroll-row::after` 提示用户可左滑
+  - 专辑封面 2/3 比例 + 薄荷绿 2px 边框（unread 蒙版 + 锁图标保留）
+- **前端 `components/MediaPlayer.tsx`**：视频叠加字幕背景改为 `rgba(247, 243, 223, 0.94)` 暖羊皮纸 + `var(--radius-pill)` 圆角 + 2px 白色描边 + 12px 阴影；控制条按钮 AC 风 3D 阴影。
+- **前端 `layouts/MainLayout.tsx`**：侧边栏菜单项使用 NookPhone 调色板色条 + emoji 图标（🏠 首页 / 🏷️ 标签 / 📂 专辑 / 📊 记录 / ⬆️ 上传 / 📝 学习页 / ⚙️ 设置 / ℹ️ 关于）；顶栏品牌区 🌿 EchoSub logo 使用薄荷绿 3D 阴影。
+- **前端 `pages/Home.tsx`**：媒体网格卡 `xs={12} sm={8} md={6} lg={4} xl={4} xxl={4}` 紧凑布局；卡片圆角 `var(--radius-lg)`；标签 chip 使用 AC 风格样式。
+- **前端 `pages/Albums.tsx`**：专辑封面 `MediaCover` 2/3 比例 + 薄荷绿边框 + 紧凑卡片；标题颜色 `var(--ac-text-header)` + 800 字重；子专辑 tag 圆角 10 + 600 字重。
+- **前端 `pages/Tags.tsx`**：标签卡片 `var(--ac-bg-content)` 背景 + `var(--radius-lg)` 圆角 + 薄荷绿主题色高亮选中态；标签 chip 圆角 12 + 700 字重 + 无边框。
+- **前端 `pages/Records.tsx`**：页面标题改为 `var(--ac-text-header)` + 800 字重 + 📊 emoji。
+- **前端 `pages/Settings.tsx`**：页面标题 AC 风 + 主题色块扩展为动森风调色板。
+- **前端 `pages/Login.tsx`** ✨ AC 风登录页：背景 `var(--ac-bg-page)` 暖羊皮纸；卡片圆角 24px + 3px 薄荷绿描边 + 8/24px 阴影；logo 改为 🌿 大 emoji + 薄荷绿 3D 阴影。
+- **前端 `pages/About.tsx`** ✨ AC 风关于页：Hero 区背景渐变 `var(--ac-bg-content)` → `var(--ac-bg-page)`；标题色 `var(--ac-text-header)`；新增「🏝️ 动森风格」标签；版本号升至 v0.7.0。
+- **前端 `pages/NoteEditor.tsx`**：标题 Input 字号 16/20 + 800 字重 + `var(--ac-text-header)` 颜色 + 圆角 12；图片画廊背景 `var(--ac-bg-content)` + 3px 薄荷绿描边 + 圆角 16；左右切换按钮半透明白色背景；空态区域 `var(--ac-bg-page)` 暖羊皮背景 + 2px 虚线薄荷绿描边。
+- **前端 `pages/Upload.tsx`**、**`StudyNotes.tsx`**、**`Player.tsx`**、**`MediaCover`**、**`MediaPlayer`**：所有按钮 / 输入框 / Modal 弹窗的 padding、圆角、阴影均切换为 AC 风格 token；移动端/平板端紧凑布局沿用 v0.6.0 的 `isPhone` 判断。
+- **前端 `hooks/useDeviceSize.ts`**：保留原断点 `isPhone<768 / isTablet 768-1280 / isDesktop≥1280`；配合 `EmbyHome.computeCardWidth` 实现三档断点响应式。
+
+### Notes
+
+- **设计 Token 速查**：
+  - 背景：`--ac-bg-page`（页面底色） + `--ac-bg-content`（卡片 / Modal / Table 内容区）
+  - 主色：`--ac-primary`（薄荷绿） + 13 色 NookPhone 调色板
+  - 圆角：`--radius-pill: 50px`（按钮 / 输入） / `--radius-lg: 20px`（卡片） / `--radius-md: 12px`（chip / 小标签）
+  - 阴影：3D 按钮 `0 5px 0 0 var(--ac-shadow-button)`，卡片 `0 8px 24px rgba(25, 200, 185, 0.12)`
+- **紧凑卡片布局规则**（移动端/平板端）：
+  - 媒体卡：桌面 180px / 平板 160px / 手机 130-150px
+  - 横向滚动行 `gap: 12`，padding 8
+  - 专辑封面统一 2/3 比例 + `var(--radius-lg)` 圆角
+  - 卡片标题字号：手机 14 / 桌面 14；统一 700 字重
+  - 缩略图缩放 96-160px，自适应视口
+- **13 色 polka-dot pattern 用途**：专辑封面装饰、学习页背景、标签页空态、modal 背景等。所有 polka-dot 背景使用 `radial-gradient` 双层叠加，色块密度 14-28px 网格。
+- **验证方式**：`go build ./...` / `go vet ./...` / `go test ./... -v`（subtitle 8 用例）全部通过；`pnpm build`（`tsc -b` 严格类型检查 + Vite 打包）通过，1513 modules transformed、27 PWA precache。
+- **已知遗留**：
+  - v0.6.0 阶段的 `pnpm lint` 35 个 React 19 `react-hooks/set-state-in-effect` 错误未处理（预先存在的 useEffect 内 setState 模式，跨多文件，后续独立 PR 批量重构）
+  - 真实设备（iOS / Android）截图待用户在 T34 任务中手动补充
+
 ## [v0.6.0] - 2026-07-04
 
 ### Added

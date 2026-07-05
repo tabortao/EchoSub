@@ -557,33 +557,60 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
 
   return (
     <div>
-      {/* 视频/音频 tab 切换：仅在存在配对时展示 */}
+      {/* 视频/音频 tab 切换：仅在存在配对时展示（AC 风 pill 圆角） */}
       {pairedMedia && pairedMedia.type !== mediaType && (
-        <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          padding: 4, background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+          border: '1.5px solid var(--color-border-soft)', borderRadius: 'var(--radius-pill)',
+        }}>
           <Tag.CheckableTag
             checked={activeType === mediaType}
             onChange={(checked) => checked && switchMediaType(mediaType)}
-            style={{ padding: '4px 12px', border: '1px solid var(--ant-color-border)', borderRadius: 6 }}
+            style={{
+              padding: '6px 16px',
+              border: 'none',
+              borderRadius: 'var(--radius-pill)',
+              background: activeType === mediaType ? 'var(--ant-color-primary)' : 'transparent',
+              color: activeType === mediaType ? '#fff' : 'var(--ac-text-primary, #725d42)',
+              fontWeight: 600,
+            }}
           >
             🎬 视频
           </Tag.CheckableTag>
           <Tag.CheckableTag
             checked={activeType === pairedMedia.type}
             onChange={(checked) => checked && switchMediaType(pairedMedia.type)}
-            style={{ padding: '4px 12px', border: '1px solid var(--ant-color-border)', borderRadius: 6 }}
+            style={{
+              padding: '6px 16px',
+              border: 'none',
+              borderRadius: 'var(--radius-pill)',
+              background: activeType === pairedMedia.type ? 'var(--ant-color-primary)' : 'transparent',
+              color: activeType === pairedMedia.type ? '#fff' : 'var(--ac-text-primary, #725d42)',
+              fontWeight: 600,
+            }}
           >
             🎵 音频
           </Tag.CheckableTag>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>
             （同专辑同基名配对：{mediaType === 'video' ? pairedMedia.name : '视频'}）
           </Text>
         </div>
       )}
 
-      {/* 媒体元素 */}
+      {/* 媒体元素 —— 动物森友会风卡片（圆角 20px + 暖羊皮纸外边距） */}
       <div
         ref={videoContainerRef}
-        style={{ position: 'relative', background: '#000', borderRadius: 8, overflow: 'hidden', marginBottom: 16, display: 'flex', justifyContent: 'center' }}
+        style={{
+          position: 'relative',
+          background: '#000',
+          borderRadius: 'var(--radius-lg)',
+          overflow: 'hidden',
+          marginBottom: 16,
+          display: 'flex',
+          justifyContent: 'center',
+          boxShadow: 'var(--color-shadow-card)',
+        }}
       >
         {activeType === 'video' ? (
           <>
@@ -598,25 +625,27 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               onPause={() => setPlaying(false)}
               controls={false}
             />
-            {/* 视频叠加字幕：在画面底部显示当前句（v0.6.0 安全区适配） */}
+            {/* 视频叠加字幕：在画面底部显示当前句（v0.7.0 AC 风：暖羊皮纸 + 暖深棕字） */}
             {currentSentence && (
               <div
                 style={{
                   position: 'absolute',
-                  bottom: 'calc(16px + var(--safe-bottom, 0px))',
+                  bottom: 'calc(20px + var(--safe-bottom, 0px))',
                   left: '50%',
                   transform: 'translateX(-50%)',
-                  background: 'rgba(0,0,0,0.78)',
-                  color: '#fff',
-                  padding: isFullscreen ? '10px 24px' : '8px 18px',
-                  borderRadius: 8,
+                  background: 'rgba(247, 243, 223, 0.94)', /* 暖羊皮纸 94% 透明 */
+                  color: 'var(--ac-text-header, #794f27)',
+                  padding: isFullscreen ? '12px 28px' : isPhone ? '8px 18px' : '10px 22px',
+                  borderRadius: 'var(--radius-pill)', /* 胶囊形（AC 风字幕条） */
                   maxWidth: '92%',
                   textAlign: 'center',
-                  fontSize: isFullscreen ? 24 : isPhone ? 14 : 16,
+                  fontSize: isFullscreen ? 28 : isPhone ? 14 : 16,
                   lineHeight: 1.5,
+                  fontWeight: 600,
                   pointerEvents: 'none',
                   zIndex: 10,
-                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                  border: '2px solid rgba(255, 255, 255, 0.6)',
                 }}
               >
                 {currentMasked ? maskText(currentSentence.text) : currentSentence.text}
@@ -756,13 +785,13 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
         </div>
       </div>
 
-      {/* 播放设置 */}
+      {/* 播放设置 —— 动物森友会风卡片 */}
       <div style={{
         marginBottom: 16,
         padding: isPhone ? 12 : 16,
-        background: 'var(--color-bg-page, #fafafa)',
-        border: '1px solid var(--color-border-soft, rgba(0,0,0,0.06))',
-        borderRadius: 10,
+        background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+        border: '1.5px solid var(--color-border-soft)',
+        borderRadius: 'var(--radius-lg)',
         display: 'flex',
         flexWrap: 'wrap',
         gap: isPhone ? 12 : 24,
@@ -841,10 +870,10 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                       maxHeight: isPhone ? 'calc(100vh - 380px)' : 'calc(100vh - 420px)',
                       minHeight: 200,
                       overflowY: 'auto',
-                      border: '1px solid var(--color-border-soft, #f0f0f0)',
-                      borderRadius: 8,
+                      border: '1.5px solid var(--color-border-soft)',
+                      borderRadius: 'var(--radius-lg)',
                       padding: 8,
-                      background: 'var(--color-bg-elevated, #fff)',
+                      background: 'var(--ac-bg-content, rgb(247, 243, 223))',
                     }}
                   >
                     {localSentences.map((s, i) => {
@@ -859,17 +888,17 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                           style={{
                             padding: isPhone ? '10px 12px' : '8px 12px',
                             marginBottom: 4,
-                            borderRadius: 6,
+                            borderRadius: 12,
                             cursor: 'pointer',
                             background: isCurrent
-                              ? 'color-mix(in srgb, var(--ant-color-primary) 10%, transparent)'
+                              ? 'color-mix(in srgb, var(--ant-color-primary) 12%, transparent)'
                               : s.completed
-                                ? 'color-mix(in srgb, #52c41a 8%, transparent)'
+                                ? 'color-mix(in srgb, #6fba2c 10%, transparent)'
                                 : 'transparent',
                             borderLeft: isCurrent
                               ? '3px solid var(--ant-color-primary)'
                               : s.completed
-                                ? '3px solid #52c41a'
+                                ? '3px solid #6fba2c'
                                 : '3px solid transparent',
                             transition: 'all 0.2s',
                             display: 'flex',
@@ -956,10 +985,10 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                       maxHeight: isPhone ? 'calc(100vh - 430px)' : 'calc(100vh - 470px)',
                       minHeight: 160,
                       overflowY: 'auto',
-                      border: '1px solid var(--color-border-soft, #f0f0f0)',
-                      borderRadius: 8,
+                      border: '1.5px solid var(--color-border-soft)',
+                      borderRadius: 'var(--radius-lg)',
                       padding: 8,
-                      background: 'var(--color-bg-elevated, #fff)',
+                      background: 'var(--ac-bg-content, rgb(247, 243, 223))',
                     }}
                   >
                   {favoriteSet.size === 0 ? (
@@ -977,10 +1006,10 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                           style={{
                             padding: isPhone ? '10px 12px' : '8px 12px',
                             marginBottom: 4,
-                            borderRadius: 6,
+                            borderRadius: 12,
                             cursor: 'pointer',
                             background: isCurrent
-                              ? 'color-mix(in srgb, var(--ant-color-primary) 10%, transparent)'
+                              ? 'color-mix(in srgb, var(--ant-color-primary) 12%, transparent)'
                               : 'transparent',
                             borderLeft: isCurrent
                               ? '3px solid var(--ant-color-primary)'

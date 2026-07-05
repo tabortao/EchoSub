@@ -154,8 +154,8 @@ export default function Tags() {
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16, color: 'var(--color-text-primary, #1a1a1a)' }}>标签管理</Title>
-      <Card style={{ marginBottom: 16, background: 'var(--color-bg-elevated, #fff)' }}>
+      <Title level={4} style={{ marginBottom: 16, color: 'var(--ac-text-header, #794f27)', fontWeight: 800, letterSpacing: '0.02em' }}>🏷️ 标签管理</Title>
+      <Card style={{ marginBottom: 16, background: 'var(--ac-bg-content, rgb(247, 243, 223))', borderRadius: 'var(--radius-lg)' }}>
         <Row gutter={8} align="middle">
           <Col flex="auto">
             <Input
@@ -187,8 +187,9 @@ export default function Tags() {
                   onClick={() => onCardClick(t)}
                   style={isSelected ? {
                     borderColor: 'var(--ant-color-primary)',
-                    boxShadow: `0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 20%, transparent)`,
-                  } : { background: 'var(--color-bg-elevated, #fff)' }}
+                    boxShadow: `0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 28%, transparent)`,
+                    borderRadius: 'var(--radius-lg)',
+                  } : { background: 'var(--ac-bg-content, rgb(247, 243, 223))', borderRadius: 'var(--radius-lg)' }}
                   styles={{ body: { padding: 12 } }}
                   actions={[
                     <span key="edit" onClick={(e) => { e.stopPropagation(); setEditing(t); setEditName(t.name) }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44 }}>
@@ -202,15 +203,15 @@ export default function Tags() {
                   <Card.Meta
                     title={
                       <Space wrap>
-                        <Tag color="blue" style={{ fontSize: isPhone ? 14 : 16, margin: 0, padding: '2px 10px' }}>{t.name}</Tag>
+                        <Tag color="blue" style={{ fontSize: isPhone ? 14 : 16, margin: 0, padding: '2px 10px', borderRadius: 12, fontWeight: 700, border: 'none' }}>{t.name}</Tag>
                         {isSelected && <FilterFilled style={{ color: 'var(--ant-color-primary)' }} />}
                       </Space>
                     }
                     description={
                       <Space size={4} wrap>
-                        <Tooltip title="专辑数"><Tag color="orange" style={{ borderRadius: 8, margin: 0 }}>📂 {c.albums}</Tag></Tooltip>
-                        <Tooltip title="季数"><Tag color="cyan" style={{ borderRadius: 8, margin: 0 }}>📁 {c.seasons}</Tag></Tooltip>
-                        <Tooltip title="文件数（媒体 + 学习页）"><Tag color="green" style={{ borderRadius: 8, margin: 0 }}>📄 {c.files}</Tag></Tooltip>
+                        <Tooltip title="专辑数"><Tag color="orange" style={{ borderRadius: 10, margin: 0, fontWeight: 600 }}>📂 {c.albums}</Tag></Tooltip>
+                        <Tooltip title="季数"><Tag color="cyan" style={{ borderRadius: 10, margin: 0, fontWeight: 600 }}>📁 {c.seasons}</Tag></Tooltip>
+                        <Tooltip title="文件数（媒体 + 学习页）"><Tag color="green" style={{ borderRadius: 10, margin: 0, fontWeight: 600 }}>📄 {c.files}</Tag></Tooltip>
                       </Space>
                     }
                   />
@@ -225,7 +226,7 @@ export default function Tags() {
       {selectedTagId != null && (
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <Title level={5} style={{ margin: 0, color: 'var(--color-text-primary, #1a1a1a)' }}>
+            <Title level={5} style={{ margin: 0, color: 'var(--ac-text-header, #794f27)' }}>
               标签「{filterResult?.tag?.name ?? ''}」下的内容
             </Title>
             <Button size={isPhone ? 'middle' : 'small'} icon={<RollbackOutlined />} onClick={() => setSelectedTagId(null)} style={{ minHeight: isPhone ? 40 : 32 }}>

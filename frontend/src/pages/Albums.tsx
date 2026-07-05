@@ -165,8 +165,8 @@ export default function Albums() {
 
   return (
     <div>
-      <Typography.Title level={4} style={{ color: '#1a1a1a', fontSize: isPhone ? 18 : 20 }}>📂 专辑浏览</Typography.Title>
-      <Row gutter={[16, 16]}>
+      <Typography.Title level={4} style={{ color: 'var(--ac-text-header, #794f27)', fontSize: isPhone ? 18 : 20, fontWeight: 800, letterSpacing: '0.02em' }}>📂 专辑浏览</Typography.Title>
+      <Row gutter={[12, 12]}>
         {albums.map((a) => {
           const pv = preview[a.album]
           const subs = a.sub_albums ?? []
@@ -175,12 +175,13 @@ export default function Albums() {
             <Col xs={12} sm={8} md={6} lg={4} xl={4} xxl={4} key={a.album}>
               <Card
                 hoverable
+                style={{ overflow: 'hidden', borderRadius: 'var(--radius-lg)' }}
                 onClick={() => navigate(`/?album=${encodeURIComponent(a.album)}`)}
                 cover={
                   pv?.firstMedia ? (
                     <div style={{ position: 'relative' }}>
                       <MediaCover media={pv.firstMedia} colorKey={a.album} />
-                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
+                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}>
                         {a.album}
                       </Tag>
                     </div>
@@ -194,7 +195,7 @@ export default function Albums() {
                       position: 'relative',
                     }}>
                       <FolderOutlined style={{ fontSize: 56, color: folderColor }} />
-                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
+                      <Tag color="blue" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}>
                         {a.album}
                       </Tag>
                     </div>
@@ -204,7 +205,7 @@ export default function Albums() {
                 <Card.Meta
                   title={
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: isPhone ? 14 : 14 }}>{a.album}</Text>
+                      <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: isPhone ? 14 : 14, color: 'var(--ac-text-header, #794f27)' }}>{a.album}</Text>
                       <Dropdown
                         menu={{ items: buildMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMenuClick(a, key) } }}
                         trigger={['click']}
@@ -215,7 +216,7 @@ export default function Albums() {
                           onClick={(e) => e.stopPropagation()}
                           style={{
                             border: 'none', background: 'transparent', cursor: 'pointer',
-                            borderRadius: 8, fontSize: 18, color: '#999',
+                            borderRadius: 12, fontSize: 18, color: 'var(--ac-text-secondary, #9f927d)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             flexShrink: 0, minWidth: 44, minHeight: 44, padding: 0,
                           }}
@@ -228,14 +229,14 @@ export default function Albums() {
                   }
                   description={
                     <div>
-                      <Tag color="blue" style={{ borderRadius: 8 }}>🎵 {a.count} 个文件</Tag>
+                      <Tag color="blue" style={{ borderRadius: 10, fontWeight: 600 }}>🎵 {a.count} 个文件</Tag>
                       {subs.length > 0 && (
                         <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                           {subs.map((s) => (
                             <Tag
                               key={s.sub_album}
                               color="cyan"
-                              style={{ cursor: 'pointer', marginRight: 0, borderRadius: 8 }}
+                              style={{ cursor: 'pointer', marginRight: 0, borderRadius: 10, fontWeight: 600 }}
                               onClick={(e) => {
                                 e.stopPropagation()
                                 navigate(`/?album=${encodeURIComponent(a.album)}&sub_album=${encodeURIComponent(s.sub_album)}`)

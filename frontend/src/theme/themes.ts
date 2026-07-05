@@ -1,5 +1,5 @@
 /**
- * 界面主题定义 —— 小学生审美风格。
+ * 界面主题定义 —— 动物森友会风格（v0.7.0 起）。
  *
  * 关键机制：每套主题均开启 `cssVar: { key: 'ant' }`，使得 antd v5 将 token
  * 以 CSS 变量（如 --ant-color-primary）形式写入到文档根节点（或容器）。
@@ -7,10 +7,14 @@
  * 而不是硬编码颜色。
  *
  * 主题标识与后端 Setting.Theme 字段对应：
- * - default: 暖阳橙（默认）
- * - green:   清新绿野
- * - purple:  梦幻紫蓝
+ * - default: 暖阳橙（动物森友会风主色）
+ * - green:   草绿岛
+ * - purple:  紫丁香
  * - blue:    天空蓝
+ *
+ * 颜色参考 docs/Reference/animal-island-ui/DESIGN_PROMPT.md：
+ * - 暖羊皮纸背景 #f8f8f0 + 薄荷绿主色 #19c8b9
+ * - 13 色 NookPhone 调色板（pink / purple / blue / teal / green / orange / yellow / red 等）
  *
  * v0.6.0 起：每个主题额外提供 dark 调色板，token 通过 `algorithm.darkAlgorithm`
  * 派生深色语义色（colorBgContainer / colorText / colorBorder 等），保证视频内容
@@ -71,10 +75,11 @@ function buildTheme(
     token: {
       colorPrimary: primary,
       colorLink: primary,
-      colorSuccess: '#52C41A',
-      colorWarning: '#FAAD14',
-      colorError: '#FF4D4F',
-      borderRadius: 12,
+      colorSuccess: '#6fba2c',
+      colorWarning: '#f5c31c',
+      colorError: '#e05a5a',
+      borderRadius: 16,
+      borderRadiusLG: 20,
       fontSize: 15,
       colorBgLayout: bgLayout,
     },
@@ -86,12 +91,33 @@ function buildTheme(
       },
       Card: {
         ...componentTokens.Card,
+        borderRadiusLG: 20,
         boxShadowTertiary: isDark
           ? `0 4px 16px rgba(0,0,0,0.4)`
-          : `0 4px 16px rgba(${r},${g},${b},0.06)`,
+          : `0 3px 10px rgba(61, 52, 40, 0.06)`,
       },
-      Button: componentTokens.Button,
+      Button: {
+        ...componentTokens.Button,
+        borderRadius: 50, // pill 圆角（动物森友会风标志性圆角）
+        controlHeight: 38,
+        controlHeightLG: 48,
+        borderRadiusLG: 50,
+        primaryShadow: '0 5px 0 0 #bdaea0',
+        defaultShadow: '0 2px 4px 0 rgba(61, 52, 40, 0.06)',
+        dangerShadow: '0 5px 0 0 #c94444',
+      },
       Tag: componentTokens.Tag,
+      Input: {
+        borderRadius: 50,
+        controlHeight: 38,
+        controlHeightLG: 48,
+        paddingBlock: 8,
+      },
+      Tabs: {
+        titleFontSize: 15,
+        horizontalItemPadding: '12px 16px',
+        horizontalItemGutter: 24,
+      },
     },
   }
 }
@@ -106,38 +132,38 @@ export const THEMES: Record<ThemeKey, ThemeMeta> = {
   default: {
     key: 'default',
     label: '暖阳橙',
-    emoji: '🌞',
-    primary: '#FF7A45',
-    primaryLight: lighten('#FF7A45', 40),
-    light: buildTheme('#FF7A45', hexToRgb('#FF7A45'), '#FFF9F0', false),
-    dark: buildTheme('#FF7A45', hexToRgb('#FF7A45'), '#0F0E0C', true),
+    emoji: '🍊',
+    primary: '#FF9F5A',
+    primaryLight: lighten('#FF9F5A', 40),
+    light: buildTheme('#FF9F5A', hexToRgb('#FF9F5A'), '#F8F8F0', false),
+    dark: buildTheme('#FF9F5A', hexToRgb('#FF9F5A'), '#1F1D18', true),
   },
   green: {
     key: 'green',
-    label: '清新绿野',
+    label: '草绿岛',
     emoji: '🌿',
-    primary: '#52C41A',
-    primaryLight: lighten('#52C41A', 40),
-    light: buildTheme('#52C41A', hexToRgb('#52C41A'), '#F6FFED', false),
-    dark: buildTheme('#52C41A', hexToRgb('#52C41A'), '#0C130B', true),
+    primary: '#6fba2c',
+    primaryLight: lighten('#6fba2c', 40),
+    light: buildTheme('#6fba2c', hexToRgb('#6fba2c'), '#F8F8F0', false),
+    dark: buildTheme('#6fba2c', hexToRgb('#6fba2c'), '#1F1D18', true),
   },
   purple: {
     key: 'purple',
-    label: '梦幻紫蓝',
+    label: '紫丁香',
     emoji: '💜',
-    primary: '#722ED1',
-    primaryLight: lighten('#722ED1', 40),
-    light: buildTheme('#722ED1', hexToRgb('#722ED1'), '#F9F0FF', false),
-    dark: buildTheme('#722ED1', hexToRgb('#722ED1'), '#100C1A', true),
+    primary: '#b77dee',
+    primaryLight: lighten('#b77dee', 40),
+    light: buildTheme('#b77dee', hexToRgb('#b77dee'), '#F8F8F0', false),
+    dark: buildTheme('#b77dee', hexToRgb('#b77dee'), '#1F1D18', true),
   },
   blue: {
     key: 'blue',
     label: '天空蓝',
-    emoji: '🌊',
-    primary: '#1890FF',
-    primaryLight: lighten('#1890FF', 40),
-    light: buildTheme('#1890FF', hexToRgb('#1890FF'), '#E6F4FF', false),
-    dark: buildTheme('#1890FF', hexToRgb('#1890FF'), '#0A1620', true),
+    emoji: '☁️',
+    primary: '#889df0',
+    primaryLight: lighten('#889df0', 40),
+    light: buildTheme('#889df0', hexToRgb('#889df0'), '#F8F8F0', false),
+    dark: buildTheme('#889df0', hexToRgb('#889df0'), '#1F1D18', true),
   },
 }
 

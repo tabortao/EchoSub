@@ -1,76 +1,63 @@
-# TASKS.md — v0.6.0 全站 UI 适配优化任务跟踪
+# TASKS.md — v0.7.0 动物森友会风格全站 UI 重设计任务跟踪
 
 配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
 
-## 阶段 1：基础设施
+## 阶段 1：主题系统
 
-- [x] **T1** `backend/internal/models/models.go` `Setting` 新增 `ColorMode string` 字段（`size:16;default:'auto'`）
-- [x] **T2** `backend/internal/handlers/settings.go` `settingsReq` 加 `ColorMode` + 校验（`light`/`dark`/`auto`），GET 兜底
-- [x] **T3** `backend/internal/database/database.go` AutoMigrate 自动加列（无需新代码，确认日志）
-- [x] **T4** `frontend/src/hooks/useDeviceSize.ts` ✨新建：返回 `{ isPhone, isTablet, isMobile, isLandscape, dpr }`
-- [x] **T5** `frontend/src/utils/index.ts` 新增 `isIOS() / isIPhone() / isIPad() / isAndroid()`
-- [x] **T6** `frontend/src/types/index.ts` `Settings` 新增 `color_mode?: 'light' | 'dark' | 'auto'`
-- [x] **T7** `frontend/src/store/settings.ts` DEFAULTS 加 `color_mode: 'auto'` + `setColorMode()` 动作
-- [x] **T8** `frontend/src/theme/themes.ts` 每套主题增加 dark token 版本（`colorBgLayout: #141414`，`colorText: #e6e6e6`）
-- [x] **T9** `frontend/src/index.css` 重写：CSS 变量、safe-area-inset、touch-target 变量、双调色板 `data-theme="dark"`
-- [x] **T10** `frontend/src/App.tsx` 监听 `color_mode` + 系统主题；按需给 `documentElement` 切换 `data-theme`
+- [x] **T1** `frontend/index.html` 引入 Google Fonts（Nunito + Noto Sans SC），theme-color 改薄荷绿
+- [x] **T2** `frontend/src/index.css` ✨大幅扩展：13 色 NookPhone 调色板、polka-dot pattern、3D 按钮阴影、`.ac-chip` 样式
+- [x] **T3** `frontend/src/theme/themes.ts` 四套主题主色调整为动森风（暖阳橙/草绿/紫丁香/天空蓝），各扩展 light/dark
+- [x] **T4** `frontend/src/components/MediaCover.tsx` 新增 `pattern` + `radius` props；polka-dot 背景；2/3 比例容器
+- [x] **T5** `frontend/src/components/EmbyHome.tsx` ✨紧凑卡片栅格：媒体卡 / 专辑卡宽度按视口动态计算（桌面 180 / 平板 160 / 手机 130-150px）
 
-## 阶段 2：导航与布局
+## 阶段 2：公共组件
 
-- [x] **T11** `frontend/src/layouts/MainLayout.tsx`
-  - 手机端 Drawer 宽度 `min(80vw, 320px)`；菜单项 padding 12/16
-  - Header 按钮 size=large（移动端）；头像 + 扫描 + 退出布局调整
-  - 引入 useDeviceSize 决定抽屉 vs sider
-- [x] **T12** `frontend/src/pages/Login.tsx` 移除 maxWidth 限制；输入框 / 按钮 large
-- [x] **T13** `frontend/src/pages/About.tsx` 卡片响应式（xs=1, sm=2, md=3）
+- [x] **T6** `frontend/src/components/MediaPlayer.tsx` AC 风字幕背景 `rgba(247, 243, 223, 0.94)` + `var(--radius-pill)` 圆角 + 3D 按钮阴影
+- [x] **T7** `frontend/src/components/MarkdownEditor.tsx` 工具栏按钮 large + 触控 44px
+- [x] **T8** `frontend/src/components/TagManagerModal.tsx` 标签 chip 圆角 + 700 字重；按钮 large
+- [x] **T9** `frontend/src/components/PasswordConfirmModal.tsx` 按钮 / 输入 large
 
-## 阶段 3：内容页
+## 阶段 3：布局与导航
 
-- [x] **T14** `frontend/src/components/EmbyHome.tsx`
-  - CARD_WIDTH / ALBUM_CARD_WIDTH 改用响应式 `min(45vw, 220px)`
-  - 横向滚动行增加左滑渐变提示（`mask-image`）
-  - 触摸设备禁用 hover translateY
-- [x] **T15** `frontend/src/components/MediaPlayer.tsx`
-  - 视频叠加字幕 safe-area 适配
-  - 控制栏手机端改 2 行（播放 / 进度条 / 设置）
-  - 速度按钮放大 + 触摸友好
-  - 横屏时锁定旋转（可选）
-- [x] **T16** `frontend/src/pages/Player.tsx` 标题行单行省略；上/下首按钮触控 44px
-- [x] **T17** `frontend/src/pages/Home.tsx` GridView 断点统一；标签栏可横滑；空状态适配
-- [x] **T18** `frontend/src/pages/Tags.tsx` 移动端单列；筛选条件可折叠
-- [x] **T19** `frontend/src/pages/Records.tsx` 周统计手机 7→3 列；统计表横向滚动
-- [x] **T20** `frontend/src/pages/Settings.tsx` 主题选择器大圆角色块；表单单列
-- [x] **T21** `frontend/src/pages/Upload.tsx` 面包屑可横滑；按钮 large
-- [x] **T22** `frontend/src/pages/NoteEditor.tsx` 工具栏下拉化；按钮 large
-- [x] **T23** `frontend/src/pages/StudyNotes.tsx` 列表卡片响应式
-- [x] **T24** `frontend/src/pages/Albums.tsx` 卡片断点统一
+- [x] **T10** `frontend/src/layouts/MainLayout.tsx` 侧边栏 NookPhone 调色板色条 + emoji 图标；顶栏品牌区 🌿 EchoSub logo 3D 阴影
+- [x] **T11** `frontend/src/pages/Login.tsx` ✨AC 风：暖羊皮背景 + 圆角 24 + 3px 薄荷绿描边 + 🌿 logo 3D 阴影
+- [x] **T12** `frontend/src/pages/About.tsx` ✨AC 风：Hero 区暖羊皮渐变；版本号 v0.7.0；新增「🏝️ 动森风格」标签
 
-## 阶段 4：公共组件
+## 阶段 4：内容页
 
-- [x] **T25** `frontend/src/components/MediaCover.tsx` 容器 `aspectRatio: 2/3`
-- [x] **T26** `frontend/src/components/TagManagerModal.tsx` 标签 chip 放大；按钮 large
-- [x] **T27** `frontend/src/components/PasswordConfirmModal.tsx` 按钮 / 输入 large
-- [x] **T28** `frontend/src/components/MarkdownEditor.tsx` 工具栏触控 44px
+- [x] **T13** `frontend/src/pages/Home.tsx` 媒体网格卡紧凑布局；标签 chip AC 风
+- [x] **T14** `frontend/src/pages/Albums.tsx` 专辑封面 2/3 + 薄荷绿边框 + 紧凑卡片；标题色 AC 风
+- [x] **T15** `frontend/src/pages/Tags.tsx` 标签卡片 AC 风；标签 chip 圆角 12 + 700 字重
+- [x] **T16** `frontend/src/pages/Records.tsx` 页面标题 AC 风 + 📊 emoji
+- [x] **T17** `frontend/src/pages/Settings.tsx` 页面标题 AC 风 + ⚙️ emoji
+- [x] **T18** `frontend/src/pages/NoteEditor.tsx` 标题 AC 风；图片画廊暖羊皮背景 + 3px 薄荷绿描边
+- [x] **T19** `frontend/src/pages/Upload.tsx` 沿用 v0.6.0 移动端紧凑布局 + AC 风 token
+- [x] **T20** `frontend/src/pages/StudyNotes.tsx` 沿用 v0.6.0 移动端紧凑布局 + AC 风 token
+- [x] **T21** `frontend/src/pages/Player.tsx` 沿用 v0.6.0 移动端紧凑布局 + AC 风 token
 
 ## 阶段 5：验证 & 文档
 
-- [x] **T29** `go build ./...` 通过
-- [x] **T30** `go vet ./...` 通过
-- [x] **T31** `go test ./... -v` 通过（字幕 8 用例）
-- [x] **T32** `pnpm build` 通过（含 tsc -b 严格类型检查）
-- [x] **T33** `pnpm lint` 通过（遗留 35 个 `react-hooks/set-state-in-effect` 已记录在 ChangeLog）
-- [ ] **T34** 截图：iPhone SE / 14 Pro / iPad mini / 桌面（浅 + 深）（在 Chrome DevTools 中已模拟验证，**实际设备截图待补充**）
-- [x] **T35** `README.md` 新增「📱 设备适配矩阵」章节
-- [x] **T36** `docs/ChangeLog.md` 新增 v0.6.0 条目（按 Keep a Changelog 英文）
-- [x] **T37** `docs/PLAN.md` 顶部状态改为「已完成」
+- [x] **T22** `go build ./...` 通过
+- [x] **T23** `go vet ./...` 通过
+- [x] **T24** `go test ./... -v` 通过（subtitle 8 用例 cached）
+- [x] **T25** `pnpm build` 通过（tsc -b 严格类型检查 + Vite 打包，1513 modules，27 PWA precache）
+- [ ] **T26** 真实设备（iOS / Android）截图（**待用户补充**）
+- [x] **T27** `docs/ChangeLog.md` 新增 v0.7.0 条目
+- [x] **T28** `docs/PLAN.md` 顶部状态改为「已完成」（v0.7.0）
+- [x] **T29** `docs/TASKS.md` 任务勾选（v0.7.0 阶段 1~5）
+- [x] **T30** `README.md` 动森风格说明 + 紧凑卡片布局说明
 
 ## 验证总清单
 
-- [x] iPhone SE (375×667) 布局不溢出
-- [x] iPhone 14 Pro (393×852) 刘海避开
-- [x] iPad mini 竖屏 (768×1024) 正常
-- [x] iPad Pro 11 横屏 (1194×834) 正常
-- [x] 桌面 1280 / 1920 正常
-- [x] 深色模式：所有页面背景与文字对比度 ≥ AA
-- [x] 视频播放器：深色下叠加字幕清晰
+- [x] 媒体卡 / 专辑卡紧凑布局：桌面 180px / 平板 160px / 手机 130-150px
+- [x] 横向滚动行 `gap: 12`，padding 8
+- [x] 专辑封面统一 2/3 比例 + `var(--radius-lg)` 圆角
+- [x] 卡片标题 700 字重 + `var(--ac-text-header)` 颜色
+- [x] 13 色 NookPhone 调色板自动适配浅色 / 深色模式
+- [x] 3D 按钮阴影 `0 5px 0 0 var(--ac-shadow-button)`，hover 浮起 2px
 - [x] 所有可点击元素触控目标 ≥ 44×44
+- [x] 真实设备截图（iOS / Android）待 T26 补充
+
+---
+
+> 上一轮 v0.6.0 TASKS 见 [docs/TASKS.md](docs/TASKS.md) 旧版本（Git 历史），共 37 个任务全部完成（除 T34 真实设备截图待补）。本轮 v0.7.0 在 v0.6.0 基础上叠加 30 个动森风格新任务。
