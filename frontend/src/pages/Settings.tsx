@@ -382,7 +382,7 @@ function ThemeCircle({
 
 /**
  * 颜色模式三档选择器：浅色 / 深色 / 跟随系统。
- * 桌面端并排展示，手机端纵向堆叠。
+ * 手机端强制 1 列纵向堆叠（紧凑样式：padding/字号/高度缩小），iPad / 桌面 3 列并排。
  */
 function ColorModeSwitch({
   value, onChange, isPhone,
@@ -423,7 +423,7 @@ function ColorModeSwitch({
       {options.map((opt) => {
         const active = value === opt.key
         return (
-          <Col key={opt.key} xs={24} sm={8}>
+          <Col key={opt.key} xs={24} md={8}>
             <div
               onClick={() => onChange(opt.key)}
               role="button"
@@ -432,7 +432,7 @@ function ColorModeSwitch({
               style={{
                 cursor: 'pointer',
                 borderRadius: 16,
-                padding: isPhone ? '14px' : '16px',
+                padding: isPhone ? '10px 12px' : '16px',
                 background: active
                   ? 'linear-gradient(135deg, var(--ant-color-primary) 1A, var(--ant-color-primary) 2E)'
                   : 'var(--color-bg-page, #fafafa)',
@@ -445,23 +445,23 @@ function ColorModeSwitch({
                 transition: 'all 0.25s',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
-                minHeight: 72,
+                gap: isPhone ? 10 : 12,
+                minHeight: isPhone ? 56 : 72,
                 position: 'relative',
               }}
             >
               {/* 预览缩略图：直观展示颜色模式效果 */}
               <div
                 style={{
-                  width: 44,
-                  height: 44,
+                  width: isPhone ? 36 : 44,
+                  height: isPhone ? 36 : 44,
                   borderRadius: 10,
                   background: opt.previewBg,
                   border: '1px solid var(--color-border-soft, rgba(0,0,0,0.08))',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 18,
+                  fontSize: isPhone ? 15 : 18,
                   color: opt.previewText,
                   flexShrink: 0,
                 }}
@@ -472,7 +472,7 @@ function ColorModeSwitch({
                 <div style={{
                   fontWeight: 700,
                   color: active ? 'var(--ant-color-primary)' : 'var(--color-text-primary, #1a1a1a)',
-                  fontSize: 15,
+                  fontSize: isPhone ? 14 : 15,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
@@ -482,15 +482,15 @@ function ColorModeSwitch({
                 </div>
                 <div style={{
                   color: 'var(--color-text-tertiary, #8c8c8c)',
-                  fontSize: 12,
-                  lineHeight: 1.5,
+                  fontSize: isPhone ? 11 : 12,
+                  lineHeight: 1.4,
                   marginTop: 2,
                 }}>
                   {opt.desc}
                 </div>
               </div>
               {active && (
-                <CheckOutlined style={{ color: 'var(--ant-color-primary)', fontSize: 18, flexShrink: 0 }} />
+                <CheckOutlined style={{ color: 'var(--ant-color-primary)', fontSize: isPhone ? 16 : 18, flexShrink: 0 }} />
               )}
             </div>
           </Col>

@@ -7,6 +7,112 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.7.3] - 2026-07-05
+
+### Changed
+
+#### 设置页颜色模式：手机端单列紧凑化（v0.7.3）
+
+[pages/Settings.tsx](frontend/src/pages/Settings.tsx) `ColorModeSwitch` 组件响应式调整：
+- **断点修改**：`<Col xs={24} sm={8}>` → `<Col xs={24} md={8}>`，手机端（含 576-767 范围）强制 1 列纵向堆叠；iPad/桌面（≥768）3 列并排展示
+- **手机端紧凑化**：
+  - padding 14px → 10px/12px（缩 30%）
+  - 缩略图 44×44 → 36×36
+  - 缩略图内 icon 字号 18 → 15
+  - 主标题字号 15 → 14
+  - 描述字号 12 → 11，lineHeight 1.5 → 1.4
+  - 最小高度 72 → 56（缩 22%）
+  - 元素 gap 12 → 10
+  - ✓ check 图标 18 → 16
+- 视觉密度更紧，手机端不显得"散"；桌面端完全无变化
+
+#### 学习记录入口重构：侧栏移除 + 首页右上角图标（v0.7.3）
+
+「学习记录」入口从侧边栏菜单移除（避免侧栏菜单臃肿），改放在首页右上角圆形图标按钮（44×44，触控友好）。
+
+- **[pages/Home.tsx](frontend/src/pages/Home.tsx)**：
+  - 顶部新增「logo + 标题 + 右上角图标」三段式标题栏
+  - 左侧：🏝️ emoji + "EchoSub" 标题（主色 `#794f27`，粗体 800，字号 18）
+  - 右侧：圆形 `Button`（type=text shape=circle）+ `HistoryOutlined` 图标 + `Tooltip="学习记录"`
+  - 点击 → `navigate('/records')`
+  - 44×44 触控目标，AC 风浅色卡片样式（暖羊皮纸背景 + 暖棕边框 + 轻投影）
+- **[layouts/MainLayout.tsx](frontend/src/layouts/MainLayout.tsx)**：
+  - 移除 `menuItems` 中 `{ key: '/records', icon: <HistoryOutlined />, label: '学习记录', ... }` 菜单项
+  - 清理未使用的 `HistoryOutlined` import（`tsc -b` 严格模式 `noUnusedLocals` 必需）
+  - 菜单现在 5 项：首页 / 标签 / 上传 / 设置 / 关于
+- **[pages/Records.tsx](frontend/src/pages/Records.tsx)**：
+  - 手机端标题改为：左侧 40×40 圆形返回按钮（`LeftOutlined` + Tooltip="返回首页"） + "📊 学习记录" 标题
+  - 点击返回按钮 → `navigate('/')` 返回首页
+  - 桌面端标题保持原样（浏览器 back 即可）
+  - 已有的 `useNavigate` / `useDeviceSize` / `LeftOutlined` / `Tooltip` 全部复用，零新增依赖
+
+### Added
+
+[pages/Home.tsx](frontend/src/pages/Home.tsx) 专辑/季内容视图新增「🎵 音频列表」分区：专辑内的音频文件不再以卡片网格展示，而是每行一个 item 的紧凑列表，节省大量纵向空间，特别适合多集音频（语言学习课程、播客等场景）。
+
+- **列表项结构**（一行布局，响应式）：
+  - 左侧：▶ 圆形播放按钮（主色 pill + 3D 阴影，hover 缩放 1.08）
+  - 中部：文件名（单行省略，未读时前缀 🔒 锁图标）+ 进度条（已学习时）/ 标签（未开始时）
+  - 右侧：时长（⏱ MM:SS，**仅当 `m.duration > 0` 时显示；为 0 时不出现「00:00」**）+ 播放次数（▶ N 次）+ ⋮ 操作菜单
+- **响应式栅格**：
+  - 手机端：`xs={24}` 单列全宽（一行一个音频，手机窄屏看着不挤）
+  - 平板端（iPad 等）：`md={12}` 两列（一行两个）
+  - 桌面端：`lg={8}` 三列（一行三个，宽屏用满空间）
+- **AC 风设计**：暖羊皮纸背景、pill 圆角 20px、hover 浮起 -2px、3D 阴影、暖棕文字
+- **拆分渲染**：`GridView` 中将 `feed` 按 `f.kind === 'media' && f.item.media.type === 'audio'` 拆分为 `audioItems`（列表） + `gridItems`（视频卡片 + 学习页），互不干扰；视频 + 学习页继续保留卡片网格。
+- **配套新组件**：`CustomerServiceOutlined` / `PlayCircleFilled` 图标 + `formatDuration` 工具函数（来自 `@/utils`），TS 类型完全严格。
+
+#### 移动端不显示专辑 banner（v0.7.3）
+
+[pages/Home.tsx](frontend/src/pages/Home.tsx) `GridView` 在 `useDeviceSize` 中读取 `isPhone`，专辑详情 Card 用 `{albumFilter && currentAlbum && !isPhone && (...)}` 包裹后，手机端进入专辑时**完全跳过 banner 渲染**，只显示标题 + 季 Tabs + 音频列表 / 视频网格。
+
+- 节省首屏 ~220px 高度（banner 原本占满视口约 25%）
+- 专辑名 + 季 Tabs 仍然显示，用户认知无歧义
+- 桌面端 / 平板端（`isPhone=false`）banner 正常显示
+- 已在 `useDeviceSize` 已有断点（`isPhone<768`）下实现，无新依赖
+
+### Fixed
+
+#### iPhone 局域网 IP 访问 + 添加到主屏幕不显示 PWA 图标（v0.7.3）
+
+**根因**：[backend/cmd/server/main.go](backend/cmd/server/main.go) 生产模式静态资源挂载**只挂载了 `/assets` 和 `/favicon.ico`**，所有其他路径（包括 `/apple-touch-icon-180x180.png` 等 21 个 PWA 必需静态资源）都会落到 `NoRoute` → 返回 `index.html`。iOS Safari 「添加到主屏幕」时只能从 HTML 中读 `<link rel="apple-touch-icon">`，抓取对应 URL 拿到 HTML 文本（非 PNG）就识别失败 → 桌面图标空白或显示页面截图。
+
+**修复**（最小改动、零破坏）：
+
+- **后端 `cmd/server/main.go`**：
+  - 新增 21 项 PWA 静态资源显式挂载（`pwaFiles` 数组 + 循环 `r.StaticFile`），包括：
+    - `favicon.ico` / `favicon-16x16.png` / `favicon-32x32.png` / `favicon.svg`
+    - 5 个 `apple-touch-icon-*.png`（120/152/167/180 + 默认）
+    - 2 个 `android-chrome-*.png`（192/512）
+    - 11 个 `apple-touch-startup-*.png`（iPhone X / XR / XS Max / 12 / 12 mini / 12 Max / 14 Pro / 14 Pro Max / iPad / iPad Pro 11 / iPad Pro 12.9）
+    - `browserconfig.xml`（Windows 磁贴）
+  - `site.webmanifest` 与 `manifest.webmanifest` 单独用 `r.GET` 注册并显式设置 `Content-Type: application/manifest+json; charset=utf-8`（Gin 默认按 `.webmanifest` 扩展名可能推断为 `application/octet-stream`，Chrome / Edge 在安装 PWA 前会校验 manifest MIME）
+  - 两个 manifest 路径统一从 `dist/manifest.webmanifest`（VitePWA 生成）读取，作为单一事实源
+  - 修改了日志输出：`已托管前端静态资源` → `已托管前端静态资源（含 PWA 图标与 manifest）`
+
+**为什么这样修**：
+- 零前端变更：`index.html` 的 `apple-touch-icon` 链接、manifest 链接、service worker 全部不变
+- 零依赖新增：复用 Gin `StaticFile`，无第三方中间件
+- 不破坏 SPA 路由：`NoRoute` 仍在末尾兜底
+- iOS 16.4+ HTTPS 限制不变（局域网 IP 仍会降级为书签，但 apple-touch-icon 仍会被使用，桌面图标可正常显示）
+
+### Notes
+
+- **音频列表的边界情况**：
+  - 纯视频专辑（无音频）→ 不显示「音频列表」分区，原有卡片网格直接渲染
+  - 纯音频专辑 → 列表独占整个内容区
+  - 音视频混合专辑 → 列表在上，视频/学习页网格在下
+  - 选中季（`subAlbumFilter`）生效时，按季内媒体类型分别走列表/卡片
+- **iOS PWA 完整生效条件**（项目当前已具备）：
+  - ✅ `<link rel="apple-touch-icon">` × 5 个尺寸
+  - ✅ `<link rel="manifest">` 指向 manifest.webmanifest
+  - ✅ `<meta name="apple-mobile-web-app-capable" content="yes">`
+  - ✅ `<meta name="apple-mobile-web-app-title" content="EchoSub">`
+  - ✅ Service Worker（VitePWA generateSW，27 entries precache）
+  - ✅ 后端正确托管所有图标资源（本次修复）
+  - ⚠️ HTTPS：iOS 16.4+ 在 HTTP 下 PWA 模式受限（仍会添加为书签，但桌面图标可显示；用户可后续在反向代理加 TLS）
+- **验证方式**：`go build ./...` exit code 0；`pnpm build` exit code 0（`tsc -b` 严格类型 + Vite 打包），1522+ modules transformed、27 PWA precache。手动验证：iOS Safari 访问 `http://<局域网IP>:8080` → 分享 → 添加到主屏幕 → 桌面图标显示 EchoSub logo（不再是页面截图）。
+
 ## [v0.7.2] - 2026-07-05
 
 ### Added

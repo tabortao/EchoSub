@@ -408,8 +408,35 @@ export default function Records() {
 
   return (
     <div>
-      {/* AC 风页面标题 */}
-      <Typography.Title level={4} style={{ marginBottom: 16, color: 'var(--ac-text-header, #794f27)', fontWeight: 800, letterSpacing: '0.02em' }}>📊 学习记录</Typography.Title>
+      {/* AC 风页面标题
+          手机端：左侧圆形返回按钮 + 标题，让用户可以从学习记录回到首页（v0.7.3）
+          桌面端：保留原大标题，浏览器 back 即可 */}
+      {isPhone ? (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+        }}>
+          <Tooltip title="返回首页" placement="bottom">
+            <Button
+              type="text"
+              shape="circle"
+              icon={<LeftOutlined style={{ fontSize: 18 }} />}
+              onClick={() => navigate('/')}
+              aria-label="返回首页"
+              style={{
+                width: 40, height: 40, flexShrink: 0,
+                color: 'var(--ac-text-header, #794f27)',
+                background: 'var(--color-bg-elevated, #fff)',
+                border: '1.5px solid var(--color-border-soft, rgba(159,146,125,0.18))',
+              }}
+            />
+          </Tooltip>
+          <Typography.Title level={4} style={{ margin: 0, color: 'var(--ac-text-header, #794f27)', fontWeight: 800, letterSpacing: '0.02em' }}>
+            📊 学习记录
+          </Typography.Title>
+        </div>
+      ) : (
+        <Typography.Title level={4} style={{ marginBottom: 16, color: 'var(--ac-text-header, #794f27)', fontWeight: 800, letterSpacing: '0.02em' }}>📊 学习记录</Typography.Title>
+      )}
 
       {/* 加载错误提示 + 重试 */}
       {loadError && (

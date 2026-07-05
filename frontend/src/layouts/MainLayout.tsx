@@ -3,7 +3,6 @@ import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
   TagOutlined,
-  HistoryOutlined,
   SettingOutlined,
   LogoutOutlined,
   AudioOutlined,
@@ -43,7 +42,7 @@ const menuItems: MenuItemCfg[] = [
   { key: '/', icon: <HomeOutlined />, label: '首页', color: '#19c8b9', emoji: '🏠' },
   { key: '/tags', icon: <TagOutlined />, label: '标签', color: '#6fba2c', emoji: '🏷️' },
   { key: '/upload', icon: <UploadOutlined />, label: '上传', color: '#b77dee', emoji: '⬆️' },
-  { key: '/records', icon: <HistoryOutlined />, label: '学习记录', color: '#f8a6b2', emoji: '📊' },
+  // 「学习记录」入口已从侧边栏移除，移至首页右上角图标按钮（v0.7.3）
   { key: '/settings', icon: <SettingOutlined />, label: '设置', color: '#82d5bb', emoji: '⚙️' },
   { key: '/about', icon: <InfoCircleOutlined />, label: '关于', color: '#f7cd67', emoji: '💡' },
 ]

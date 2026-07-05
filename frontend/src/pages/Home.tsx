@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, Row, Col, Input, Select, Empty, Spin, Tag, Typography, Tooltip, Button, Space, Modal, Dropdown, message, Tabs } from 'antd'
 import type { MenuProps } from 'antd'
-import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined, FolderOutlined, LockOutlined, TagsOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, SearchOutlined, CloseCircleOutlined, PlusOutlined, ReadOutlined, EditOutlined, DeleteOutlined, MoreOutlined, AppstoreOutlined, SortAscendingOutlined, SortDescendingOutlined, FolderOutlined, LockOutlined, TagsOutlined, CustomerServiceOutlined, PlayCircleFilled, HistoryOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { mediaApi, noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
@@ -11,6 +11,8 @@ import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 import NoteCardMenu from '@/components/NoteCardMenu'
 import SeasonCardMenu from '@/components/SeasonCardMenu'
 import TagManagerModal from '@/components/TagManagerModal'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
+import { formatDuration } from '@/utils'
 import type { MediaListResponse, MediaListItem, Album, SubAlbum, StudyNote } from '@/types'
 
 const { Text } = Typography
@@ -40,6 +42,41 @@ export default function Home() {
 
   return (
     <div>
+      {/* 顶部标题栏：左侧 logo + 标题，右侧学习记录图标（v0.7.3）
+          学习记录入口从侧边栏移到此处，避免侧栏菜单臃肿；图标按钮 44×44 触控达标。 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 16, gap: 12,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <span style={{ fontSize: 26 }}>🏝️</span>
+          <span style={{
+            fontSize: 18, fontWeight: 800, letterSpacing: '0.02em',
+            color: 'var(--ac-text-header, #794f27)',
+            fontFamily: 'var(--heading, inherit)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            EchoSub
+          </span>
+        </div>
+        <Tooltip title="学习记录" placement="bottom">
+          <Button
+            type="text"
+            shape="circle"
+            icon={<HistoryOutlined style={{ fontSize: 20 }} />}
+            onClick={() => navigate('/records')}
+            aria-label="学习记录"
+            style={{
+              width: 44, height: 44, flexShrink: 0,
+              color: 'var(--ac-text-header, #794f27)',
+              background: 'var(--color-bg-elevated, #fff)',
+              border: '1.5px solid var(--color-border-soft, rgba(159,146,125,0.18))',
+              boxShadow: 'var(--color-shadow-card, 0 2px 8px rgba(0,0,0,0.04))',
+            }}
+          />
+        </Tooltip>
+      </div>
+
       {/* 顶部工具栏：搜索 + 类型 + 排序（仅在有筛选时显示） */}
       {hasFilter && (
         <FilterBar
@@ -147,6 +184,7 @@ function GridView(props: {
   searchParams: URLSearchParams; setSearchParams: (next: URLSearchParams) => void
 }) {
   const { keyword, type, sort, order, setOrder, albumFilter, subAlbumFilter, tagFilter, locationKey, token, navigate } = props
+  const { isPhone } = useDeviceSize()
   const [loading, setLoading] = useState(true)
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [albums, setAlbums] = useState<Album[]>([])
@@ -307,8 +345,9 @@ function GridView(props: {
         </Button>
       </div>
 
-      {/* 专辑详情：横幅 + 季选择视图 / 季内容视图（AC 风卡片） */}
-      {albumFilter && currentAlbum && (
+      {/* 专辑详情：横幅 + 季选择视图 / 季内容视图（AC 风卡片）
+          手机端不显示横幅（节省屏幕空间，专辑封面已能传达视觉信息） */}
+      {albumFilter && currentAlbum && !isPhone && (
         <Card
           size="small"
           styles={{ body: { padding: 0 } }}
@@ -407,95 +446,113 @@ function GridView(props: {
         />
       ) : feed.length === 0 ? (
         <Empty description="🎁 没有匹配的内容" />
-      ) : (
-        <Row gutter={[12, 12]}>
-          {feed.map((f) => (
-            <Col xs={12} sm={8} md={6} lg={4} xl={4} xxl={4} key={f.kind === 'media' ? `m-${f.item.media.id}` : `n-${f.note.id}`}>
-              {f.kind === 'media' ? (
-                (() => {
-                  // 未读：play_count=0 且 last_position=0 表示用户从未播放/学习过
-                  const isUnread = (f.item.play_count ?? 0) === 0 && (f.item.last_position ?? 0) === 0
-                  return (
-                    <Card
-                      hoverable
-                      onClick={() => navigate(`/play/${f.item.media.id}`)}
-                      cover={
-                        <div style={{ position: 'relative' }}>
-                          <MediaCover media={f.item.media} />
-                          <Tag
-                            color={f.item.media.type === 'video' ? 'magenta' : 'green'}
-                            style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}
+      ) : (() => {
+        // 拆分：音频 → 列表；视频 + 学习页 → 卡片网格
+        // 音频文件以紧凑列表形式展示，节省纵向空间，方便快速浏览大量曲目
+        const audioItems = feed.filter((f) => f.kind === 'media' && f.item.media.type === 'audio') as Array<{ kind: 'media'; item: MediaListItem; ts: string }>
+        const gridItems = feed.filter((f) => !(f.kind === 'media' && f.item.media.type === 'audio'))
+        return (
+          <>
+            {audioItems.length > 0 && (
+              <AudioList
+                items={audioItems}
+                onPlay={(id) => navigate(`/play/${id}`)}
+                onMenuClick={onMediaMenuClick}
+                buildMenu={buildMediaMenu}
+              />
+            )}
+            {gridItems.length > 0 && (
+              <Row gutter={[12, 12]} style={audioItems.length > 0 ? { marginTop: 16 } : undefined}>
+                {gridItems.map((f) => (
+                  <Col xs={12} sm={8} md={6} lg={4} xl={4} xxl={4} key={f.kind === 'media' ? `m-${f.item.media.id}` : `n-${f.note.id}`}>
+                    {f.kind === 'media' ? (
+                      (() => {
+                        // 未读：play_count=0 且 last_position=0 表示用户从未播放/学习过
+                        const isUnread = (f.item.play_count ?? 0) === 0 && (f.item.last_position ?? 0) === 0
+                        return (
+                          <Card
+                            hoverable
+                            onClick={() => navigate(`/play/${f.item.media.id}`)}
+                            cover={
+                              <div style={{ position: 'relative' }}>
+                                <MediaCover media={f.item.media} />
+                                <Tag
+                                  color="magenta"
+                                  style={{ position: 'absolute', top: 8, left: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}
+                                >
+                                  🎬 视频
+                                </Tag>
+                                {f.item.play_count > 0 && (
+                                  <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}>
+                                    ▶ {f.item.play_count}
+                                  </Tag>
+                                )}
+                                {/* 未读灰色蒙版：从未播放/学习的媒体被半透明灰层覆盖 + 锁图标。
+                                    学习后（play_count>0 或 last_position>0）自动消失。 */}
+                                {isUnread && (
+                                  <div style={{
+                                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                                    background: 'var(--color-mask-unread, rgba(40,30,20,0.55))',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    pointerEvents: 'none',
+                                    borderRadius: 'var(--radius-lg)',
+                                  }}>
+                                    <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
+                                      <LockOutlined style={{ fontSize: 48, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
+                                      <span style={{ fontSize: 13, fontWeight: 600, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>未开始</span>
+                                    </div>
+                                  </div>
+                                )}
+                                <PlayCircleOutlined style={{
+                                  position: 'absolute', top: '50%', left: '50%',
+                                  transform: 'translate(-50%, -50%)',
+                                  fontSize: 44, color: 'rgba(255,122,69,0.85)', pointerEvents: 'none',
+                                }} />
+                              </div>
+                            }
                           >
-                            {f.item.media.type === 'video' ? '🎬 视频' : '🎵 音频'}
-                          </Tag>
-                          {f.item.play_count > 0 && (
-                            <Tag color="orange" style={{ position: 'absolute', top: 8, right: 8, margin: 0, background: 'rgba(255,255,255,0.92)', fontWeight: 700, borderRadius: 12, fontSize: 12, padding: '2px 8px', border: 'none' }}>
-                              ▶ {f.item.play_count}
-                            </Tag>
-                          )}
-                          {/* 未读灰色蒙版：从未播放/学习的媒体被半透明灰层覆盖 + 锁图标。
-                              学习后（play_count>0 或 last_position>0）自动消失。 */}
-                          {isUnread && (
-                            <div style={{
-                              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                              background: 'var(--color-mask-unread, rgba(40,30,20,0.55))',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              pointerEvents: 'none',
-                              borderRadius: 'var(--radius-lg)',
-                            }}>
-                              <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.95)' }}>
-                                <LockOutlined style={{ fontSize: 48, display: 'block', marginBottom: 4, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }} />
-                                <span style={{ fontSize: 13, fontWeight: 600, textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>未开始</span>
-                              </div>
-                            </div>
-                          )}
-                          <PlayCircleOutlined style={{
-                            position: 'absolute', top: '50%', left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            fontSize: 44, color: 'rgba(255,122,69,0.85)', pointerEvents: 'none',
-                          }} />
-                        </div>
-                      }
-                    >
-                      <Card.Meta
-                        title={
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <Tooltip title={f.item.media.name}>
-                              <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 700, color: 'var(--ac-text-header, #794f27)' }}>{f.item.media.name}</Text>
-                            </Tooltip>
-                            <Dropdown
-                              menu={{ items: buildMediaMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMediaMenuClick(f.item, key) } }}
-                              trigger={['click']}
-                              placement="bottomRight"
-                            >
-                              <button type="button" onClick={(e) => e.stopPropagation()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4, borderRadius: 8, fontSize: 18, color: 'var(--ac-text-secondary, #9f927d)', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="更多操作">
-                                <MoreOutlined />
-                              </button>
-                            </Dropdown>
-                          </div>
-                        }
-                        description={
-                          <div>
-                            {f.item.media.tags && f.item.media.tags.length > 0 && (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                                {f.item.media.tags.map((t) => (
-                                  <Tag key={t.id} color="purple" style={{ marginRight: 0, borderRadius: 10, fontSize: 11 }}>{t.name}</Tag>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        }
-                      />
-                    </Card>
-                  )
-                })()
-              ) : (
-                <NoteCard note={f.note} token={token} onClick={() => navigate(`/notes/${f.note.id}`)} onChanged={load} />
-              )}
-            </Col>
-          ))}
-        </Row>
-      )}
+                            <Card.Meta
+                              title={
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <Tooltip title={f.item.media.name}>
+                                    <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 700, color: 'var(--ac-text-header, #794f27)' }}>{f.item.media.name}</Text>
+                                  </Tooltip>
+                                  <Dropdown
+                                    menu={{ items: buildMediaMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMediaMenuClick(f.item, key) } }}
+                                    trigger={['click']}
+                                    placement="bottomRight"
+                                  >
+                                    <button type="button" onClick={(e) => e.stopPropagation()} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4, borderRadius: 8, fontSize: 18, color: 'var(--ac-text-secondary, #9f927d)', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="更多操作">
+                                      <MoreOutlined />
+                                    </button>
+                                  </Dropdown>
+                                </div>
+                              }
+                              description={
+                                <div>
+                                  {f.item.media.tags && f.item.media.tags.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                                      {f.item.media.tags.map((t) => (
+                                        <Tag key={t.id} color="purple" style={{ marginRight: 0, borderRadius: 10, fontSize: 11 }}>{t.name}</Tag>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              }
+                            />
+                          </Card>
+                        )
+                      })()
+                    ) : (
+                      <NoteCard note={f.note} token={token} onClick={() => navigate(`/notes/${f.note.id}`)} onChanged={load} />
+                    )}
+                  </Col>
+                ))}
+              </Row>
+            )}
+          </>
+        )
+      })()}
 
       <Modal title="📝 新建学习页面" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={handleCreateNote} okText="创建" cancelText="取消">
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
@@ -614,6 +671,151 @@ function NoteCard({
         }
       />
     </Card>
+  )
+}
+
+/**
+ * 音频列表（v0.7.3 新增）：
+ * - 专辑内音频文件以紧凑列表展示，每行一个文件，节省纵向空间
+ * - 左侧：▶ 播放按钮（点击进入播放器）
+ * - 中部：标题（单行省略）+ 标签 + 进度条（已学习过）
+ * - 右侧：时长 + 播放次数 + ⋮ 菜单
+ * - 移动端：单列全宽；桌面：等宽列网格（手机 1 列、平板 2 列、桌面 3 列）
+ * - 整体采用 AC 风：暖羊皮纸背景、pill 圆角、hover 浮起反馈
+ */
+function AudioList({
+  items, onPlay, onMenuClick, buildMenu,
+}: {
+  items: Array<{ kind: 'media'; item: MediaListItem; ts: string }>
+  onPlay: (id: number) => void
+  onMenuClick: (item: MediaListItem, key: string) => void
+  buildMenu: () => MenuProps['items']
+}) {
+  return (
+    <div>
+      {/* 列表标题（仅在有音频时显示） */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+        fontSize: 14, fontWeight: 700, color: 'var(--ac-text-header, #794f27)',
+        letterSpacing: '0.02em',
+      }}>
+        <CustomerServiceOutlined style={{ fontSize: 18, color: 'var(--ac-primary, #19c8b9)' }} />
+        <span>🎵 音频列表</span>
+        <Tag color="cyan" style={{ margin: 0, borderRadius: 999, fontWeight: 600, fontSize: 11 }}>
+          {items.length} 个文件
+        </Tag>
+      </div>
+      <Row gutter={[10, 10]}>
+        {items.map((f) => {
+          const m = f.item.media
+          const progress = m.duration > 0 && f.item.last_position > 0
+            ? Math.min(100, (f.item.last_position / m.duration) * 100)
+            : 0
+          const isUnread = (f.item.play_count ?? 0) === 0 && (f.item.last_position ?? 0) === 0
+          return (
+            <Col xs={24} sm={12} lg={8} key={`a-${m.id}`}>
+              <div
+                className="ac-card"
+                onClick={() => onPlay(m.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '12px 14px', cursor: 'pointer',
+                  minHeight: 64,
+                  opacity: isUnread ? 0.78 : 1,
+                }}
+              >
+                {/* 左侧播放按钮（圆形 pill） */}
+                <div
+                  style={{
+                    width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+                    background: 'var(--ac-primary, #19c8b9)',
+                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 3px 0 0 var(--ac-shadow-button, #bdaea0)',
+                    transition: 'transform 0.2s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.08)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
+                  onClick={(e) => { e.stopPropagation(); onPlay(m.id) }}
+                  aria-label="播放"
+                >
+                  <PlayCircleFilled style={{ fontSize: 22, color: '#fff' }} />
+                </div>
+                {/* 中部：标题 + 进度条 + 标签 */}
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <Tooltip title={m.name}>
+                    <Text ellipsis style={{
+                      fontWeight: 700, fontSize: 14, lineHeight: '20px',
+                      color: 'var(--ac-text-header, #794f27)',
+                    }}>
+                      {isUnread && <LockOutlined style={{ fontSize: 12, marginRight: 4, color: 'var(--ac-text-tertiary, #c4b89e)' }} />}
+                      {m.name}
+                    </Text>
+                  </Tooltip>
+                  {/* 进度条：仅当有进度时显示 */}
+                  {progress > 0 ? (
+                    <div style={{ height: 4, background: 'var(--color-border-soft, rgba(159,146,125,0.18))', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', width: `${progress}%`,
+                        background: 'var(--ac-primary, #19c8b9)',
+                        transition: 'width 0.3s',
+                      }} />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                      {m.tags && m.tags.length > 0 ? (
+                        m.tags.slice(0, 2).map((t) => (
+                          <Tag key={t.id} color="purple" style={{ margin: 0, borderRadius: 8, fontSize: 10, padding: '0 6px', lineHeight: '16px' }}>{t.name}</Tag>
+                        ))
+                      ) : (
+                        <Text type="secondary" style={{ fontSize: 11, color: 'var(--ac-text-tertiary, #c4b89e)' }}>
+                          {m.sub_album || m.album || '未分类'}
+                        </Text>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* 右侧：时长 + 播放次数 + ⋮ 菜单
+                    时长为 0（未探测到 / 无元数据）时不显示，避免出现「00:00」 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                    {m.duration > 0 && (
+                      <Text style={{ fontSize: 12, fontWeight: 600, color: 'var(--ac-text-secondary, #9f927d)', fontVariantNumeric: 'tabular-nums' }}>
+                        ⏱ {formatDuration(m.duration)}
+                      </Text>
+                    )}
+                    {f.item.play_count > 0 && (
+                      <Text style={{ fontSize: 11, color: 'var(--ac-primary, #19c8b9)', fontWeight: 600 }}>
+                        ▶ {f.item.play_count} 次
+                      </Text>
+                    )}
+                  </div>
+                  <Dropdown
+                    menu={{ items: buildMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMenuClick(f.item, key) } }}
+                    trigger={['click']}
+                    placement="bottomRight"
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        border: 'none', background: 'transparent', cursor: 'pointer',
+                        borderRadius: 8, padding: 4, fontSize: 18,
+                        color: 'var(--ac-text-secondary, #9f927d)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        minWidth: 32, minHeight: 32,
+                      }}
+                      title="更多操作"
+                    >
+                      <MoreOutlined />
+                    </button>
+                  </Dropdown>
+                </div>
+              </div>
+            </Col>
+          )
+        })}
+      </Row>
+    </div>
   )
 }
 
