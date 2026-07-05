@@ -246,13 +246,13 @@ export default function MainLayout() {
           placement="left"
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
-          width={Math.min(window.innerWidth * 0.8, 320)}
+          size={Math.min(window.innerWidth * 0.8, 320)}
           styles={{
             body: { padding: 0, background: 'var(--ac-bg-content, rgb(247, 243, 223))' },
             header: { display: 'none' },
           }}
           // 抽屉层级与触摸滚动体验
-          maskClosable
+          mask={{ closable: true }}
         >
           {renderSidebar(true)}
         </Drawer>

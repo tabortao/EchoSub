@@ -560,7 +560,7 @@ function AlbumCard({ entry, onClick, onChanged, token, cardWidth, coverHeight }:
         okText="确定"
         cancelText="取消"
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
       >
         <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
           将同时重命名磁盘上的专辑目录与数据库中的所有关联记录。

@@ -215,7 +215,7 @@ export default function NoteCardMenu({
         okText="确定"
         cancelText="取消"
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
       >
         <div style={{ marginBottom: 8, color: '#8c8c8c' }}>
           将更新「{note.album}」专辑下该学习页面的标题。

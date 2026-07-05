@@ -73,7 +73,9 @@
   --ac-text-tertiary: #c4b89e;      /* 占位 / 弱化 */
   --ac-text-disabled: #c4b89e;
 
-  --ac-primary: #19c8b9;            /* 薄荷绿主色 */
+  --ac-primary: #19c8b9;            /* 薄荷绿主色（默认主题；其他主题由 useAcThemeVars 覆盖） */
+  --ac-primary-deep: #11a89b;       /* 主色加深（按钮 3D 阴影色，由 useAcThemeVars 覆盖） */
+  --ac-primary-dot: rgba(25, 200, 185, 0.18); /* 主色浅色 polka-dot（由 useAcThemeVars 覆盖） */
   --ac-primary-hover: #3dd4c6;
   --ac-primary-active: #11a89b;
   --ac-primary-light: #e6f9f6;
@@ -494,3 +496,381 @@ a:hover { color: var(--ac-primary-hover); }
     font-size: 14px !important;
   }
 }
+
+/* ===========================================================================
+ * 动物森友会风格 — 通用组件 AC 化（v0.7.2 起）
+ *
+ * 设计目标：让 antd 的输入框 / 文本域 / 选择器 / 模态框 / 抽屉 / 警告提示
+ * 等组件都使用 AC 风的圆角、边框、背景。组件 token 主要由 themes.ts 提供
+ * （pill 圆角 50px、Modal 24px），这里只补充一些 antd 组件 token 覆盖不到
+ * 的细节：内层 focus 边框、polka-dot 边框、悬停微亮等。
+ * =========================================================================== */
+
+/* ── AC 风输入框（pill 圆角 + 暖棕边框 + 浅色背景） ── */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-input-number-input,
+.ant-select-selector,
+.ant-picker,
+.ant-input-search,
+.ant-input-group-wrapper .ant-input {
+  background: var(--color-bg-elevated) !important;
+  border-color: var(--ac-border-input, #c4b89e) !important;
+  color: var(--ac-text-primary) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-input-number:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+.ant-picker:hover {
+  border-color: var(--ac-primary) !important;
+}
+.ant-input:focus,
+.ant-input-affix-wrapper-focused,
+.ant-input-number-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused {
+  border-color: var(--ac-primary) !important;
+  box-shadow: 0 0 0 3px var(--ac-primary-dot, rgba(25, 200, 185, 0.18)) !important;
+}
+.ant-input::placeholder,
+.ant-input-affix-wrapper input::placeholder {
+  color: var(--ac-text-tertiary, #c4b89e) !important;
+}
+
+/* ── AC 风文本域（圆角 16，区别于 input 的 pill 圆角） ── */
+textarea.ant-input {
+  border-radius: 16px !important;
+  padding: 12px 16px !important;
+}
+
+/* ── AC 风 Modal 圆角 + 暖羊皮背景 ── */
+.ant-modal .ant-modal-content {
+  background: var(--color-bg-elevated) !important;
+  border: 2px solid var(--ac-primary) !important;
+  box-shadow: 0 12px 40px var(--ac-primary-dot, rgba(25, 200, 185, 0.18)) !important;
+}
+.ant-modal .ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1.5px dashed var(--color-border-soft) !important;
+  margin-bottom: 0 !important;
+  padding: 16px 20px !important;
+}
+.ant-modal .ant-modal-title {
+  color: var(--ac-text-header) !important;
+  font-weight: 800 !important;
+  font-size: 18px !important;
+}
+.ant-modal .ant-modal-body {
+  padding: 20px !important;
+}
+.ant-modal .ant-modal-close {
+  background: var(--ac-primary-dot, rgba(25, 200, 185, 0.18)) !important;
+  color: var(--ac-primary) !important;
+  border-radius: 50% !important;
+  transition: all 0.2s ease !important;
+}
+.ant-modal .ant-modal-close:hover {
+  background: var(--ac-primary) !important;
+  color: #fff !important;
+}
+.ant-modal .ant-modal-footer {
+  border-top: 1.5px dashed var(--color-border-soft) !important;
+  padding: 12px 20px !important;
+}
+
+/* ── AC 风 Drawer（手机端侧边栏抽屉） ── */
+.ant-drawer .ant-drawer-header {
+  border-bottom: 1.5px dashed var(--color-border-soft) !important;
+  padding: 16px 20px !important;
+}
+.ant-drawer .ant-drawer-title {
+  color: var(--ac-text-header) !important;
+  font-weight: 800 !important;
+}
+
+/* ── AC 风 Tag / Chip pill 圆角 + 暖色背景 ── */
+.ant-tag {
+  border-radius: 999px !important;
+  padding: 0 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  border: 1.5px solid transparent !important;
+}
+
+/* ── AC 风 Badge（小红点） ── */
+.ant-badge-count {
+  border-radius: 999px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 0 2px var(--color-bg-elevated) !important;
+}
+
+/* ── AC 风 Switch（圆角拉满） ── */
+.ant-switch {
+  border-radius: 999px !important;
+  min-width: 44px !important;
+  height: 24px !important;
+}
+.ant-switch .ant-switch-handle {
+  width: 20px !important;
+  height: 20px !important;
+  top: 2px !important;
+}
+
+/* ── AC 风 Slider（轨道圆角） ── */
+.ant-slider .ant-slider-rail {
+  background: var(--ac-bg-content-deep) !important;
+  border-radius: 999px !important;
+  height: 8px !important;
+}
+.ant-slider .ant-slider-track {
+  background: var(--ac-primary) !important;
+  border-radius: 999px !important;
+  height: 8px !important;
+}
+.ant-slider .ant-slider-handle {
+  border: 2px solid var(--ac-primary) !important;
+  background: var(--color-bg-elevated) !important;
+  box-shadow: 0 2px 6px var(--ac-primary-dot, rgba(25, 200, 185, 0.25)) !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+.ant-slider .ant-slider-handle::after {
+  box-shadow: none !important;
+}
+
+/* ── AC 风 Radio（圆圈加大 + 暖色边） ── */
+.ant-radio-wrapper .ant-radio-inner {
+  border-color: var(--ac-primary) !important;
+  background: var(--color-bg-elevated) !important;
+  width: 20px !important;
+  height: 20px !important;
+  box-shadow: 0 0 0 0 transparent !important;
+  transition: box-shadow 0.2s ease !important;
+}
+.ant-radio-wrapper:hover .ant-radio-inner,
+.ant-radio-checked .ant-radio-inner {
+  box-shadow: 0 0 0 4px var(--ac-primary-dot, rgba(25, 200, 185, 0.18)) !important;
+}
+.ant-radio-checked .ant-radio-inner::after {
+  background: var(--ac-primary) !important;
+  width: 10px !important;
+  height: 10px !important;
+}
+
+/* ── AC 风 Checkbox ── */
+.ant-checkbox-wrapper .ant-checkbox-inner {
+  border-color: var(--ac-primary) !important;
+  background: var(--color-bg-elevated) !important;
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 6px !important;
+  transition: box-shadow 0.2s ease !important;
+}
+.ant-checkbox-wrapper:hover .ant-checkbox-inner,
+.ant-checkbox-checked .ant-checkbox-inner {
+  box-shadow: 0 0 0 4px var(--ac-primary-dot, rgba(25, 200, 185, 0.18)) !important;
+}
+
+/* ── AC 风 Progress 进度条（轨道 + 进度） ── */
+.ant-progress .ant-progress-bg {
+  background: linear-gradient(90deg, var(--ac-primary), color-mix(in srgb, var(--ac-primary) 60%, white)) !important;
+  border-radius: 999px !important;
+}
+.ant-progress .ant-progress-inner {
+  background: var(--ac-bg-content-deep) !important;
+  border-radius: 999px !important;
+}
+
+/* ── AC 风 Notification / Message 圆角 ── */
+.ant-notification-notice,
+.ant-message-notice-content {
+  border-radius: 16px !important;
+  border: 1.5px solid var(--ac-primary) !important;
+  background: var(--color-bg-elevated) !important;
+  box-shadow: 0 6px 20px var(--ac-primary-dot, rgba(25, 200, 185, 0.18)) !important;
+}
+
+/* ── AC 风 Tooltip 圆角 ── */
+.ant-tooltip .ant-tooltip-inner {
+  background: var(--ac-text-header) !important;
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+}
+.ant-tooltip .ant-tooltip-arrow::before {
+  background: var(--ac-text-header) !important;
+}
+
+/* ── AC 风 Popover 圆角 ── */
+.ant-popover .ant-popover-inner {
+  border-radius: 16px !important;
+  border: 1.5px solid var(--ac-primary) !important;
+}
+.ant-popover .ant-popover-inner-content {
+  color: var(--ac-text-primary) !important;
+}
+
+/* ── AC 风 Dropdown 下拉菜单 ── */
+.ant-dropdown .ant-dropdown-menu {
+  border-radius: 16px !important;
+  border: 1.5px solid var(--color-border-soft) !important;
+  background: var(--color-bg-elevated) !important;
+  box-shadow: 0 8px 24px var(--ac-primary-dot, rgba(25, 200, 185, 0.15)) !important;
+  padding: 6px !important;
+}
+.ant-dropdown .ant-dropdown-menu-item {
+  border-radius: 10px !important;
+  margin: 2px 0 !important;
+  padding: 8px 12px !important;
+  font-weight: 500 !important;
+  color: var(--ac-text-primary) !important;
+  transition: all 0.15s ease !important;
+}
+.ant-dropdown .ant-dropdown-menu-item:hover,
+.ant-dropdown .ant-dropdown-menu-submenu-title:hover {
+  background: var(--ac-primary-dot, rgba(25, 200, 185, 0.15)) !important;
+  color: var(--ac-primary) !important;
+}
+.ant-dropdown .ant-dropdown-menu-item-divider {
+  background: var(--color-border-soft) !important;
+}
+
+/* ── AC 风 Tabs 标签条（选中下划线 → 暖色滑块） ── */
+.ant-tabs .ant-tabs-ink-bar {
+  background: var(--ac-primary) !important;
+  height: 3px !important;
+  border-radius: 3px 3px 0 0 !important;
+}
+.ant-tabs .ant-tabs-tab {
+  font-weight: 600 !important;
+  color: var(--ac-text-secondary) !important;
+  transition: color 0.2s ease !important;
+}
+.ant-tabs .ant-tabs-tab:hover {
+  color: var(--ac-primary) !important;
+}
+.ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--ac-primary) !important;
+  font-weight: 700 !important;
+}
+
+/* ── AC 风 Pagination / Steps / Cascader ── */
+.ant-pagination .ant-pagination-item-active {
+  background: var(--ac-primary) !important;
+  border-color: var(--ac-primary) !important;
+}
+.ant-pagination .ant-pagination-item-active a {
+  color: #fff !important;
+}
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-prev,
+.ant-pagination .ant-pagination-next {
+  border-radius: 12px !important;
+  border-color: var(--color-border-soft) !important;
+}
+.ant-pagination .ant-pagination-item:hover,
+.ant-pagination .ant-pagination-prev:hover,
+.ant-pagination .ant-pagination-next:hover {
+  border-color: var(--ac-primary) !important;
+  color: var(--ac-primary) !important;
+}
+.ant-pagination .ant-pagination-item:hover a {
+  color: var(--ac-primary) !important;
+}
+
+/* ── AC 风 Empty 空状态 ── */
+.ant-empty .ant-empty-description {
+  color: var(--ac-text-secondary) !important;
+  font-weight: 600 !important;
+}
+
+/* ── AC 风 Alert 警告条 ── */
+.ant-alert {
+  border-radius: 16px !important;
+  border-width: 1.5px !important;
+}
+
+/* ── AC 风 Spin 加载中 ── */
+.ant-spin .ant-spin-dot-item {
+  background: var(--ac-primary) !important;
+}
+
+/* ── AC 风 Upload.Dragger 拖拽上传区 ── */
+.ant-upload.ant-upload-drag {
+  border-radius: 20px !important;
+  border: 2px dashed var(--ac-primary) !important;
+  background: var(--ac-primary-dot, rgba(25, 200, 185, 0.06)) !important;
+  transition: all 0.2s ease !important;
+}
+.ant-upload.ant-upload-drag:hover {
+  border-color: var(--ac-primary) !important;
+  background: var(--ac-primary-dot, rgba(25, 200, 185, 0.12)) !important;
+}
+.ant-upload.ant-upload-drag .ant-upload-text {
+  color: var(--ac-text-header) !important;
+  font-weight: 700 !important;
+}
+.ant-upload.ant-upload-drag .ant-upload-hint {
+  color: var(--ac-text-secondary) !important;
+}
+
+/* ── AC 风 Card.Meta 标题 ── */
+.ant-card .ant-card-meta-title {
+  color: var(--ac-text-header) !important;
+  font-weight: 700 !important;
+  font-size: 15px !important;
+}
+.ant-card .ant-card-meta-description {
+  color: var(--ac-text-secondary) !important;
+}
+
+/* ── AC 风 Form 表单标签 ── */
+.ant-form-item .ant-form-item-label > label {
+  color: var(--ac-text-header) !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+}
+.ant-form-item .ant-form-item-required::before {
+  color: var(--ac-primary) !important;
+}
+
+/* ── AC 风 Breadcrumb 面包屑 ── */
+.ant-breadcrumb a {
+  color: var(--ac-text-secondary) !important;
+  font-weight: 600 !important;
+  transition: color 0.2s ease !important;
+}
+.ant-breadcrumb a:hover {
+  color: var(--ac-primary) !important;
+}
+.ant-breadcrumb .ant-breadcrumb-separator {
+  color: var(--ac-text-tertiary) !important;
+}
+
+/* ── AC 风 Typography 文字 ── */
+.ant-typography {
+  color: var(--ac-text-primary) !important;
+}
+.ant-typography.ant-typography-secondary {
+  color: var(--ac-text-secondary) !important;
+}
+
+/* ── AC 风 Divider 分割线 ── */
+.ant-divider {
+  border-color: var(--color-border-soft) !important;
+}
+.ant-divider-inner-text {
+  color: var(--ac-text-secondary) !important;
+  font-weight: 600 !important;
+}
+
+/* ── AC 风 Table 表头 ── */
+.ant-table .ant-table-thead > tr > th {
+  background: var(--ac-bg-content-deep) !important;
+  color: var(--ac-text-header) !important;
+  font-weight: 700 !important;
+  border-bottom: 2px solid var(--color-border-soft) !important;
+}
+

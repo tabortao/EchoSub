@@ -74,8 +74,8 @@ export default function PasswordConfirmModal({
       okButtonProps={{ danger: true, loading: submitting || loading, size: inputSize, style: { minHeight: btnMinHeight } }}
       cancelText="取消"
       cancelButtonProps={{ size: inputSize, style: { minHeight: btnMinHeight } }}
-      destroyOnClose
-      maskClosable={!(submitting || loading)}
+      destroyOnHidden
+      mask={{ closable: !(submitting || loading) }}
     >
       {description && (
         <div style={{ marginBottom: 12, color: '#595959' }}>{description}</div>

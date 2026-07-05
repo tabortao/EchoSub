@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Card, Breadcrumb, List, Tag, Upload, Progress, message, Typography, Space, Button, Empty, Spin,
+  Card, Breadcrumb, Tag, Upload, Progress, message, Typography, Space, Button, Empty, Spin,
   Modal, Input, Dropdown, type MenuProps,
 } from 'antd'
 import type { UploadFile } from 'antd'
@@ -329,56 +329,76 @@ export default function UploadPage() {
         ) : dirs.length === 0 && files.length === 0 ? (
           <Empty description="📦 空目录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
-          <List
-            size="small"
-            dataSource={[...dirs, ...files]}
-            renderItem={(item) => (
-              <List.Item
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}
+          >
+            {[...dirs, ...files].map((item) => (
+              <div
+                key={item.name}
                 style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  width: '100%',
+                  gap: 8,
                   cursor: item.is_dir ? 'pointer' : 'default',
                   padding: isPhone ? '12px 12px' : '8px 12px',
                   borderRadius: 8,
+                  transition: 'background 0.15s ease',
+                  background: 'transparent',
                 }}
                 onClick={() => item.is_dir && enterDir(item.name)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--ac-bg-content-deep, rgba(159,146,125,0.08))'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8 }}>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    {item.is_dir ? (
-                      <FolderOutlined style={{ color: '#1890FF', fontSize: 18, flexShrink: 0 }} />
-                    ) : (
-                      <span style={{ fontSize: 16, flexShrink: 0 }}>{fileEmoji(item.name)}</span>
-                    )}
-                    <Text
-                      ellipsis
-                      style={{ color: item.is_dir ? '#1890FF' : '#333', fontWeight: item.is_dir ? 600 : 400, flex: 1, minWidth: 0 }}
-                    >
-                      {item.name}
-                    </Text>
-                    {!item.is_dir && (
-                      <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
-                        {formatSize(item.size)}
-                      </Text>
-                    )}
-                  </div>
-                  <Tag
-                    color={item.is_dir ? 'blue' : 'default'}
-                    style={{ borderRadius: 8, margin: 0, flexShrink: 0 }}
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  {item.is_dir ? (
+                    <FolderOutlined style={{ color: 'var(--ac-primary, #19c8b9)', fontSize: 18, flexShrink: 0 }} />
+                  ) : (
+                    <span style={{ fontSize: 16, flexShrink: 0 }}>{fileEmoji(item.name)}</span>
+                  )}
+                  <Text
+                    ellipsis
+                    style={{
+                      color: item.is_dir ? 'var(--ac-primary, #19c8b9)' : 'var(--ac-text-primary, #333)',
+                      fontWeight: item.is_dir ? 600 : 400,
+                      flex: 1,
+                      minWidth: 0,
+                    }}
                   >
-                    {item.is_dir ? '📁 文件夹' : '📄 文件'}
-                  </Tag>
-                  <Dropdown menu={{ items: entryMenu(item) }} trigger={['click']} placement="bottomRight">
-                    <Button
-                      type="text"
-                      size={isPhone ? 'middle' : 'small'}
-                      icon={<MoreOutlined />}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}
-                    />
-                  </Dropdown>
+                    {item.name}
+                  </Text>
+                  {!item.is_dir && (
+                    <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
+                      {formatSize(item.size)}
+                    </Text>
+                  )}
                 </div>
-              </List.Item>
-            )}
-          />
+                <Tag
+                  color={item.is_dir ? 'cyan' : 'default'}
+                  style={{ borderRadius: 999, margin: 0, flexShrink: 0, fontSize: 12 }}
+                >
+                  {item.is_dir ? '📁 文件夹' : '📄 文件'}
+                </Tag>
+                <Dropdown menu={{ items: entryMenu(item) }} trigger={['click']} placement="bottomRight">
+                  <Button
+                    type="text"
+                    size={isPhone ? 'middle' : 'small'}
+                    icon={<MoreOutlined />}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}
+                  />
+                </Dropdown>
+              </div>
+            ))}
+          </div>
         )}
       </Card>
 

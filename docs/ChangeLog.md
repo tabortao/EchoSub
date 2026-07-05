@@ -7,7 +7,78 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
-## [v0.7.1] - 2026-07-05
+## [v0.7.2] - 2026-07-05
+
+### Added
+
+#### 四套主题完全采用动物森友会（Animal Crossing）UI 风格 + 全组件 AC 化
+
+参考 `docs/Reference/animal-island-ui` 设计稿，将项目整体风格重塑为动森风：暖羊皮纸主背景、pill 圆角按钮、3D 像素按钮阴影、polka-dot 点阵图案、13 色 NookPhone 调色板。所有 antd 组件（输入框、文本域、模态框、下拉、Tab、滑块、复选、单选、上传、表格、分页等）统一应用此风格，重点强化「按钮」「文案框」等高频组件的动森化效果，让四套主题（暖阳橙 / 草绿岛 / 紫丁香 / 天空蓝）切换时全站无缝跟随。
+
+- **前端 `theme/themes.ts`** ✨重构：
+  - 每套主题新增 `primaryDeep`（主色加深 0.7，用于按钮 3D 阴影）与 `primaryDot`（主色 18% 透明，用于 polka-dot / focus 光晕）两个元数据。
+  - `buildTheme` 函数扩展 `primaryDeep` 入参，按钮 `primaryShadow` 改为 `0 5px 0 0 ${primaryDeep}`，让每套主题的 3D 阴影色都是该主题主色的同色系加深（橙→深橙、绿→深绿、紫→深紫、蓝→深蓝），而不是统一用棕色 `#bdaea0`。
+  - 新增 `darken` 工具函数（按 0.7 系数生成主色加深变体），与 `lighten` 配对，浅色/深色调色板共用。
+  - `InputNumber` / `Select` / `DatePicker` 全部加上 `borderRadius: 50`（pill 圆角，与 Input 一致）。
+  - `Modal` / `Drawer` `borderRadiusLG: 24`（大圆角，符合 AC 风的卡片化弹窗）。
+  - `Message` `borderRadiusLG: 16`、`Notification` `borderRadiusLG: 20`。
+  - `Menu` `itemBorderRadius: 12`，让菜单项也是圆润而非方形。
+  - `Progress` `defaultColor: primary` —— 全站进度条默认色 = 当前主题主色。
+  - 调整 `Card` 圆角 token 注释，统一为 20px（与 v0.7.1 一致）。
+
+- **前端 `hooks/useAcThemeVars.ts`** ✨扩展：
+  - 同时注入 `--ac-primary-deep`（按钮 3D 阴影色）和 `--ac-primary-dot`（polka-dot / focus 光晕色）两个新变量。
+  - 依赖数组从 `[meta.primary, isDark]` 扩展为 `[meta.primary, meta.primaryDeep, meta.primaryDot, isDark]`，确保主题切换时三个变量同步刷新。
+  - 注释中说明 v0.7.2 起的「全组件 AC 化」作用范围。
+
+- **前端 `index.css`** ✨大幅扩展，新增「动物森友会风格 — 通用组件 AC 化」章节（行号 500+）：
+  - **输入框（Input / InputNumber / Select / DatePicker / Search）**：pill 圆角 50px、暖棕边框（默认）/ 主色边框（hover/focus）、主色 3px 光晕（focus 状态）、暖色 placeholder；文本域圆角 16px（区别于单行输入的 pill 圆角）。
+  - **Modal 弹窗**：圆角 24px、主色 2px 描边、主色阴影 12px / 40px；header / footer 用暖色 1.5px 虚线分割；close 按钮主色圆形背景，hover 反色；标题字号 18 / 字重 800 / 主色文字。
+  - **Drawer 抽屉**：header 暖色虚线分割，标题主色字重 800。
+  - **Tag / Chip**：pill 圆角 999px、字重 600、字间距 0.01em、半透明边框。
+  - **Badge 徽标**：pill 圆角、外圈 2px 描边（与背景同色以制造切割感）。
+  - **Switch 开关**：拉满圆角 999px、最小宽度 44px（触控目标）、圆点 20×20。
+  - **Slider 滑块**：轨道 8px 圆角 + 主色填充；handle 20×20 + 主色边框 + 主色 25% 阴影。
+  - **Radio 单选**：内圈 20×20 + 主色边框 + 主色 18% 4px 光晕（hover/checked）；内点 10×10。
+  - **Checkbox 复选**：内框 20×20 + 主色边框 + 主色 18% 4px 光晕（hover/checked）；圆角 6px。
+  - **Progress 进度条**：主色渐变填充 + 999px 圆角。
+  - **Notification / Message**：圆角 16px / 主色 1.5px 描边 / 主色阴影。
+  - **Tooltip 提示**：深棕背景、圆角 12px、字重 600。
+  - **Popover 气泡**：圆角 16px、主色 1.5px 描边。
+  - **Dropdown 下拉**：圆角 16px、主色阴影；菜单项圆角 10px、hover 主色背景 + 主色文字。
+  - **Tabs 标签页**：ink-bar 主色 3px 圆角、tab 字重 600→700、active 主色文字。
+  - **Pagination 分页**：active 主色填充白字、hover 主色边框。
+  - **Empty 空状态 / Alert 警告 / Spin 加载 / Upload.Dragger 拖拽区 / Card.Meta 标题 / Form 标签 / Breadcrumb 面包屑 / Typography 文字 / Divider 分割线 / Table 表头**：全部统一样式 token，圆角、字重、颜色与全站 AC 风格一致。
+  - 所有样式全部使用 `var(--ac-primary)` / `var(--ac-primary-dot)` / `var(--ac-text-header)` 等 CSS 变量，四套主题切换时全站无缝跟随。
+
+### Fixed
+
+#### 7 条 antd v6 控制台警告全部消除
+
+修复升级到 antd v6 后浏览器控制台提示的 7 条警告日志，包括组件属性过时、Form 实例未关联、message 静态方法无法消费主题上下文等。
+
+- **前端 `components/PasswordConfirmModal.tsx`**：将 `destroyOnClose` 替换为 `destroyOnHidden`、`maskClosable={!(submitting || loading)}` 替换为 `mask={{ closable: !(submitting || loading) }}`。
+- **前端 `components/TagManagerModal.tsx`**：将 `destroyOnClose` 替换为 `destroyOnHidden`。
+- **前端 `components/EmbyHome.tsx`**（专辑重命名 Modal）：将 `destroyOnClose` 替换为 `destroyOnHidden`。
+- **前端 `components/NoteCardMenu.tsx`**（重命名学习页 Modal）：将 `destroyOnClose` 替换为 `destroyOnHidden`。
+- **前端 `layouts/MainLayout.tsx`**（手机端 Drawer）：将 `maskClosable` 替换为 `mask={{ closable: true }}`。
+- **前端 `pages/Records.tsx`**（按专辑进度 Progress）：将 `trailColor="#fff0e6"` 替换为 `railColor="#fff0e6"`（antd v6 Progress 组件属性迁移）。
+- **前端 `pages/Upload.tsx`** ✨移除废弃的 `List` 组件：移除 `List` / `List.Item` import，改用 `div` + `flex` 手动渲染文件列表项，hover 高亮用 `onMouseEnter` / `onMouseLeave` 切换 `--ac-bg-content-deep` 背景色；目录图标从硬编码蓝色 `#1890FF` 改为 `var(--ac-primary, #19c8b9)`，目录文字颜色同样跟随主题；Tag 颜色从 `blue` 改为 `cyan`，圆角 999px pill 形。
+- **前端 `App.tsx`**：用 antd 的 `<App component={false}>` 包裹路由，让 `message.success` / `message.error` 等静态方法能正确消费 `ConfigProvider` 的主题上下文（解决「Static function can not consume context like dynamic theme」警告）。注意：使用 `App.useApp()` 即可获取 message / notification / modal 实例，调用 API 不变。
+- **前端 `layouts/MainLayout.tsx`**（手机端 Drawer）：将 `width={Math.min(window.innerWidth * 0.8, 320)}` 替换为 `size={Math.min(window.innerWidth * 0.8, 320)}`（antd v6 Drawer 组件属性迁移，`width` / `height` 已废弃，统一使用 `size`，数值语义保持不变）。
+
+### Notes
+
+- **Form useForm 关联**：`pages/Settings.tsx` 中 3 个 `Form.useForm`（学习偏好 / 个人资料 / 密码修改）已经正确通过 `<Form form={form}>` 关联，本次未发现未关联的实例。
+- **整体风格可随主题切换**：四套主题切换时，按钮 3D 阴影色、输入框边框色、Modal 描边色、滑块轨道色、Tag / Chip 背景、polka-dot 点阵、Tabs ink-bar、Pagination active 态、Switch / Radio / Checkbox focus 光晕、Slider handle 边框等所有组件都会同步刷新，无需刷新页面。
+- **输入框/按钮 AC 化重点**：
+  - 按钮：pill 圆角 50px + 3D 像素阴影（`0 5px 0 0 ${primaryDeep}`）+ hover 上浮 1px / active 下沉 4px
+  - 输入框：pill 圆角 50px + 暖棕边框 + 主色 3px 光晕（focus 状态）+ 暖色 placeholder
+  - 文本域：圆角 16px（区别于单行输入的 pill 圆角，因为多行文本 pill 圆角会很怪）
+  - Modal：圆角 24px + 主色 2px 描边 + 暖色虚线分割 header/footer + 主色圆形 close 按钮
+- **验证方式**：`go build ./...` / `go vet ./...` / `go test ./...`（subtitle 8 用例 cached）全部通过；`pnpm build`（`tsc -b` 严格类型检查 + Vite 打包）通过，1518 modules transformed、CSS 25.44 kB（增加 8.69 kB）、27 PWA precache。手动验证：四套主题下按钮阴影色、输入框边框、Modal 描边、滑块光晕、Tag / Chip 背景、polka-dot、Tabs ink-bar、Pagination active 态、Switch / Radio / Checkbox focus 光晕、Slider handle 边框等均正确切换为对应主色（橙 / 绿 / 紫 / 蓝）。
+
+
 
 ### Added
 

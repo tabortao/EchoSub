@@ -99,7 +99,7 @@ export default function TagManagerModal({
       confirmLoading={saving}
       okText="保存"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
       okButtonProps={{ size: inputSize, style: { minHeight: btnMinHeight } }}
       cancelButtonProps={{ size: inputSize, style: { minHeight: btnMinHeight } }}
     >

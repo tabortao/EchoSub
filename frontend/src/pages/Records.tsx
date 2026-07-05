@@ -597,7 +597,7 @@ export default function Records() {
                   percent={pct}
                   size="small"
                   strokeColor={{ from: 'var(--ant-color-primary)', to: 'var(--ant-color-primary, #FFB37A)' }}
-                  trailColor="#fff0e6"
+                  railColor="#fff0e6"
                   format={(p) => <span style={{ fontSize: 11, color: '#8c8c8c' }}>{p}%</span>}
                 />
               </div>
