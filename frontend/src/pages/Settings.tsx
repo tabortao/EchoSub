@@ -3,12 +3,16 @@ import {
   Card, Form, InputNumber, Button, message, Spin, Typography, Divider,
   Input, Avatar, Upload, Slider, Select, Space, Row, Col,
 } from 'antd'
-import { UserOutlined, LockOutlined, PictureOutlined, CheckOutlined } from '@ant-design/icons'
+import {
+  UserOutlined, LockOutlined, PictureOutlined, CheckOutlined,
+  SunOutlined, MoonOutlined, DesktopOutlined,
+} from '@ant-design/icons'
 import { useSettingsStore } from '@/store/settings'
 import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/api'
 import { THEMES, type ThemeKey } from '@/theme/themes'
-import type { Settings, User } from '@/types'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
+import type { ColorMode, Settings, User } from '@/types'
 
 const { Text } = Typography
 
@@ -25,10 +29,19 @@ const TTS_VOICES = [
   { value: 'zh-CN-YunxiNeural', label: '云希（中文男声）' },
 ]
 
+/**
+ * 设置页：外观主题 + 颜色模式 + 学习偏好 + TTS + 账户管理。
+ * v0.6.0 起全面支持响应式 + 深色模式：
+ * - 主题卡片采用大圆角色块（圆形主色 + 渐变），触控更友好
+ * - 颜色模式（light / dark / auto）三档选择，立即生效
+ * - 桌面端 4 列主题栅格，手机端 2 列
+ * - 所有颜色硬编码全部替换为 CSS 变量
+ */
 export default function SettingsPage() {
-  const { loaded, load, update, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme } = useSettingsStore()
+  const { loaded, load, update, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme, color_mode, setColorMode } = useSettingsStore()
   const [form] = Form.useForm<Settings>()
   const [saving, setSaving] = useState(false)
+  const { isPhone } = useDeviceSize()
 
   useEffect(() => {
     if (!loaded) load()
@@ -36,9 +49,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (loaded) {
-      form.setFieldsValue({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme })
+      form.setFieldsValue({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme, color_mode: color_mode ?? 'auto' })
     }
-  }, [loaded, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme, form])
+  }, [loaded, loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme, color_mode, form])
 
   const handleSave = async () => {
     try {
@@ -61,92 +74,107 @@ export default function SettingsPage() {
   const handleThemeChange = async (key: ThemeKey) => {
     if (key === theme) return
     try {
-      await update({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme: key })
+      await update({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme: key, color_mode })
       message.success(`已切换到「${THEMES[key].label}」主题`)
     } catch {
       message.error('主题切换失败')
     }
   }
 
+  // 颜色模式立即切换 + 持久化（无需等保存按钮）
+  const handleColorModeChange = async (mode: ColorMode) => {
+    if (mode === color_mode) return
+    setColorMode(mode)
+    try {
+      await update({ loop_count, sentence_repeat, pause_seconds, tts_voice, tts_speed, theme, color_mode: mode })
+      const labels: Record<ColorMode, string> = { light: '始终浅色', dark: '始终深色', auto: '跟随系统' }
+      message.success(`颜色模式已切换为「${labels[mode]}」`)
+    } catch {
+      message.error('颜色模式切换失败')
+    }
+  }
+
   return (
     <div>
       {/* 页面标题由 MainLayout Header 显示，此处不再重复 */}
-      <div style={{ marginBottom: 20 }} />
+      <div style={{ marginBottom: isPhone ? 12 : 20 }} />
 
-      {/* 外观主题 —— 渐变卡片 + 响应式栅格 */}
+      {/* 外观主题 —— 大圆角色块 + 响应式栅格 */}
       <Card
-        style={{ marginBottom: 20, borderRadius: 20, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '20px 24px' } }}
+        style={{
+          marginBottom: 20,
+          borderRadius: 20,
+          border: 'none',
+          background: 'var(--color-bg-elevated, #fff)',
+          boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+        }}
+        styles={{ body: { padding: isPhone ? '16px' : '20px 24px' } }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <span style={{ fontSize: 22 }}>🎨</span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>外观主题</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>外观主题</span>
           <Text type="secondary" style={{ fontSize: 12 }}>选择你喜欢的界面风格</Text>
         </div>
-        <Row gutter={[12, 12]}>
+        <Row gutter={[12, 16]}>
           {(Object.keys(THEMES) as ThemeKey[]).map((key) => {
             const t = THEMES[key]
             const active = (theme ?? 'default') === key
             return (
               <Col key={key} xs={12} sm={6}>
-                <div
+                <ThemeCircle
+                  emoji={t.emoji}
+                  label={t.label}
+                  primary={t.primary}
+                  active={active}
                   onClick={() => handleThemeChange(key)}
-                  style={{
-                    cursor: 'pointer',
-                    borderRadius: 16,
-                    border: active ? `3px solid ${t.primary}` : '3px solid transparent',
-                    background: active
-                      ? `linear-gradient(135deg, ${t.primary}14, ${t.primary}22)`
-                      : 'linear-gradient(135deg, #fafafa, #f5f5f5)',
-                    padding: '18px 16px',
-                    textAlign: 'center',
-                    position: 'relative',
-                    transition: 'all 0.25s',
-                    boxShadow: active ? `0 4px 16px ${t.primary}30` : '0 2px 8px rgba(0,0,0,0.04)',
-                    transform: active ? 'translateY(-2px)' : 'none',
-                  }}
-                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.transform = 'translateY(-2px)' }}
-                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.transform = 'none' }}
-                >
-                  {active && (
-                    <div style={{
-                      position: 'absolute', top: 8, right: 8,
-                      width: 24, height: 24, borderRadius: '50%',
-                      background: t.primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      boxShadow: `0 2px 8px ${t.primary}40`,
-                    }}>
-                      <CheckOutlined style={{ color: '#fff', fontSize: 13, fontWeight: 700 }} />
-                    </div>
-                  )}
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>{t.emoji}</div>
-                  <div style={{ fontWeight: 700, color: active ? t.primary : '#1a1a1a', fontSize: 14 }}>{t.label}</div>
-                  <div style={{
-                    width: 44, height: 8, borderRadius: 4, margin: '10px auto 0',
-                    background: active ? `linear-gradient(90deg, ${t.primary}, ${t.primary}70)` : '#d9d9d9',
-                    transition: 'background 0.3s',
-                  }} />
-                </div>
+                  isPhone={isPhone}
+                />
               </Col>
             )
           })}
         </Row>
       </Card>
 
+      {/* 颜色模式 —— 三档选择 */}
+      <Card
+        style={{
+          marginBottom: 20,
+          borderRadius: 20,
+          border: 'none',
+          background: 'var(--color-bg-elevated, #fff)',
+          boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+        }}
+        styles={{ body: { padding: isPhone ? '16px' : '20px 24px' } }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 22 }}>🌓</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>颜色模式</span>
+          <Text type="secondary" style={{ fontSize: 12 }}>选择界面的明暗风格</Text>
+        </div>
+        <ColorModeSwitch value={color_mode ?? 'auto'} onChange={handleColorModeChange} isPhone={isPhone} />
+      </Card>
+
       {/* 学习偏好 + TTS 设置 —— 双列响应式 + 渐变卡片 */}
       <Card
-        style={{ marginBottom: 20, borderRadius: 20, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '20px 24px' } }}
+        style={{
+          marginBottom: 20,
+          borderRadius: 20,
+          border: 'none',
+          background: 'var(--color-bg-elevated, #fff)',
+          boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+        }}
+        styles={{ body: { padding: isPhone ? '16px' : '20px 24px' } }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <span style={{ fontSize: 22 }}>📚</span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>学习偏好</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>学习偏好</span>
           <Text type="secondary" style={{ fontSize: 12 }}>配置播放器和 TTS 朗读的默认行为</Text>
         </div>
         <Form form={form} layout="vertical">
-          <Row gutter={[24, 8]}>
+          <Row gutter={[16, 0]}>
             <Col xs={24} md={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600 }}>🔁 整体循环播放次数</span>}
+                label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>🔁 整体循环播放次数</span>}
                 name="loop_count"
                 tooltip="整个媒体文件循环播放的次数"
                 rules={[{ required: true, message: '请输入循环次数' }]}
@@ -156,7 +184,7 @@ export default function SettingsPage() {
             </Col>
             <Col xs={24} md={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600 }}>🔂 逐句重复次数</span>}
+                label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>🔂 逐句重复次数</span>}
                 name="sentence_repeat"
                 tooltip="逐句复读模式下每句重复播放的次数"
                 rules={[{ required: true, message: '请输入重复次数' }]}
@@ -165,10 +193,10 @@ export default function SettingsPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Row gutter={[24, 8]}>
+          <Row gutter={[16, 0]}>
             <Col xs={24}>
               <Form.Item
-                label={<span style={{ fontWeight: 600 }}>⏸️ 句末停顿时间（秒）</span>}
+                label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>⏸️ 句末停顿时间（秒）</span>}
                 name="pause_seconds"
                 tooltip="每句播放完后静音等待的秒数，供跟读或默念"
                 rules={[{ required: true, message: '请输入停顿秒数' }]}
@@ -180,10 +208,10 @@ export default function SettingsPage() {
 
           <Divider style={{ margin: '16px 0 20px' }}>🎤 TTS 朗读默认设置</Divider>
 
-          <Row gutter={[24, 8]}>
+          <Row gutter={[16, 0]}>
             <Col xs={24} md={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600 }}>🗣️ 默认 TTS 语音</span>}
+                label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>🗣️ 默认 TTS 语音</span>}
                 name="tts_voice"
                 tooltip="学习页面 TTS 朗读使用的默认音色"
                 rules={[{ required: true, message: '请选择语音' }]}
@@ -193,7 +221,7 @@ export default function SettingsPage() {
             </Col>
             <Col xs={24} md={12}>
               <Form.Item
-                label={<span style={{ fontWeight: 600 }}>🚀 朗读语速：<Text strong style={{ color: 'var(--ant-color-primary)' }}>{(form.getFieldValue('tts_speed') ?? 1.0).toFixed(1)}x</Text></span>}
+                label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>🚀 朗读语速：<Text strong style={{ color: 'var(--ant-color-primary)' }}>{(form.getFieldValue('tts_speed') ?? 1.0).toFixed(1)}x</Text></span>}
                 name="tts_speed"
                 tooltip="0.5x 慢速朗读适合跟读；1.0x 正常；2.0x 快速浏览"
                 rules={[{ required: true, message: '请设置语速' }]}
@@ -204,7 +232,7 @@ export default function SettingsPage() {
           </Row>
 
           <Form.Item style={{ marginBottom: 0, marginTop: 8 }}>
-            <Button type="primary" onClick={handleSave} loading={saving} size="large" style={{ borderRadius: 10, minWidth: 120 }}>
+            <Button type="primary" onClick={handleSave} loading={saving} size="large" style={{ borderRadius: 10, minWidth: 120, minHeight: 44 }}>
               保存设置
             </Button>
           </Form.Item>
@@ -216,14 +244,20 @@ export default function SettingsPage() {
 
       {/* 说明 */}
       <Card
-        style={{ marginTop: 20, borderRadius: 20, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '20px 24px' } }}
+        style={{
+          marginTop: 20,
+          borderRadius: 20,
+          border: 'none',
+          background: 'var(--color-bg-elevated, #fff)',
+          boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+        }}
+        styles={{ body: { padding: isPhone ? '16px' : '20px 24px' } }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <span style={{ fontSize: 22 }}>📖</span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>功能说明</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>功能说明</span>
         </div>
-        <Row gutter={[16, 12]}>
+        <Row gutter={[12, 12]}>
           {[
             { emoji: '🔁', title: '整体循环', desc: '整个音频/视频从头到尾播放 N 遍' },
             { emoji: '🔂', title: '逐句复读', desc: '结合字幕，每句重复 M 次后进入下一句' },
@@ -235,13 +269,14 @@ export default function SettingsPage() {
             <Col key={item.title} xs={24} sm={12} lg={8}>
               <div style={{
                 display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 12,
-                background: 'linear-gradient(135deg, #fef9f5, #fff)', border: '1px solid #fff0e6',
+                background: 'var(--color-bg-page, #FFF9F0)',
+                border: '1px solid var(--color-border-soft, rgba(0,0,0,0.06))',
                 transition: 'all 0.2s',
               }}>
                 <span style={{ fontSize: 20, flexShrink: 0 }}>{item.emoji}</span>
                 <div>
-                  <div style={{ fontWeight: 600, color: '#1a1a1a', fontSize: 13 }}>{item.title}</div>
-                  <div style={{ color: '#8c8c8c', fontSize: 12, lineHeight: 1.5 }}>{item.desc}</div>
+                  <div style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)', fontSize: 13 }}>{item.title}</div>
+                  <div style={{ color: 'var(--color-text-tertiary, #8c8c8c)', fontSize: 12, lineHeight: 1.5 }}>{item.desc}</div>
                 </div>
               </div>
             </Col>
@@ -249,6 +284,218 @@ export default function SettingsPage() {
         </Row>
       </Card>
     </div>
+  )
+}
+
+/**
+ * 主题圆形角色块（v0.6.0 新设计）：
+ * - 大圆形主色 + emoji 图标，视觉更聚焦
+ * - 选中态：实心圆形 + 阴影上浮 + 右上角 ✓ 徽章
+ * - 桌面 / 手机端均保证 44px+ 触控目标
+ */
+function ThemeCircle({
+  emoji, label, primary, active, onClick, isPhone,
+}: {
+  emoji: string
+  label: string
+  primary: string
+  active: boolean
+  onClick: () => void
+  isPhone: boolean
+}) {
+  const circleSize = isPhone ? 64 : 72
+  return (
+    <div
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
+      style={{
+        cursor: 'pointer',
+        borderRadius: 16,
+        padding: isPhone ? '14px 8px 12px' : '18px 12px 14px',
+        textAlign: 'center',
+        position: 'relative',
+        transition: 'all 0.25s',
+        background: active
+          ? `linear-gradient(135deg, ${primary}1A, ${primary}2E)`
+          : 'var(--color-bg-page, #fafafa)',
+        border: active
+          ? `2px solid ${primary}`
+          : '2px solid var(--color-border-soft, rgba(0,0,0,0.06))',
+        boxShadow: active
+          ? `0 8px 20px ${primary}40`
+          : 'var(--color-shadow-card, 0 2px 8px rgba(0,0,0,0.04))',
+        transform: active ? 'translateY(-3px)' : 'none',
+        minHeight: isPhone ? 110 : 130,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.transform = 'translateY(-2px)' }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.transform = 'none' }}
+    >
+      {active && (
+        <div style={{
+          position: 'absolute', top: 6, right: 6,
+          width: 22, height: 22, borderRadius: '50%',
+          background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: `0 2px 8px ${primary}60`,
+        }}>
+          <CheckOutlined style={{ color: '#fff', fontSize: 12, fontWeight: 700 }} />
+        </div>
+      )}
+      {/* 大圆角色块：径向渐变 + 中心 emoji */}
+      <div
+        style={{
+          width: circleSize,
+          height: circleSize,
+          borderRadius: '50%',
+          background: `radial-gradient(circle at 30% 30%, ${primary} 0%, ${primary}CC 60%, ${primary}80 100%)`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: circleSize * 0.5,
+          boxShadow: active
+            ? `0 6px 16px ${primary}50, inset 0 -4px 8px rgba(0,0,0,0.15)`
+            : `0 4px 10px ${primary}30, inset 0 -3px 6px rgba(0,0,0,0.10)`,
+          filter: active ? 'none' : 'grayscale(0.15)',
+          transition: 'all 0.25s',
+        }}
+      >
+        <span style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.2))' }}>{emoji}</span>
+      </div>
+      <div style={{
+        fontWeight: 700,
+        color: active ? primary : 'var(--color-text-primary, #1a1a1a)',
+        fontSize: 13,
+        lineHeight: 1.2,
+      }}>
+        {label}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 颜色模式三档选择器：浅色 / 深色 / 跟随系统。
+ * 桌面端并排展示，手机端纵向堆叠。
+ */
+function ColorModeSwitch({
+  value, onChange, isPhone,
+}: {
+  value: ColorMode
+  onChange: (m: ColorMode) => void
+  isPhone: boolean
+}) {
+  const options: { key: ColorMode; icon: React.ReactNode; label: string; desc: string; previewBg: string; previewText: string }[] = [
+    {
+      key: 'light',
+      icon: <SunOutlined />,
+      label: '始终浅色',
+      desc: '白底深字，明亮清爽',
+      previewBg: '#FFFFFF',
+      previewText: '#1a1a1a',
+    },
+    {
+      key: 'dark',
+      icon: <MoonOutlined />,
+      label: '始终深色',
+      desc: '黑底浅字，护眼舒适',
+      previewBg: '#1F1E1C',
+      previewText: '#E6E6E6',
+    },
+    {
+      key: 'auto',
+      icon: <DesktopOutlined />,
+      label: '跟随系统',
+      desc: '跟随系统设置自动切换',
+      previewBg: 'linear-gradient(135deg, #FFFFFF 50%, #1F1E1C 50%)',
+      previewText: '#888',
+    },
+  ]
+
+  return (
+    <Row gutter={[12, 12]}>
+      {options.map((opt) => {
+        const active = value === opt.key
+        return (
+          <Col key={opt.key} xs={24} sm={8}>
+            <div
+              onClick={() => onChange(opt.key)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onChange(opt.key) } }}
+              style={{
+                cursor: 'pointer',
+                borderRadius: 16,
+                padding: isPhone ? '14px' : '16px',
+                background: active
+                  ? 'linear-gradient(135deg, var(--ant-color-primary) 1A, var(--ant-color-primary) 2E)'
+                  : 'var(--color-bg-page, #fafafa)',
+                border: active
+                  ? '2px solid var(--ant-color-primary)'
+                  : '2px solid var(--color-border-soft, rgba(0,0,0,0.06))',
+                boxShadow: active
+                  ? '0 6px 16px color-mix(in srgb, var(--ant-color-primary) 30%, transparent)'
+                  : 'var(--color-shadow-card, 0 2px 8px rgba(0,0,0,0.04))',
+                transition: 'all 0.25s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                minHeight: 72,
+                position: 'relative',
+              }}
+            >
+              {/* 预览缩略图：直观展示颜色模式效果 */}
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  background: opt.previewBg,
+                  border: '1px solid var(--color-border-soft, rgba(0,0,0,0.08))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 18,
+                  color: opt.previewText,
+                  flexShrink: 0,
+                }}
+              >
+                {opt.icon}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontWeight: 700,
+                  color: active ? 'var(--ant-color-primary)' : 'var(--color-text-primary, #1a1a1a)',
+                  fontSize: 15,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}>
+                  {opt.icon}
+                  {opt.label}
+                </div>
+                <div style={{
+                  color: 'var(--color-text-tertiary, #8c8c8c)',
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  marginTop: 2,
+                }}>
+                  {opt.desc}
+                </div>
+              </div>
+              {active && (
+                <CheckOutlined style={{ color: 'var(--ant-color-primary)', fontSize: 18, flexShrink: 0 }} />
+              )}
+            </div>
+          </Col>
+        )
+      })}
+    </Row>
   )
 }
 
@@ -264,6 +511,7 @@ function AccountCard() {
   const [savingPwd, setSavingPwd] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [avatarTick, setAvatarTick] = useState(0) // 头像 URL 变化时强制刷新
+  const { isPhone } = useDeviceSize()
 
   useEffect(() => {
     if (user) profileForm.setFieldsValue({ username: user.username })
@@ -332,22 +580,37 @@ function AccountCard() {
 
   return (
     <Card
-      style={{ marginBottom: 20, borderRadius: 20, border: 'none', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-      styles={{ body: { padding: '20px 24px' } }}
+      style={{
+        marginBottom: 20,
+        borderRadius: 20,
+        border: 'none',
+        background: 'var(--color-bg-elevated, #fff)',
+        boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+      }}
+      styles={{ body: { padding: isPhone ? '16px' : '20px 24px' } }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <span style={{ fontSize: 22 }}>👤</span>
-        <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>账户管理</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>账户管理</span>
       </div>
-      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div style={{
+        display: 'flex',
+        gap: isPhone ? 16 : 24,
+        alignItems: isPhone ? 'center' : 'flex-start',
+        flexDirection: isPhone ? 'column' : 'row',
+        flexWrap: 'wrap',
+      }}>
         {/* 头像区 */}
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-          padding: '18px 22px', borderRadius: 16, background: 'linear-gradient(135deg, #fef9f5, #fff)',
-          border: '1px solid #fff0e6',
+          padding: isPhone ? '14px 18px' : '18px 22px',
+          borderRadius: 16,
+          background: 'var(--color-bg-page, #fef9f5)',
+          border: '1px solid var(--color-border-soft, rgba(0,0,0,0.06))',
+          width: isPhone ? '100%' : 'auto',
         }}>
           <Avatar
-            size={80}
+            size={isPhone ? 72 : 80}
             src={avatarUrl}
             icon={!avatarUrl ? <UserOutlined /> : undefined}
             style={!avatarUrl ? { background: 'linear-gradient(135deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))' } : undefined}
@@ -360,16 +623,18 @@ function AccountCard() {
             beforeUpload={beforeUpload}
             maxCount={1}
           >
-            <Button icon={<PictureOutlined />} loading={uploading} size="small" style={{ borderRadius: 8 }}>更换头像</Button>
+            <Button icon={<PictureOutlined />} loading={uploading} size={isPhone ? 'middle' : 'small'} style={{ borderRadius: 8, minHeight: isPhone ? 40 : 32 }}>
+              更换头像
+            </Button>
           </Upload>
           <Text type="secondary" style={{ fontSize: 11 }}>jpg/png/webp/gif · ≤2MB</Text>
         </div>
 
         {/* 表单区 */}
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div style={{ flex: 1, minWidth: 280, width: '100%' }}>
           <Form form={profileForm} layout="vertical">
             <Form.Item
-              label={<span style={{ fontWeight: 600 }}>用户名</span>}
+              label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>用户名</span>}
               name="username"
               rules={[
                 { required: true, message: '请输入用户名' },
@@ -379,7 +644,7 @@ function AccountCard() {
               <Input prefix={<UserOutlined />} size="large" />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" onClick={handleSaveProfile} loading={savingProfile} icon={<UserOutlined />} style={{ borderRadius: 10 }}>
+              <Button type="primary" onClick={handleSaveProfile} loading={savingProfile} icon={<UserOutlined />} size="large" style={{ borderRadius: 10, minHeight: 44 }}>
                 保存用户名
               </Button>
             </Form.Item>
@@ -391,7 +656,7 @@ function AccountCard() {
             <Row gutter={[16, 0]}>
               <Col xs={24} md={12}>
                 <Form.Item
-                  label={<span style={{ fontWeight: 600 }}>旧密码</span>}
+                  label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>旧密码</span>}
                   name="old_password"
                   rules={[{ required: true, message: '请输入旧密码' }]}
                 >
@@ -400,7 +665,7 @@ function AccountCard() {
               </Col>
               <Col xs={24} md={12}>
                 <Form.Item
-                  label={<span style={{ fontWeight: 600 }}>新密码</span>}
+                  label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>新密码</span>}
                   name="new_password"
                   rules={[
                     { required: true, message: '请输入新密码' },
@@ -421,7 +686,7 @@ function AccountCard() {
               </Col>
             </Row>
             <Form.Item
-              label={<span style={{ fontWeight: 600 }}>确认新密码</span>}
+              label={<span style={{ fontWeight: 600, color: 'var(--color-text-primary, #1a1a1a)' }}>确认新密码</span>}
               name="confirm"
               dependencies={['new_password']}
               rules={[
@@ -437,8 +702,8 @@ function AccountCard() {
               <Input.Password prefix={<LockOutlined />} autoComplete="new-password" size="large" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 0 }}>
-              <Space>
-                <Button type="primary" onClick={handleSavePwd} loading={savingPwd} danger icon={<LockOutlined />} style={{ borderRadius: 10 }}>
+              <Space wrap>
+                <Button type="primary" onClick={handleSavePwd} loading={savingPwd} danger icon={<LockOutlined />} size="large" style={{ borderRadius: 10, minHeight: 44 }}>
                   修改密码
                 </Button>
                 <Text type="secondary" style={{ fontSize: 12 }}>修改密码不会影响当前登录状态</Text>

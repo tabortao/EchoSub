@@ -11,16 +11,30 @@ import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 import NoteCardMenu from '@/components/NoteCardMenu'
 import TagManagerModal from '@/components/TagManagerModal'
 import { formatRelative } from '@/utils'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 import type { MediaListItem, Album, StudyNote, PlayRecord, MediaFile } from '@/types'
 
 const { Text, Title } = Typography
 
-// 媒体卡片宽度
-const CARD_WIDTH = 180
+// 媒体卡片宽度基准值（实际宽度按视口动态计算）
+// - 手机端：min(45vw, 160px) — 紧凑但仍可点
+// - 桌面端：固定 180px
+const CARD_WIDTH_DESKTOP = 180
 // 专辑入口卡片宽度（更大更突出）
-const ALBUM_CARD_WIDTH = 220
-// 专辑入口卡片封面高度（2:3 竖向海报比例）
-const ALBUM_COVER_HEIGHT = 330
+const ALBUM_CARD_WIDTH_DESKTOP = 220
+
+/** 根据视口宽度计算媒体卡片宽度（手机端自适应，桌面端固定） */
+function computeCardWidth(isPhone: boolean, vw: number): number {
+  if (!isPhone) return CARD_WIDTH_DESKTOP
+  // 手机端：约一半视口宽（两张卡片可见），不超过 160
+  return Math.min(Math.max(vw * 0.45, 140), 160)
+}
+
+/** 根据视口宽度计算专辑卡片宽度 */
+function computeAlbumCardWidth(isPhone: boolean, vw: number): number {
+  if (!isPhone) return ALBUM_CARD_WIDTH_DESKTOP
+  return Math.min(Math.max(vw * 0.45, 160), 200)
+}
 
 // 继续学习行的混排项
 type FeedItem =
@@ -61,6 +75,12 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
   const [recent, setRecent] = useState<FeedItem[]>([])
   const [albumEntries, setAlbumEntries] = useState<AlbumEntry[]>([])
   const [standalone, setStandalone] = useState<MediaListItem[]>([])
+  // 响应式卡片宽度
+  const { isPhone, width: viewportWidth } = useDeviceSize()
+  const CARD_WIDTH = computeCardWidth(isPhone, viewportWidth)
+  const ALBUM_CARD_WIDTH = computeAlbumCardWidth(isPhone, viewportWidth)
+  // 专辑封面 2:3 比例（响应式） — 让 MediaCover 用 aspectRatio 自动算高度
+  const ALBUM_COVER_HEIGHT = Math.round(ALBUM_CARD_WIDTH * 1.5)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -150,9 +170,9 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
           items={recent}
           renderItem={(f) =>
             f.kind === 'media' ? (
-              <MediaCard key={`m-${f.item.media.id}`} item={f.item} showProgress onClick={() => onPlayMedia(f.item.media.id)} />
+              <MediaCard key={`m-${f.item.media.id}`} item={f.item} showProgress onClick={() => onPlayMedia(f.item.media.id)} cardWidth={CARD_WIDTH} />
             ) : (
-              <NoteCard key={`n-${f.note.id}`} note={f.note} token={token} onClick={() => onOpenNote(f.note.id)} onChanged={load} />
+              <NoteCard key={`n-${f.note.id}`} note={f.note} token={token} onClick={() => onOpenNote(f.note.id)} onChanged={load} cardWidth={CARD_WIDTH} />
             )
           }
         />
@@ -170,6 +190,8 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
               token={token}
               onClick={() => onOpenAlbum(entry.album.album)}
               onChanged={load}
+              cardWidth={ALBUM_CARD_WIDTH}
+              coverHeight={ALBUM_COVER_HEIGHT}
             />
           )}
         />
@@ -181,7 +203,7 @@ export default function EmbyHome({ onPlayMedia, onOpenNote, onOpenAlbum }: EmbyH
           title="📋 独立资源"
           items={standalone}
           renderItem={(item) => (
-            <MediaCard key={`m-${item.media.id}`} item={item} showProgress={false} onClick={() => onPlayMedia(item.media.id)} />
+            <MediaCard key={`m-${item.media.id}`} item={item} showProgress={false} onClick={() => onPlayMedia(item.media.id)} cardWidth={CARD_WIDTH} />
           )}
         />
       )}
@@ -256,10 +278,10 @@ function ScrollRow<T>({
   return (
     <div style={{ marginBottom: 28 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <Title level={5} style={{ margin: 0, fontWeight: 700, color: '#1a1a1a' }}>{title}</Title>
+        <Title level={5} style={{ margin: 0, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>{title}</Title>
         {extra}
       </div>
-      <div style={scrollRowStyle}>
+      <div className="scroll-row" style={scrollRowStyle}>
         {items.map((item) => renderItem(item))}
       </div>
     </div>
@@ -278,7 +300,14 @@ const scrollRowStyle: React.CSSProperties = {
  * 右下角 ⋮ 菜单：置顶/取消置顶、重命名专辑、上传专辑封面（folder.jpg）、删除（密码确认）。
  * 优先使用 album.cover_path（来自 Emby 扫描或用户上传），否则自动挑选代表媒体封面。
  */
-function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; onClick: () => void; onChanged: () => void; token: string }) {
+function AlbumCard({ entry, onClick, onChanged, token, cardWidth, coverHeight }: {
+  entry: AlbumEntry
+  onClick: () => void
+  onChanged: () => void
+  token: string
+  cardWidth: number
+  coverHeight: number
+}) {
   const { album, cover, count, played, hasVideo } = entry
   const [hovered, setHovered] = useState(false)
   const playedPct = count > 0 ? Math.round((played / count) * 100) : 0
@@ -402,7 +431,7 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        width: ALBUM_CARD_WIDTH, flexShrink: 0, cursor: 'pointer',
+        width: cardWidth, flexShrink: 0, cursor: 'pointer',
         borderRadius: 14, overflow: 'hidden',
         boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
         transform: hovered ? 'translateY(-6px) scale(1.02)' : 'none',
@@ -411,7 +440,7 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
       }}
     >
       {/* 封面区 */}
-      <div style={{ position: 'relative', height: ALBUM_COVER_HEIGHT }}>
+      <div style={{ position: 'relative', height: coverHeight }}>
         {hasAlbumCover ? (
           <img
             src={albumCoverUrl}
@@ -420,7 +449,7 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
           />
         ) : cover ? (
-          <MediaCover media={cover.media} height={ALBUM_COVER_HEIGHT} colorKey={album.album} />
+          <MediaCover media={cover.media} height={coverHeight} colorKey={album.album} />
         ) : (
           <div style={{
             height: '100%',
@@ -566,11 +595,12 @@ function AlbumCard({ entry, onClick, onChanged, token }: { entry: AlbumEntry; on
  * 未读状态：play_count=0 且 last_position=0 时覆盖半透明灰色蒙版 + 锁图标，提示用户还未学习。
  */
 function MediaCard({
-  item, showProgress, onClick,
+  item, showProgress, onClick, cardWidth,
 }: {
   item: MediaListItem
   showProgress: boolean
   onClick: () => void
+  cardWidth: number
 }) {
   const m = item.media
   const progress = m.duration > 0 && item.last_position > 0
@@ -582,8 +612,9 @@ function MediaCard({
     <div
       onClick={onClick}
       style={{
-        width: CARD_WIDTH, flexShrink: 0, cursor: 'pointer',
-        borderRadius: 12, overflow: 'hidden', background: '#fff',
+        width: cardWidth, flexShrink: 0, cursor: 'pointer',
+        borderRadius: 12, overflow: 'hidden',
+        background: 'var(--color-bg-elevated, #fff)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         transition: 'transform 0.2s, box-shadow 0.2s',
       }}
@@ -648,20 +679,22 @@ function MediaCard({
  * 右下角 ⋮ 菜单：置顶、重命名、上传封面、删除（密码确认）。
  */
 function NoteCard({
-  note, token, onClick, onChanged,
+  note, token, onClick, onChanged, cardWidth,
 }: {
   note: StudyNote
   token: string
   onClick: () => void
   onChanged: () => void
+  cardWidth: number
 }) {
   const hasImg = note.images && note.images.length > 0
   return (
     <div
       onClick={onClick}
       style={{
-        width: CARD_WIDTH, flexShrink: 0, cursor: 'pointer',
-        borderRadius: 12, overflow: 'hidden', background: '#fff',
+        width: cardWidth, flexShrink: 0, cursor: 'pointer',
+        borderRadius: 12, overflow: 'hidden',
+        background: 'var(--color-bg-elevated, #fff)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
         transition: 'transform 0.2s, box-shadow 0.2s',
         position: 'relative',

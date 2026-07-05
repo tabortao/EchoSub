@@ -165,6 +165,8 @@ export interface SentenceProgress {
   updated_at: string
 }
 
+export type ColorMode = 'light' | 'dark' | 'auto'
+
 export interface Settings {
   loop_count: number
   sentence_repeat: number
@@ -173,6 +175,8 @@ export interface Settings {
   tts_speed: number
   /** 界面主题标识：default | green | purple | blue */
   theme?: string
+  /** 浅色/深色模式：light | dark | auto（v0.6.0 起） */
+  color_mode?: ColorMode
 }
 
 export interface AlbumProgress {

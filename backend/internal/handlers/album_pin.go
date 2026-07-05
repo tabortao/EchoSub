@@ -44,14 +44,3 @@ func ToggleAlbumPin() gin.HandlerFunc {
 		utils.OK(c, gin.H{"pinned": true})
 	}
 }
-
-// listUserPins 拉取当前用户所有置顶专辑（按 sort 升序）→ map[album]=true
-func listUserPins(uid uint) map[string]bool {
-	var pins []models.AlbumPin
-	database.DB.Where("user_id = ?", uid).Order("sort ASC").Find(&pins)
-	m := make(map[string]bool, len(pins))
-	for _, p := range pins {
-		m[p.Album] = true
-	}
-	return m
-}

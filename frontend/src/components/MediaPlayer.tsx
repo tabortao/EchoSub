@@ -21,6 +21,7 @@ import { useAuthStore } from '@/store/auth'
 import type { Sentence, PairedMedia, MediaType } from '@/types'
 import { formatDuration } from '@/utils'
 import MarkdownEditor from '@/components/MarkdownEditor'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 
 const { Text } = Typography
 
@@ -57,6 +58,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   const sentenceRefs = useRef<(HTMLDivElement | null)[]>([])
   const { loop_count, sentence_repeat, pause_seconds } = useSettingsStore()
   const token = useAuthStore((s) => s.token)
+  const { isPhone } = useDeviceSize()
 
   // 本地字幕状态（用于乐观更新听遍数，与 prop 同步）
   const [localSentences, setLocalSentences] = useState<Sentence[]>(sentences)
@@ -596,24 +598,25 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               onPause={() => setPlaying(false)}
               controls={false}
             />
-            {/* 视频叠加字幕：在画面底部显示当前句 */}
+            {/* 视频叠加字幕：在画面底部显示当前句（v0.6.0 安全区适配） */}
             {currentSentence && (
               <div
                 style={{
                   position: 'absolute',
-                  bottom: 16,
+                  bottom: 'calc(16px + var(--safe-bottom, 0px))',
                   left: '50%',
                   transform: 'translateX(-50%)',
-                  background: 'rgba(0,0,0,0.75)',
+                  background: 'rgba(0,0,0,0.78)',
                   color: '#fff',
-                  padding: '6px 18px',
-                  borderRadius: 6,
-                  maxWidth: '90%',
+                  padding: isFullscreen ? '10px 24px' : '8px 18px',
+                  borderRadius: 8,
+                  maxWidth: '92%',
                   textAlign: 'center',
-                  fontSize: isFullscreen ? 22 : 16,
+                  fontSize: isFullscreen ? 24 : isPhone ? 14 : 16,
                   lineHeight: 1.5,
                   pointerEvents: 'none',
                   zIndex: 10,
+                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
                 }}
               >
                 {currentMasked ? maskText(currentSentence.text) : currentSentence.text}
@@ -623,7 +626,14 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               type="text"
               icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
               onClick={toggleFullscreen}
-              style={{ position: 'absolute', top: 8, right: 8, color: '#fff', background: 'rgba(0,0,0,0.45)', zIndex: 11 }}
+              style={{
+                position: 'absolute', top: 8, right: 8,
+                color: '#fff', background: 'rgba(0,0,0,0.5)',
+                zIndex: 11,
+                width: isPhone ? 44 : 40,
+                height: isPhone ? 44 : 40,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
               title={isFullscreen ? '退出全屏' : '全屏播放'}
             />
           </>
@@ -659,56 +669,147 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
         )}
       </div>
 
-      {/* 控制按钮 */}
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Button
-          type="primary"
-          size="large"
-          icon={playing ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-          onClick={togglePlay}
-        >
-          {playing ? '暂停' : '播放'}
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={() => onSeek(0)}>重头</Button>
-        <Space>
-          <SoundOutlined />
-          <Slider min={0} max={1} step={0.05} value={volume} onChange={onVolume} style={{ width: 100 }} tooltip={{ formatter: (v) => `${Math.round((v ?? 0) * 100)}%` }} />
-        </Space>
-        <Space>
-          <span>速度</span>
-          <Button shape="circle" size="small" icon={<MinusOutlined />} onClick={decRate} disabled={playbackRate <= RATE_MIN} />
-          <span style={{ minWidth: 44, textAlign: 'center', fontWeight: 500 }}>{playbackRate.toFixed(1)}x</span>
-          <Button shape="circle" size="small" icon={<PlusOutlined />} onClick={incRate} disabled={playbackRate >= RATE_MAX} />
-        </Space>
-        <Tag color="gold" style={{ margin: 0 }}>已听 {playCount} 遍</Tag>
-      </Space>
+      {/* 控制按钮 —— v0.6.0 移动端 2 行布局 + 触控目标 44px */}
+      <div style={{ marginBottom: 16 }}>
+        {/* 第一行：主控制（播放/暂停、重头、收藏听遍数） */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          marginBottom: isPhone ? 8 : 0,
+        }}>
+          <Button
+            type="primary"
+            size="large"
+            icon={playing ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+            onClick={togglePlay}
+            style={{ minWidth: isPhone ? 100 : 96, minHeight: 44, fontSize: isPhone ? 15 : 14 }}
+          >
+            {playing ? '暂停' : '播放'}
+          </Button>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => onSeek(0)}
+            size={isPhone ? 'large' : 'middle'}
+            style={{ minHeight: 44 }}
+          >
+            重头
+          </Button>
+          <div style={{ flex: 1, minWidth: 0 }} />
+          <Tag color="gold" style={{ margin: 0, padding: '4px 12px', fontSize: 13, minHeight: 32, lineHeight: '24px' }}>
+            🏆 已听 {playCount} 遍
+          </Tag>
+        </div>
+
+        {/* 第二行：音量 + 速度（手机端换行；触控目标 44px） */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: isPhone ? 10 : 12,
+          flexWrap: 'wrap',
+          padding: isPhone ? '8px 12px' : 0,
+          background: isPhone ? 'var(--color-bg-page, #fafafa)' : 'transparent',
+          borderRadius: 10,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44 }}>
+            <SoundOutlined style={{ fontSize: 16 }} />
+            <Slider
+              min={0} max={1} step={0.05} value={volume} onChange={onVolume}
+              style={{ width: isPhone ? 100 : 120 }}
+              tooltip={{ formatter: (v) => `${Math.round((v ?? 0) * 100)}%` }}
+            />
+          </div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 8px',
+            background: isPhone ? 'var(--color-bg-elevated, #fff)' : 'transparent',
+            borderRadius: 8,
+            border: isPhone ? '1px solid var(--color-border-soft, rgba(0,0,0,0.06))' : 'none',
+            minHeight: 44,
+          }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--color-text-secondary, #595959)' }}>速度</span>
+            <Button
+              shape="circle"
+              size={isPhone ? 'middle' : 'small'}
+              icon={<MinusOutlined />}
+              onClick={decRate}
+              disabled={playbackRate <= RATE_MIN}
+              style={{ minWidth: 36, minHeight: 36 }}
+            />
+            <span style={{
+              minWidth: 48, textAlign: 'center', fontWeight: 600,
+              color: 'var(--ant-color-primary)',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {playbackRate.toFixed(1)}x
+            </span>
+            <Button
+              shape="circle"
+              size={isPhone ? 'middle' : 'small'}
+              icon={<PlusOutlined />}
+              onClick={incRate}
+              disabled={playbackRate >= RATE_MAX}
+              style={{ minWidth: 36, minHeight: 36 }}
+            />
+          </div>
+        </div>
+      </div>
 
       {/* 播放设置 */}
-      <Space wrap size="large" style={{ marginBottom: 16, padding: 16, background: '#fafafa', borderRadius: 8, display: 'flex' }}>
-        <Space>
+      <div style={{
+        marginBottom: 16,
+        padding: isPhone ? 12 : 16,
+        background: 'var(--color-bg-page, #fafafa)',
+        border: '1px solid var(--color-border-soft, rgba(0,0,0,0.06))',
+        borderRadius: 10,
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: isPhone ? 12 : 24,
+        alignItems: 'center',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 36 }}>
           <Tooltip title="开启后结合字幕逐句重复播放">
-            <span>逐句复读</span>
+            <span style={{ fontWeight: 500 }}>逐句复读</span>
           </Tooltip>
           <Switch checked={mode === 'repeat'} onChange={onModeChange} disabled={!hasSubtitle} />
           {!hasSubtitle && <Tag>无字幕</Tag>}
-        </Space>
-        <Space>
-          <span>整体循环</span>
-          <InputNumber min={1} max={20} value={loopCount} onChange={(v) => setLoopCount(v ?? 1)} size="small" style={{ width: 60 }} /> 次
-        </Space>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 36 }}>
+          <span style={{ fontWeight: 500 }}>整体循环</span>
+          <InputNumber
+            min={1} max={20} value={loopCount}
+            onChange={(v) => setLoopCount(v ?? 1)}
+            size={isPhone ? 'middle' : 'small'}
+            style={{ width: 64 }}
+          />
+          <span style={{ color: 'var(--color-text-tertiary, #8c8c8c)' }}>次</span>
+        </div>
         {mode === 'repeat' && (
           <>
-            <Space>
-              <span>每句重复</span>
-              <InputNumber min={1} max={20} value={sentenceRepeat} onChange={(v) => setSentenceRepeat(v ?? 3)} size="small" style={{ width: 60 }} /> 次
-            </Space>
-            <Space>
-              <span>句末停顿</span>
-              <InputNumber min={0} max={30} step={0.5} value={pauseSeconds} onChange={(v) => setPauseSeconds(v ?? 1.5)} size="small" style={{ width: 70 }} /> 秒
-            </Space>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 36 }}>
+              <span style={{ fontWeight: 500 }}>每句重复</span>
+              <InputNumber
+                min={1} max={20} value={sentenceRepeat}
+                onChange={(v) => setSentenceRepeat(v ?? 3)}
+                size={isPhone ? 'middle' : 'small'}
+                style={{ width: 64 }}
+              />
+              <span style={{ color: 'var(--color-text-tertiary, #8c8c8c)' }}>次</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 36 }}>
+              <span style={{ fontWeight: 500 }}>句末停顿</span>
+              <InputNumber
+                min={0} max={30} step={0.5} value={pauseSeconds}
+                onChange={(v) => setPauseSeconds(v ?? 1.5)}
+                size={isPhone ? 'middle' : 'small'}
+                style={{ width: 76 }}
+              />
+              <span style={{ color: 'var(--color-text-tertiary, #8c8c8c)' }}>秒</span>
+            </div>
           </>
         )}
-      </Space>
+      </div>
 
       {/* Tabs：全文 / 收藏句子 / 备注。无字幕时禁用前两个 tab，但备注可访问 */}
       <Tabs
@@ -720,49 +821,74 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               label: <span><OrderedListOutlined /> 全文</span>,
               children: (
                 <div>
-                  <div style={{ marginBottom: 8, color: '#666', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                    <span>点击跳转，绿色为已完成</span>
+                  <div style={{ marginBottom: 8, color: 'var(--color-text-secondary, #666)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <span style={{ fontSize: isPhone ? 12 : 13 }}>点击跳转，绿色为已完成</span>
                     <Space size="small" wrap>
                       <EyeInvisibleOutlined />
                       <Switch checked={maskMode} onChange={onMaskModeChange} size="small" />
                       <span style={{ fontSize: 12 }}>遮挡模式</span>
                       {maskMode && (
                         <>
-                          <Button size="small" type="link" onClick={revealAll} style={{ padding: 0 }}>全部揭示</Button>
-                          <Button size="small" type="link" onClick={hideAll} style={{ padding: 0 }}>全部遮挡</Button>
+                          <Button size="small" type="link" onClick={revealAll} style={{ padding: 0, minHeight: 32 }}>全部揭示</Button>
+                          <Button size="small" type="link" onClick={hideAll} style={{ padding: 0, minHeight: 32 }}>全部遮挡</Button>
                         </>
                       )}
                     </Space>
                   </div>
                   <div
                     ref={subtitleListRef}
-                    style={{ maxHeight: 'calc(100vh - 420px)', minHeight: 200, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
+                    style={{
+                      maxHeight: isPhone ? 'calc(100vh - 380px)' : 'calc(100vh - 420px)',
+                      minHeight: 200,
+                      overflowY: 'auto',
+                      border: '1px solid var(--color-border-soft, #f0f0f0)',
+                      borderRadius: 8,
+                      padding: 8,
+                      background: 'var(--color-bg-elevated, #fff)',
+                    }}
                   >
                     {localSentences.map((s, i) => {
                       const masked = maskMode && !revealed.has(s.index)
                       const isFav = favoriteSet.has(s.index)
+                      const isCurrent = i === currentSentenceIdx
                       return (
                         <div
                           key={s.index}
                           ref={(el) => { sentenceRefs.current[i] = el }}
                           onClick={() => handleSentenceClick(i)}
                           style={{
-                            padding: '8px 12px',
+                            padding: isPhone ? '10px 12px' : '8px 12px',
                             marginBottom: 4,
                             borderRadius: 6,
                             cursor: 'pointer',
-                            background: i === currentSentenceIdx ? '#e6f4ff' : s.completed ? '#f6ffed' : 'transparent',
-                            borderLeft: i === currentSentenceIdx ? '3px solid #1677ff' : s.completed ? '3px solid #52c41a' : '3px solid transparent',
+                            background: isCurrent
+                              ? 'color-mix(in srgb, var(--ant-color-primary) 10%, transparent)'
+                              : s.completed
+                                ? 'color-mix(in srgb, #52c41a 8%, transparent)'
+                                : 'transparent',
+                            borderLeft: isCurrent
+                              ? '3px solid var(--ant-color-primary)'
+                              : s.completed
+                                ? '3px solid #52c41a'
+                                : '3px solid transparent',
                             transition: 'all 0.2s',
                             display: 'flex',
                             alignItems: 'center',
                             gap: 8,
+                            minHeight: 44,
                           }}
                         >
-                          <span style={{ color: '#999', fontSize: 12, flexShrink: 0 }}>
+                          <span style={{ color: 'var(--color-text-tertiary, #999)', fontSize: 12, flexShrink: 0, minWidth: 48 }}>
                             {formatDuration(s.start)}
                           </span>
-                          <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333', flex: 1 }}>
+                          <span style={{
+                            color: isCurrent
+                              ? 'var(--ant-color-primary)'
+                              : 'var(--color-text-primary, #333)',
+                            flex: 1,
+                            fontSize: isPhone ? 14 : 13,
+                            lineHeight: 1.6,
+                          }}>
                             {masked ? maskText(s.text) : s.text}
                           </span>
                           {/* 始终显示听遍数，让用户能看到每句的学习情况 */}
@@ -771,9 +897,10 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                           <Tooltip title={isFav ? '取消收藏' : '收藏重难点'}>
                             <Button
                               type="text"
-                              size="small"
+                              size={isPhone ? 'middle' : 'small'}
                               icon={isFav ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
                               onClick={(e) => { e.stopPropagation(); toggleFavorite(i) }}
+                              style={{ minWidth: 36, minHeight: 36 }}
                             />
                           </Tooltip>
                         </div>
@@ -794,7 +921,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                       <Button
                         type={favoritePlayMode ? 'primary' : 'default'}
                         icon={favoritePlayMode ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-                        size="small"
+                        size={isPhone ? 'middle' : 'small'}
                         onClick={() => {
                           const next = !favoritePlayMode
                           setFavoritePlayMode(next)
@@ -812,57 +939,80 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                             message.info('已退出收藏播放模式')
                           }
                         }}
+                        style={{ minHeight: isPhone ? 40 : 32 }}
                       >
                         {favoritePlayMode ? '停止收藏播放' : '▶ 播放收藏'}
                       </Button>
                       {favoritePlayMode && (
                         <Tag color="orange">收藏播放中…</Tag>
                       )}
-                      <span style={{ color: '#999', fontSize: 12 }}>
+                      <span style={{ color: 'var(--color-text-tertiary, #999)', fontSize: 12 }}>
                         按收藏顺序逐句播放，播完自动跳下一句收藏
                       </span>
                     </div>
                   )}
                   <div
-                    style={{ maxHeight: 'calc(100vh - 470px)', minHeight: 160, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 8, padding: 8 }}
+                    style={{
+                      maxHeight: isPhone ? 'calc(100vh - 430px)' : 'calc(100vh - 470px)',
+                      minHeight: 160,
+                      overflowY: 'auto',
+                      border: '1px solid var(--color-border-soft, #f0f0f0)',
+                      borderRadius: 8,
+                      padding: 8,
+                      background: 'var(--color-bg-elevated, #fff)',
+                    }}
                   >
                   {favoriteSet.size === 0 ? (
-                    <div style={{ textAlign: 'center', color: '#999', padding: 40 }}>
+                    <div style={{ textAlign: 'center', color: 'var(--color-text-tertiary, #999)', padding: 40 }}>
                       暂无收藏句子，点击字幕右侧星标收藏重难点
                     </div>
                   ) : (
                     localSentences.filter((s) => favoriteSet.has(s.index)).map((s) => {
                       const i = localSentences.findIndex((x) => x.index === s.index)
+                      const isCurrent = i === currentSentenceIdx
                       return (
                         <div
                           key={s.index}
                           onClick={() => jumpToSentence(i)}
                           style={{
-                            padding: '8px 12px',
+                            padding: isPhone ? '10px 12px' : '8px 12px',
                             marginBottom: 4,
                             borderRadius: 6,
                             cursor: 'pointer',
-                            background: i === currentSentenceIdx ? '#e6f4ff' : 'transparent',
-                            borderLeft: i === currentSentenceIdx ? '3px solid #1677ff' : '3px solid transparent',
+                            background: isCurrent
+                              ? 'color-mix(in srgb, var(--ant-color-primary) 10%, transparent)'
+                              : 'transparent',
+                            borderLeft: isCurrent
+                              ? '3px solid var(--ant-color-primary)'
+                              : '3px solid transparent',
                             transition: 'all 0.2s',
                             display: 'flex',
                             alignItems: 'center',
                             gap: 8,
+                            minHeight: 44,
                           }}
                         >
-                          <span style={{ color: '#999', fontSize: 12, flexShrink: 0 }}>
+                          <span style={{ color: 'var(--color-text-tertiary, #999)', fontSize: 12, flexShrink: 0, minWidth: 48 }}>
                             {formatDuration(s.start)}
                           </span>
-                          <span style={{ color: i === currentSentenceIdx ? '#1677ff' : '#333', flex: 1 }}>
+                          <span style={{
+                            color: isCurrent
+                              ? 'var(--ant-color-primary)'
+                              : 'var(--color-text-primary, #333)',
+                            flex: 1,
+                            fontSize: isPhone ? 14 : 13,
+                            lineHeight: 1.6,
+                          }}>
                             {s.text}
                           </span>
                           <Tag color={s.repeat_count > 0 ? 'orange' : 'default'} style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
                           <Tooltip title="取消收藏">
                             <Button
                               type="text"
-                              size="small"
+                              size={isPhone ? 'middle' : 'small'}
                               icon={<StarFilled style={{ color: '#faad14' }} />}
                               onClick={(e) => { e.stopPropagation(); toggleFavorite(i) }}
+                              style={{ minWidth: 36, minHeight: 36 }}
                             />
                           </Tooltip>
                         </div>

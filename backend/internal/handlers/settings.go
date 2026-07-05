@@ -11,7 +11,7 @@ import (
 	"github.com/yaole/EchoSub/backend/internal/utils"
 )
 
-// settingsReq 学习偏好 + TTS 设置 + 主题
+// settingsReq 学习偏好 + TTS 设置 + 主题 + 颜色模式
 type settingsReq struct {
 	LoopCount      int     `json:"loop_count"`
 	SentenceRepeat int     `json:"sentence_repeat"`
@@ -19,6 +19,7 @@ type settingsReq struct {
 	TTSVoice       string  `json:"tts_voice"`
 	TTSSpeed       float64 `json:"tts_speed"`
 	Theme          string  `json:"theme"`
+	ColorMode      string  `json:"color_mode"`
 }
 
 // 默认 TTS 语音
@@ -31,6 +32,13 @@ var validThemes = map[string]bool{
 	"green":   true,
 	"purple":  true,
 	"blue":    true,
+}
+
+// 合法颜色模式（v0.6.0 起）：light / dark / auto
+var validColorModes = map[string]bool{
+	"light": true,
+	"dark":  true,
+	"auto":  true,
 }
 
 // GetSettings 获取当前用户的学习偏好
@@ -47,10 +55,11 @@ func GetSettings() gin.HandlerFunc {
 				"tts_voice":       defaultTTSVoice,
 				"tts_speed":       defaultTTSSpeed,
 				"theme":           "default",
+				"color_mode":      "auto",
 			})
 			return
 		}
-		// 兜底：旧数据可能没有 TTS / Theme 字段
+		// 兜底：旧数据可能没有 TTS / Theme / ColorMode 字段
 		if s.TTSVoice == "" {
 			s.TTSVoice = defaultTTSVoice
 		}
@@ -59,6 +68,9 @@ func GetSettings() gin.HandlerFunc {
 		}
 		if s.Theme == "" || !validThemes[s.Theme] {
 			s.Theme = "default"
+		}
+		if s.ColorMode == "" || !validColorModes[s.ColorMode] {
+			s.ColorMode = "auto"
 		}
 		utils.OK(c, s)
 	}
@@ -84,6 +96,10 @@ func UpdateSettings() gin.HandlerFunc {
 		if !validThemes[req.Theme] {
 			req.Theme = "default"
 		}
+		// ColorMode 兜底：非法值回退 auto
+		if !validColorModes[req.ColorMode] {
+			req.ColorMode = "auto"
+		}
 		var s models.Setting
 		result := database.DB.Where("user_id = ?", uid).First(&s)
 		if result.Error != nil {
@@ -95,6 +111,7 @@ func UpdateSettings() gin.HandlerFunc {
 				TTSVoice:       req.TTSVoice,
 				TTSSpeed:       req.TTSSpeed,
 				Theme:          req.Theme,
+				ColorMode:      req.ColorMode,
 			}
 			database.DB.Create(&s)
 		} else {
@@ -104,6 +121,7 @@ func UpdateSettings() gin.HandlerFunc {
 			s.TTSVoice = req.TTSVoice
 			s.TTSSpeed = req.TTSSpeed
 			s.Theme = req.Theme
+			s.ColorMode = req.ColorMode
 			database.DB.Save(&s)
 		}
 		utils.OK(c, s)

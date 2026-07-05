@@ -20,6 +20,7 @@ import {
 import { mediaApi } from '@/api'
 import type { BrowseEntry } from '@/types'
 import { formatSize } from '@/utils'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
 
 const { Text } = Typography
@@ -36,6 +37,7 @@ function fileEmoji(name: string): string {
 }
 
 export default function UploadPage() {
+  const { isPhone } = useDeviceSize()
   const [path, setPath] = useState('')
   const [dirs, setDirs] = useState<BrowseEntry[]>([])
   const [files, setFiles] = useState<BrowseEntry[]>([])
@@ -271,24 +273,56 @@ export default function UploadPage() {
       <Card
         size="small"
         title={
-          <Space>
+          <Space size={isPhone ? 4 : 8} wrap>
             <Text strong>📂 媒体目录</Text>
             {pathSegments.length > 0 && (
-              <Button size="small" type="text" icon={<ArrowLeftOutlined />} onClick={goUp}>
+              <Button
+                size={isPhone ? 'middle' : 'small'}
+                type="text"
+                icon={<ArrowLeftOutlined />}
+                onClick={goUp}
+                style={{ minHeight: 44, paddingInline: isPhone ? 12 : 7 }}
+              >
                 上级
               </Button>
             )}
           </Space>
         }
         extra={
-          <Space>
-            <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => load(path)}>刷新</Button>
-            <Button size="small" type="primary" icon={<FolderAddOutlined />} onClick={openMkdir}>新建目录</Button>
+          <Space size={isPhone ? 8 : 4} wrap>
+            <Button
+              size={isPhone ? 'middle' : 'small'}
+              type="text"
+              icon={<ReloadOutlined />}
+              onClick={() => load(path)}
+              style={{ minHeight: 44, paddingInline: isPhone ? 12 : 7 }}
+            >
+              刷新
+            </Button>
+            <Button
+              size={isPhone ? 'middle' : 'small'}
+              type="primary"
+              icon={<FolderAddOutlined />}
+              onClick={openMkdir}
+              style={{ minHeight: 44, paddingInline: isPhone ? 12 : 7 }}
+            >
+              新建目录
+            </Button>
           </Space>
         }
         style={{ marginBottom: 16 }}
       >
-        <Breadcrumb items={breadcrumbItems} style={{ marginBottom: 12 }} />
+        {/* 面包屑：手机端可横向滚动，路径深时不换行截断 */}
+        <div
+          style={{
+            marginBottom: 12,
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
+          <Breadcrumb items={breadcrumbItems} style={{ display: 'inline-flex', minWidth: '100%' }} />
+        </div>
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
@@ -300,28 +334,46 @@ export default function UploadPage() {
             dataSource={[...dirs, ...files]}
             renderItem={(item) => (
               <List.Item
-                style={{ cursor: item.is_dir ? 'pointer' : 'default', padding: '8px 12px', borderRadius: 8 }}
+                style={{
+                  cursor: item.is_dir ? 'pointer' : 'default',
+                  padding: isPhone ? '12px 12px' : '8px 12px',
+                  borderRadius: 8,
+                }}
                 onClick={() => item.is_dir && enterDir(item.name)}
               >
                 <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8 }}>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     {item.is_dir ? (
-                      <FolderOutlined style={{ color: '#1890FF', fontSize: 18 }} />
+                      <FolderOutlined style={{ color: '#1890FF', fontSize: 18, flexShrink: 0 }} />
                     ) : (
-                      <span style={{ fontSize: 16 }}>{fileEmoji(item.name)}</span>
+                      <span style={{ fontSize: 16, flexShrink: 0 }}>{fileEmoji(item.name)}</span>
                     )}
-                    <Text style={{ color: item.is_dir ? '#1890FF' : '#333', fontWeight: item.is_dir ? 600 : 400 }}>{item.name}</Text>
+                    <Text
+                      ellipsis
+                      style={{ color: item.is_dir ? '#1890FF' : '#333', fontWeight: item.is_dir ? 600 : 400, flex: 1, minWidth: 0 }}
+                    >
+                      {item.name}
+                    </Text>
                     {!item.is_dir && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
                         {formatSize(item.size)}
                       </Text>
                     )}
                   </div>
-                  <Tag color={item.is_dir ? 'blue' : 'default'} style={{ borderRadius: 8, margin: 0 }}>
+                  <Tag
+                    color={item.is_dir ? 'blue' : 'default'}
+                    style={{ borderRadius: 8, margin: 0, flexShrink: 0 }}
+                  >
                     {item.is_dir ? '📁 文件夹' : '📄 文件'}
                   </Tag>
                   <Dropdown menu={{ items: entryMenu(item) }} trigger={['click']} placement="bottomRight">
-                    <Button type="text" size="small" icon={<MoreOutlined />} onClick={(e) => e.stopPropagation()} />
+                    <Button
+                      type="text"
+                      size={isPhone ? 'middle' : 'small'}
+                      icon={<MoreOutlined />}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}
+                    />
                   </Dropdown>
                 </div>
               </List.Item>
@@ -369,19 +421,23 @@ export default function UploadPage() {
           </div>
         )}
 
-        <Space>
+        <Space wrap>
           <Button
             type="primary"
+            size="large"
             icon={<UploadOutlined />}
             onClick={handleUpload}
             disabled={fileList.length === 0 || uploading}
             loading={uploading}
+            style={{ minHeight: 44, minWidth: isPhone ? 120 : 'auto' }}
           >
             开始上传
           </Button>
           <Button
+            size="large"
             disabled={fileList.length === 0 || uploading}
             onClick={() => setFileList([])}
+            style={{ minHeight: 44 }}
           >
             清空
           </Button>

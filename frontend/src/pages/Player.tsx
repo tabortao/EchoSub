@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Spin, Button, Typography, message, Tooltip } from 'antd'
+import { Spin, Button, Typography, message, Tooltip, Space } from 'antd'
 import { ArrowLeftOutlined, StepBackwardOutlined, StepForwardOutlined } from '@ant-design/icons'
 import { mediaApi } from '@/api'
 import type { MediaFile, Sentence, MediaListItem, MediaListResponse, MediaDetailResponse, PairedMedia } from '@/types'
 import MediaPlayer from '@/components/MediaPlayer'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 
 /**
  * 播放器页面：加载单个媒体 + 字幕，并提供同专辑内上一个/下一个切换。
@@ -30,6 +31,7 @@ export default function Player() {
   const [record, setRecord] = useState<MediaListItem | null>(null)
   const [pairedMedia, setPairedMedia] = useState<PairedMedia | null>(null)
   const [siblingIds, setSiblingIds] = useState<{ prev?: number; next?: number }>({})
+  const { isPhone } = useDeviceSize()
 
   // 解析 ?position=X 覆盖：负数/NaN 当作 0
   const positionOverride = (() => {
@@ -115,21 +117,52 @@ export default function Player() {
 
   return (
     <div>
-      {/* 顶部：返回 + 标题 + 上一个/下一个切换 */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} title="返回" />
-        <Title level={4} style={{ marginBottom: 0, marginRight: 'auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {/* 顶部：返回 + 标题 + 上一个/下一个切换（v0.6.0 移动端触控 44px + 单行省略） */}
+      <div style={{
+        display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8,
+        flexWrap: isPhone ? 'wrap' : 'nowrap',
+      }}>
+        <Button
+          type="text"
+          icon={<ArrowLeftOutlined />}
+          onClick={() => navigate(-1)}
+          title="返回"
+          style={{
+            minWidth: 44, minHeight: 44,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        />
+        <Title
+          level={4}
+          style={{
+            marginBottom: 0,
+            marginRight: 'auto',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            minWidth: 0, // 关键：flex 子项 min-width 默认 auto 会撑爆父容器
+            color: 'var(--color-text-primary, #1a1a1a)',
+            fontSize: isPhone ? 16 : 20,
+            flex: 1,
+            lineHeight: 1.4,
+          }}
+        >
           {media.name}
         </Title>
-        {/* 同专辑内切换上一个/下一个学习内容 */}
+        {/* 同专辑内切换上一个/下一个学习内容 —— 触控 44px */}
         {(siblingIds.prev || siblingIds.next) && (
-          <>
+          <Space size={4} style={{ flexShrink: 0 }}>
             <Tooltip title={siblingIds.prev ? '上一个' : '已是第一个'}>
               <Button
                 type="text"
                 icon={<StepBackwardOutlined />}
                 disabled={!siblingIds.prev}
                 onClick={() => goTo(siblingIds.prev)}
+                style={{
+                  minWidth: 44, minHeight: 44,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
               />
             </Tooltip>
             <Tooltip title={siblingIds.next ? '下一个' : '已是最后一个'}>
@@ -138,11 +171,28 @@ export default function Player() {
                 icon={<StepForwardOutlined />}
                 disabled={!siblingIds.next}
                 onClick={() => goTo(siblingIds.next)}
+                style={{
+                  minWidth: 44, minHeight: 44,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
               />
             </Tooltip>
-          </>
+          </Space>
         )}
       </div>
+      {/* 副信息：手机端单行 + 桌面端可选附加（专辑名 / 时长） */}
+      {(media.album || media.duration) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          marginBottom: 12, paddingLeft: 4, flexWrap: 'wrap',
+        }}>
+          {media.album && (
+            <Text type="secondary" style={{ fontSize: isPhone ? 12 : 13 }}>
+              📂 {media.album}{media.sub_album ? ` / ${media.sub_album}` : ''}
+            </Text>
+          )}
+        </div>
+      )}
       <MediaPlayer
         mediaId={media.id}
         mediaType={media.type}

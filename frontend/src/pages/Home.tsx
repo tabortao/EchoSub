@@ -410,7 +410,7 @@ function GridView(props: {
       ) : (
         <Row gutter={[16, 16]}>
           {feed.map((f) => (
-            <Col xs={24} sm={12} md={8} lg={6} xl={6} xxl={4} key={f.kind === 'media' ? `m-${f.item.media.id}` : `n-${f.note.id}`}>
+            <Col xs={12} sm={8} md={6} lg={4} xl={4} xxl={4} key={f.kind === 'media' ? `m-${f.item.media.id}` : `n-${f.note.id}`}>
               {f.kind === 'media' ? (
                 (() => {
                   // 未读：play_count=0 且 last_position=0 表示用户从未播放/学习过

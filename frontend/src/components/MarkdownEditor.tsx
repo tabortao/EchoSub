@@ -6,6 +6,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useSettingsStore } from '@/store/settings'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 import { markdownToPlainText } from '@/utils'
 
 const { Text } = Typography
@@ -43,6 +44,10 @@ interface MarkdownEditorProps {
  * 失焦自动调用 onBlurSave（若提供）。
  *
  * 用于：学习页面（NoteEditor）、文件备注 Tab 等需要 Markdown 渲染/编辑的场景。
+ *
+ * v0.6.0 移动端适配：
+ * - 工具栏按钮 size 在 isPhone 时升级为 large（minHeight 40），保证触控目标 ≥ 40px
+ * - 编辑 / 朗读按钮在窄屏时合并到下拉菜单以节省横向空间
  */
 export default function MarkdownEditor({
   value,
@@ -55,6 +60,7 @@ export default function MarkdownEditor({
   defaultEditing = false,
   compact = false,
 }: MarkdownEditorProps) {
+  const { isPhone } = useDeviceSize()
   const [editing, setEditing] = useState(defaultEditing)
   const [saving, setSaving] = useState(false)
   const [ttsLoading, setTtsLoading] = useState(false)
@@ -115,23 +121,31 @@ export default function MarkdownEditor({
     }
   }
 
+  // 工具栏按钮的统一尺寸与触控目标：手机端 large 化（默认 size=middle，minHeight 40~44）
+  const btnSize = isPhone ? 'large' : 'middle'
+  const btnMinHeight = 44
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <Space>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+        <Space wrap>
           <Button
             type={editing ? 'default' : 'primary'}
+            size={btnSize}
             icon={editing ? <EditOutlined /> : <EyeOutlined />}
             onClick={() => setEditing(!editing)}
+            style={{ minHeight: btnMinHeight }}
           >
             {editing ? '编辑原文' : '预览渲染'}
           </Button>
           {showTTS && (
             <Tooltip title="使用 TTS 朗读内容（自动去除 Markdown 符号）">
               <Button
+                size={btnSize}
                 icon={ttsLoading ? <LoadingOutlined /> : <SoundOutlined />}
                 onClick={handleTTS}
                 loading={ttsLoading}
+                style={{ minHeight: btnMinHeight }}
               >
                 朗读
               </Button>

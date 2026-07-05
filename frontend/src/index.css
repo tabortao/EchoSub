@@ -1,68 +1,172 @@
+/* ===========================================================================
+ * EchoSub 全局样式（v0.6.0 起）
+ *
+ * 设计原则：
+ * 1. 响应式：使用 clamp() / min() 实现流体布局，所有尺寸在手机/平板/桌面均合理。
+ * 2. 安全区：iOS 刘海屏 / 底部 Home Indicator 通过 env(safe-area-inset-*) 适配。
+ * 3. 触控：所有可交互元素最小触控目标 44×44px（Apple HIG / Material 通用规范）。
+ * 4. 深色模式：通过 [data-theme="dark"] 切换语义色变量，antd 通过 cssVar 联动。
+ * 5. 性能：动画仅用 transform / opacity，避免触发布局重排。
+ * =========================================================================== */
+
 :root {
+  /* ── 字体栈 ── */
   --sans: system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --heading: system-ui, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --heading: var(--sans);
   --mono: ui-monospace, Consolas, monospace;
 
-  /* 小学生审美配色 —— 温暖明亮 */
-  --color-primary: #FF7A45;
-  --color-blue: #1890FF;
-  --color-green: #52C41A;
-  --color-purple: #722ED1;
-  --color-pink: #EB2F96;
-  --color-cyan: #13C2C2;
-  --color-yellow: #FAAD14;
-  --bg-warm: #FFF9F0;
+  /* ── 触控目标最小尺寸（44×44，符合 Apple HIG / Material 规范） ── */
+  --touch-target: 44px;
+  --touch-target-sm: 36px; /* 次要可点击元素 */
+  --hit-slop: 8px;         /* 隐形扩展点击区 */
 
-  font: 15px/150% var(--sans);
+  /* ── 间距 token（流体缩放：手机 12px → 桌面 24px） ── */
+  --space-xs: clamp(4px, 1vw, 8px);
+  --space-sm: clamp(8px, 1.5vw, 12px);
+  --space-md: clamp(12px, 2vw, 16px);
+  --space-lg: clamp(16px, 3vw, 24px);
+  --space-xl: clamp(24px, 4vw, 32px);
+
+  /* ── 圆角 token ── */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* ── 字号 token（流体缩放，桌面略大） ── */
+  --font-xs: 12px;
+  --font-sm: 13px;
+  --font-md: 15px;
+  --font-lg: 17px;
+  --font-xl: 20px;
+  --font-2xl: 24px;
+  --font-3xl: clamp(24px, 4vw, 32px);
+
+  /* ── safe-area（iOS 刘海 / Home Indicator 适配，Android 默认为 0） ── */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* ── 内容最大宽度（iPad / 桌面） ── */
+  --content-max-width: 1600px;
+  --content-padding-x: clamp(12px, 3vw, 32px);
+
+  /* ── 默认浅色语义色（由 App.tsx 切换 data-theme 时覆盖） ── */
+  --color-bg-page: #FFF9F0;
+  --color-bg-elevated: #FFFFFF;
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #595959;
+  --color-text-tertiary: #8c8c8c;
+  --color-border-soft: rgba(0, 0, 0, 0.06);
+  --color-border-strong: rgba(0, 0, 0, 0.12);
+  --color-shadow-card: 0 4px 16px rgba(255, 122, 69, 0.06);
+  --color-shadow-card-hover: 0 8px 24px rgba(255, 122, 69, 0.12);
+  --color-mask-unread: rgba(0, 0, 0, 0.55);
+
+  font: var(--font-md)/150% var(--sans);
   color-scheme: light;
-  color: #333;
-  background: var(--bg-warm);
+  color: var(--color-text-primary);
+  background: var(--color-bg-page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── 深色调色板（v0.6.0 起） ── */
+[data-theme='dark'] {
+  --color-bg-page: #0F0E0C;
+  --color-bg-elevated: #1F1E1C;
+  --color-text-primary: #E6E6E6;
+  --color-text-secondary: #B3B3B3;
+  --color-text-tertiary: #8C8C8C;
+  --color-border-soft: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --color-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --color-mask-unread: rgba(0, 0, 0, 0.7);
+  color-scheme: dark;
+}
+
+/* ── 跟随系统（仅当 user 选择 auto 且未显式设置 data-theme 时由 App 推断） ── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --color-bg-page: #0F0E0C;
+    --color-bg-elevated: #1F1E1C;
+    --color-text-primary: #E6E6E6;
+    --color-text-secondary: #B3B3B3;
+    --color-text-tertiary: #8C8C8C;
+    --color-border-soft: rgba(255, 255, 255, 0.08);
+    --color-border-strong: rgba(255, 255, 255, 0.16);
+    --color-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --color-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.55);
+    --color-mask-unread: rgba(0, 0, 0, 0.7);
+    color-scheme: dark;
+  }
+}
+
+/* ── 根容器 ── */
 #root {
   width: 100%;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  /* 防止移动端橡皮筋效果 */
+  overscroll-behavior-y: contain;
 }
 
-body {
+html, body {
   margin: 0;
-  background: var(--bg-warm);
+  padding: 0;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  /* 移动端滚动优化 */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
-h1, h2 {
+/* ── 标题 ── */
+h1, h2, h3 {
   font-family: var(--heading);
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--color-text-primary);
+  margin: 0;
 }
-
-h1 { font-size: 28px; margin: 16px 0; }
-h2 { font-size: 22px; margin: 0 0 8px; }
+h1 { font-size: var(--font-3xl); margin: 16px 0; }
+h2 { font-size: var(--font-xl); margin: 0 0 8px; }
+h3 { font-size: var(--font-lg); margin: 0 0 8px; }
 p { margin: 0; }
 
-/* ===== 卡片 hover 上浮动画 —— 跟随主题色 ===== */
-.ant-card {
-  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
-}
-.ant-card-hoverable:hover {
-  transform: translateY(-4px) !important;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ant-color-primary) 18%, transparent) !important;
+/* ── 链接：跟随 antd 主色 ── */
+a {
+  color: var(--ant-color-link, #FF7A45);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* ===== 滚动条美化 —— 跟随主题色 ===== */
+/* ── 卡片 hover 上浮动画 ── */
+.ant-card {
+  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+  background: var(--color-bg-elevated);
+}
+.ant-card-hoverable:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--color-shadow-card-hover) !important;
+}
+/* 触屏设备禁用 hover 上浮（避免点击后持续浮起） */
+@media (hover: none) {
+  .ant-card-hoverable:hover { transform: none; }
+  .ant-card-hoverable:active { transform: scale(0.98); }
+}
+
+/* ── 滚动条美化 ── */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--ant-color-primary) 25%, transparent);
   border-radius: 4px;
@@ -71,16 +175,63 @@ p { margin: 0; }
   background: color-mix(in srgb, var(--ant-color-primary) 45%, transparent);
 }
 
-/* ===== 按钮 hover 微缩放（触觉反馈） ===== */
+/* ── 按钮 active 反馈 ── */
 .ant-btn:not(:disabled):active {
   transform: scale(0.97);
   transition: transform 0.1s;
 }
 
-/* ===== 学习记录页表格斑马纹 ===== */
+/* ── 表格斑马纹（学习记录） ── */
 .ant-table-wrapper .ant-table-tbody > tr.row-even > td {
-  background: var(--row-even-bg, #fff) !important;
+  background: var(--row-even-bg, var(--color-bg-elevated)) !important;
 }
 .ant-table-wrapper .ant-table-tbody > tr.row-odd > td {
   background: var(--row-odd-bg, #fef9f5) !important;
+}
+[data-theme='dark'] .ant-table-wrapper .ant-table-tbody > tr.row-odd > td {
+  background: #1a1816 !important;
+}
+
+/* ── 触控目标兜底：菜单 / 按钮的最小尺寸 ── */
+.ant-menu-item,
+.ant-menu-submenu-title {
+  min-height: var(--touch-target-sm) !important;
+  line-height: var(--touch-target-sm) !important;
+}
+.ant-btn {
+  min-height: var(--touch-target-sm);
+}
+.ant-btn-lg {
+  min-height: var(--touch-target);
+}
+
+/* ── 横向滚动行引导渐变（移动端左滑提示） ── */
+.scroll-row {
+  position: relative;
+}
+.scroll-row::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  background: linear-gradient(to right, transparent, var(--color-bg-page));
+  pointer-events: none;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+.scroll-row.scrolled-end::after { opacity: 0; }
+
+/* ── 安全区内边距工具类 ── */
+.safe-top { padding-top: var(--safe-top); }
+.safe-bottom { padding-bottom: var(--safe-bottom); }
+.safe-x { padding-left: var(--safe-left); padding-right: var(--safe-right); }
+
+/* ── 移动端常驻：隐藏桌面专属元素 ── */
+@media (max-width: 767px) {
+  .desktop-only { display: none !important; }
+}
+@media (min-width: 768px) {
+  .mobile-only { display: none !important; }
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Modal, Input, Form, Typography } from 'antd'
 import { LockOutlined } from '@ant-design/icons'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 
 const { Text } = Typography
 
@@ -23,6 +24,8 @@ interface PasswordConfirmModalProps {
  * 二次确认删除 Modal：要求用户输入登录密码才能继续。
  * 后端在删除端点（DELETE /media/:id, /media/file, /media/dir, /albums）内部
  * 会用 `X-Delete-Password` header 校验当前用户密码，错误则返回 401。
+ *
+ * v0.6.0 移动端适配：手机端输入框与按钮升级 large（minHeight 44），确保触控目标合规。
  */
 export default function PasswordConfirmModal({
   open,
@@ -33,6 +36,7 @@ export default function PasswordConfirmModal({
   onConfirm,
   onCancel,
 }: PasswordConfirmModalProps) {
+  const { isPhone } = useDeviceSize()
   const [form] = Form.useForm<{ password: string }>()
   const [submitting, setSubmitting] = useState(false)
 
@@ -57,6 +61,9 @@ export default function PasswordConfirmModal({
     onCancel()
   }
 
+  const inputSize = isPhone ? 'large' : 'middle'
+  const btnMinHeight = 44
+
   return (
     <Modal
       title={title}
@@ -64,8 +71,9 @@ export default function PasswordConfirmModal({
       onOk={handleOk}
       onCancel={handleCancel}
       okText="确认删除"
-      okButtonProps={{ danger: true, loading: submitting || loading }}
+      okButtonProps={{ danger: true, loading: submitting || loading, size: inputSize, style: { minHeight: btnMinHeight } }}
       cancelText="取消"
+      cancelButtonProps={{ size: inputSize, style: { minHeight: btnMinHeight } }}
       destroyOnClose
       maskClosable={!(submitting || loading)}
     >
@@ -87,6 +95,8 @@ export default function PasswordConfirmModal({
             autoComplete="current-password"
             autoFocus
             onPressEnter={handleOk}
+            size={inputSize}
+            style={{ minHeight: btnMinHeight }}
           />
         </Form.Item>
       </Form>

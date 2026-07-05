@@ -4,6 +4,7 @@ import { PlusOutlined, DeleteOutlined, EditOutlined, FilterFilled, RollbackOutli
 import { useNavigate } from 'react-router-dom'
 import { tagApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 import type { Tag as TagType, TagFilterResult, MediaFile, StudyNote, TagFilterAlbum } from '@/types'
 import { formatDuration } from '@/utils'
 
@@ -20,6 +21,7 @@ const { Text, Title } = Typography
 export default function Tags() {
   const navigate = useNavigate()
   const token = useAuthStore((s) => s.token) ?? ''
+  const { isPhone } = useDeviceSize()
   const [tags, setTags] = useState<TagType[]>([])
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState('')
@@ -152,8 +154,8 @@ export default function Tags() {
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>标签管理</Title>
-      <Card style={{ marginBottom: 16 }}>
+      <Title level={4} style={{ marginBottom: 16, color: 'var(--color-text-primary, #1a1a1a)' }}>标签管理</Title>
+      <Card style={{ marginBottom: 16, background: 'var(--color-bg-elevated, #fff)' }}>
         <Row gutter={8} align="middle">
           <Col flex="auto">
             <Input
@@ -162,10 +164,11 @@ export default function Tags() {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onPressEnter={handleCreate}
+              size="large"
             />
           </Col>
           <Col>
-            <Button type="primary" onClick={handleCreate}>添加</Button>
+            <Button type="primary" onClick={handleCreate} size="large" style={{ minHeight: 40 }}>添加</Button>
           </Col>
         </Row>
       </Card>
@@ -173,33 +176,41 @@ export default function Tags() {
       {tags.length === 0 ? (
         <Empty description="暂无标签" />
       ) : (
-        <Row gutter={[16, 16]}>
+        <Row gutter={[12, 12]}>
           {tags.map((t) => {
             const c = counts[t.id] ?? { albums: 0, seasons: 0, files: 0 }
             const isSelected = selectedTagId === t.id
             return (
-              <Col xs={24} sm={12} md={8} lg={6} key={t.id}>
+              <Col xs={12} sm={8} md={6} lg={4} key={t.id}>
                 <Card
                   hoverable
                   onClick={() => onCardClick(t)}
-                  style={isSelected ? { borderColor: 'var(--ant-color-primary)', boxShadow: `0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 20%, transparent)` } : undefined}
+                  style={isSelected ? {
+                    borderColor: 'var(--ant-color-primary)',
+                    boxShadow: `0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 20%, transparent)`,
+                  } : { background: 'var(--color-bg-elevated, #fff)' }}
+                  styles={{ body: { padding: 12 } }}
                   actions={[
-                    <EditOutlined key="edit" onClick={(e) => { e.stopPropagation(); setEditing(t); setEditName(t.name) }} />,
-                    <DeleteOutlined key="del" onClick={(e) => { e.stopPropagation(); handleDelete(t) }} />,
+                    <span key="edit" onClick={(e) => { e.stopPropagation(); setEditing(t); setEditName(t.name) }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44 }}>
+                      <EditOutlined />
+                    </span>,
+                    <span key="del" onClick={(e) => { e.stopPropagation(); handleDelete(t) }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44 }}>
+                      <DeleteOutlined />
+                    </span>,
                   ]}
                 >
                   <Card.Meta
                     title={
-                      <Space>
-                        <Tag color="blue" style={{ fontSize: 16, margin: 0 }}>{t.name}</Tag>
+                      <Space wrap>
+                        <Tag color="blue" style={{ fontSize: isPhone ? 14 : 16, margin: 0, padding: '2px 10px' }}>{t.name}</Tag>
                         {isSelected && <FilterFilled style={{ color: 'var(--ant-color-primary)' }} />}
                       </Space>
                     }
                     description={
                       <Space size={4} wrap>
-                        <Tooltip title="专辑数"><Tag color="orange" style={{ borderRadius: 8 }}>📂 {c.albums}</Tag></Tooltip>
-                        <Tooltip title="季数"><Tag color="cyan" style={{ borderRadius: 8 }}>📁 {c.seasons}</Tag></Tooltip>
-                        <Tooltip title="文件数（媒体 + 学习页）"><Tag color="green" style={{ borderRadius: 8 }}>📄 {c.files}</Tag></Tooltip>
+                        <Tooltip title="专辑数"><Tag color="orange" style={{ borderRadius: 8, margin: 0 }}>📂 {c.albums}</Tag></Tooltip>
+                        <Tooltip title="季数"><Tag color="cyan" style={{ borderRadius: 8, margin: 0 }}>📁 {c.seasons}</Tag></Tooltip>
+                        <Tooltip title="文件数（媒体 + 学习页）"><Tag color="green" style={{ borderRadius: 8, margin: 0 }}>📄 {c.files}</Tag></Tooltip>
                       </Space>
                     }
                   />
@@ -210,22 +221,24 @@ export default function Tags() {
         </Row>
       )}
 
-      {/* 标签筛选结果：按三组分类展示 */}
+      {/* 标签筛选结果：按三组分类展示（v0.6.0 移动端单列，桌面 3 列） */}
       {selectedTagId != null && (
         <div style={{ marginTop: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-            <Title level={5} style={{ margin: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <Title level={5} style={{ margin: 0, color: 'var(--color-text-primary, #1a1a1a)' }}>
               标签「{filterResult?.tag?.name ?? ''}」下的内容
             </Title>
-            <Button size="small" icon={<RollbackOutlined />} onClick={() => setSelectedTagId(null)}>收起</Button>
+            <Button size={isPhone ? 'middle' : 'small'} icon={<RollbackOutlined />} onClick={() => setSelectedTagId(null)} style={{ minHeight: isPhone ? 40 : 32 }}>
+              收起
+            </Button>
           </div>
 
           {filterLoading ? (
             <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
           ) : filterResult ? (
-            <Row gutter={[16, 16]}>
+            <Row gutter={[12, 12]}>
               {/* 专辑组 */}
-              <Col xs={24} lg={8}>
+              <Col xs={24} md={12} lg={8}>
                 <Card
                   size="small"
                   title={
@@ -255,7 +268,7 @@ export default function Tags() {
               </Col>
 
               {/* 季组 */}
-              <Col xs={24} lg={8}>
+              <Col xs={24} md={12} lg={8}>
                 <Card
                   size="small"
                   title={
@@ -320,8 +333,10 @@ export default function Tags() {
         open={!!editing}
         onOk={handleUpdate}
         onCancel={() => setEditing(null)}
+        okText="保存"
+        cancelText="取消"
       >
-        <Input value={editName} onChange={(e) => setEditName(e.target.value)} onPressEnter={handleUpdate} />
+        <Input value={editName} onChange={(e) => setEditName(e.target.value)} onPressEnter={handleUpdate} size="large" />
       </Modal>
     </div>
   )
@@ -339,12 +354,14 @@ function AlbumEntryCard({ entry, token, onClick, kind }: {
       onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: 8, borderRadius: 10, cursor: 'pointer',
-        background: '#fafafa', border: '1px solid #f0f0f0',
+        padding: 10, borderRadius: 10, cursor: 'pointer',
+        background: 'var(--color-bg-page, #fafafa)',
+        border: '1px solid var(--color-border-soft, #f0f0f0)',
         transition: 'all 0.2s',
+        minHeight: 64,
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f5ff'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#f0f0f0' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--ant-color-primary) 8%, transparent)'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-bg-page, #fafafa)'; e.currentTarget.style.borderColor = 'var(--color-border-soft, #f0f0f0)' }}
     >
       <div style={{
         width: 48, height: 48, flexShrink: 0, borderRadius: 8, overflow: 'hidden',
@@ -358,7 +375,7 @@ function AlbumEntryCard({ entry, token, onClick, kind }: {
         )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>
+        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13, color: 'var(--color-text-primary, #1a1a1a)' }}>
           {entry.name}
         </Text>
         <Text type="secondary" style={{ fontSize: 11 }}>
@@ -376,16 +393,18 @@ function MediaEntryRow({ media, onClick }: { media: MediaFile; onClick: () => vo
       onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: 8, borderRadius: 10, cursor: 'pointer',
-        background: '#fafafa', border: '1px solid #f0f0f0',
+        padding: 10, borderRadius: 10, cursor: 'pointer',
+        background: 'var(--color-bg-page, #fafafa)',
+        border: '1px solid var(--color-border-soft, #f0f0f0)',
         transition: 'all 0.2s',
+        minHeight: 64,
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f5ff'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#f0f0f0' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--ant-color-primary) 8%, transparent)'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-bg-page, #fafafa)'; e.currentTarget.style.borderColor = 'var(--color-border-soft, #f0f0f0)' }}
     >
-      <PlayCircleOutlined style={{ fontSize: 20, color: media.type === 'video' ? '#eb2f96' : '#52c41a' }} />
+      <PlayCircleOutlined style={{ fontSize: 20, color: media.type === 'video' ? '#eb2f96' : '#52c41a', flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>{media.name}</Text>
+        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13, color: 'var(--color-text-primary, #1a1a1a)' }}>{media.name}</Text>
         <Text type="secondary" style={{ fontSize: 11 }}>
           {media.type === 'video' ? '🎬 视频' : '🎵 音频'} · {media.album ?? '独立资源'} {media.sub_album ? ` / ${media.sub_album}` : ''} · {formatDuration(media.duration)}
         </Text>
@@ -401,16 +420,18 @@ function NoteEntryRow({ note, onClick }: { note: StudyNote; onClick: () => void 
       onClick={onClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
-        padding: 8, borderRadius: 10, cursor: 'pointer',
-        background: '#fafafa', border: '1px solid #f0f0f0',
+        padding: 10, borderRadius: 10, cursor: 'pointer',
+        background: 'var(--color-bg-page, #fafafa)',
+        border: '1px solid var(--color-border-soft, #f0f0f0)',
         transition: 'all 0.2s',
+        minHeight: 64,
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f5ff'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; e.currentTarget.style.borderColor = '#f0f0f0' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--ant-color-primary) 8%, transparent)'; e.currentTarget.style.borderColor = 'var(--ant-color-primary)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--color-bg-page, #fafafa)'; e.currentTarget.style.borderColor = 'var(--color-border-soft, #f0f0f0)' }}
     >
-      <ReadOutlined style={{ fontSize: 20, color: '#722ed1' }} />
+      <ReadOutlined style={{ fontSize: 20, color: '#722ed1', flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13 }}>{note.title}</Text>
+        <Text ellipsis style={{ display: 'block', fontWeight: 600, fontSize: 13, color: 'var(--color-text-primary, #1a1a1a)' }}>{note.title}</Text>
         <Text type="secondary" style={{ fontSize: 11 }}>📝 学习页 · {note.album}</Text>
       </div>
     </div>

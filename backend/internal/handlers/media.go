@@ -254,10 +254,6 @@ func ListAlbums() gin.HandlerFunc {
 		// 拉取当前用户置顶的专辑（按 sort 升序）——置顶专辑排在最前
 		var pinList []models.AlbumPin
 		database.DB.Where("user_id = ?", uid).Order("sort ASC").Find(&pinList)
-		pinnedSet := make(map[string]bool, len(pinList))
-		for _, p := range pinList {
-			pinnedSet[p.Album] = true
-		}
 
 		// 一次性拉取所有 AlbumMeta（按 album 名映射到子专辑数组）
 		allMeta := make(map[string][]models.AlbumMeta)

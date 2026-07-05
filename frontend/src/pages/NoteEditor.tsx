@@ -2,30 +2,22 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Spin, Empty, Typography, Button, Space, Modal,
-  Input, message, Tooltip, Image, Tag,
+  Input, message, Image, Tag, Dropdown,
 } from 'antd'
+import type { MenuProps } from 'antd'
 import {
-  ArrowLeftOutlined, EditOutlined, EyeOutlined,
+  ArrowLeftOutlined,
   DeleteOutlined, UploadOutlined, LeftOutlined, RightOutlined,
-  SoundOutlined, LoadingOutlined, TagsOutlined,
+  TagsOutlined, MoreOutlined,
 } from '@ant-design/icons'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { noteApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
-import { useSettingsStore } from '@/store/settings'
-import { markdownToPlainText } from '@/utils'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
+import MarkdownEditor from '@/components/MarkdownEditor'
 import TagManagerModal from '@/components/TagManagerModal'
 import type { StudyNote } from '@/types'
 
 const { Text } = Typography
-const { TextArea } = Input
-
-// VoiceCraft TTS 端点（免费公开服务，兼容 OpenAI TTS 格式）
-const TTS_ENDPOINT = 'https://tts.wangwangit.com/v1/audio/speech'
-// 默认音色/语速兜底值（settings 未加载时使用，与后端默认值一致）
-const FALLBACK_TTS_VOICE = 'en-US-JennyNeural'
-const FALLBACK_TTS_SPEED = 1.0
 
 /**
  * 学习页面编辑器（独立路由页 /notes/:id）。
@@ -117,33 +109,24 @@ interface NoteEditorProps {
 }
 
 function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps) {
+  const { isPhone } = useDeviceSize()
   const [title, setTitle] = useState(note.title)
   const [content, setContent] = useState(note.content)
   const [images, setImages] = useState<string[]>(note.images)
-  const [editing, setEditing] = useState(false) // false=预览渲染, true=编辑原文
-  const [saving, setSaving] = useState(false)
   const [imgIndex, setImgIndex] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
-  const [ttsLoading, setTtsLoading] = useState(false)
   // 标签管理弹窗（v0.5.0 起）
   const [tagOpen, setTagOpen] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  // 从全局设置读取 TTS 默认音色与语速
-  const ttsVoice = useSettingsStore((s) => s.tts_voice) || FALLBACK_TTS_VOICE
-  const ttsSpeed = useSettingsStore((s) => s.tts_speed) || FALLBACK_TTS_SPEED
 
   // 标题/内容修改后保存
   const save = async (data: { title?: string; content?: string }) => {
-    setSaving(true)
     try {
       const res = await noteApi.update(note.id, data)
       if (data.title !== undefined) setTitle(res.data.data.title)
       if (data.content !== undefined) setContent(res.data.data.content)
     } catch {
       message.error('保存失败')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -171,62 +154,44 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
     }
   }
 
-  // TTS 朗读：调用 VoiceCraft API，播放返回的音频。
-  // 朗读前将 Markdown 转为纯文本，避免念出 # - > ** 等符号。
-  const handleTTS = async () => {
-    const text = markdownToPlainText(content).trim()
-    if (!text) {
-      message.warning('内容为空')
-      return
-    }
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current = null
-    }
-    setTtsLoading(true)
-    try {
-      const resp = await fetch(TTS_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: text,
-          voice: ttsVoice,
-          speed: ttsSpeed,
-          pitch: '0',
-          style: 'general',
-        }),
-      })
-      if (!resp.ok) throw new Error(`TTS 请求失败: ${resp.status}`)
-      const blob = await resp.blob()
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.onended = () => {
-        URL.revokeObjectURL(url)
-        audioRef.current = null
-      }
-      await audio.play()
-    } catch (err) {
-      message.error('朗读失败：' + (err as Error).message)
-    } finally {
-      setTtsLoading(false)
-    }
-  }
-
   const hasImages = images.length > 0
   const currentImg = hasImages ? images[imgIndex] : null
+
+  // 顶部操作菜单：手机端合并到「⋯」下拉，桌面端平铺
+  const moreMenu: MenuProps['items'] = isPhone ? [
+    { key: 'tag', icon: <TagsOutlined />, label: '管理标签', onClick: () => setTagOpen(true) },
+    { type: 'divider' },
+    { key: 'delete', icon: <DeleteOutlined />, label: <span style={{ color: '#ff4d4f' }}>删除笔记</span>, onClick: onDelete },
+  ] : []
+
+  // 按钮尺寸：手机端 large，桌面 middle
+  const btnSize = isPhone ? 'large' : 'middle'
 
   return (
     <div>
       {/* 顶部：返回 + 标题 + 操作 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
-        <Space wrap>
-          <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} title="返回" />
+        <Space wrap style={{ flex: 1, minWidth: 0 }}>
+          <Button
+            type="text"
+            size={btnSize}
+            icon={<ArrowLeftOutlined />}
+            onClick={onBack}
+            title="返回"
+            style={{ minWidth: 44, minHeight: 44 }}
+          />
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => { if (title !== note.title) save({ title }) }}
-            style={{ fontSize: 18, fontWeight: 600, width: 400 }}
+            style={{
+              fontSize: isPhone ? 16 : 18,
+              fontWeight: 600,
+              width: isPhone ? '100%' : 400,
+              maxWidth: isPhone ? '100%' : 400,
+              minWidth: 0,
+              flex: 1,
+            }}
           />
           {/* 标签展示（v0.5.0 起）：直接显示当前笔记的所有标签，紧贴标题便于一眼查看 */}
           {(note.tags?.length ?? 0) > 0 && (
@@ -237,68 +202,52 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
             </Space>
           )}
         </Space>
-        <Space>
-          <Button icon={<TagsOutlined />} onClick={() => setTagOpen(true)}>标签</Button>
-          <Button icon={<DeleteOutlined />} danger onClick={onDelete}>删除</Button>
-        </Space>
-      </div>
-
-      {/* 内容区：markdown 预览/编辑 + TTS */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        {/* 桌面端平铺操作；手机端合并为下拉菜单 */}
+        {isPhone ? (
+          <Dropdown menu={{ items: moreMenu }} trigger={['click']} placement="bottomRight">
+            <Button
+              size={btnSize}
+              icon={<MoreOutlined />}
+              style={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}
+            />
+          </Dropdown>
+        ) : (
           <Space>
             <Button
-              type={editing ? 'default' : 'primary'}
-              icon={editing ? <EditOutlined /> : <EyeOutlined />}
-              onClick={() => setEditing(!editing)}
+              size={btnSize}
+              icon={<TagsOutlined />}
+              onClick={() => setTagOpen(true)}
+              style={{ minHeight: 40 }}
             >
-              {editing ? '编辑原文' : '预览渲染'}
+              标签
             </Button>
-            <Tooltip title="使用 TTS 朗读内容（自动去除 Markdown 符号）">
-              <Button
-                icon={ttsLoading ? <LoadingOutlined /> : <SoundOutlined />}
-                onClick={handleTTS}
-                loading={ttsLoading}
-              >
-                朗读
-              </Button>
-            </Tooltip>
+            <Button
+              size={btnSize}
+              icon={<DeleteOutlined />}
+              danger
+              onClick={onDelete}
+              style={{ minHeight: 40 }}
+            >
+              删除
+            </Button>
           </Space>
-          {saving && <Text type="secondary">保存中...</Text>}
-        </div>
-        {editing ? (
-          <TextArea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            onBlur={() => { if (content !== note.content) save({ content }) }}
-            autoSize={{ minRows: 8, maxRows: 24 }}
-            placeholder="支持 Markdown 语法输入学习内容..."
-            style={{ fontFamily: 'monospace' }}
-          />
-        ) : (
-          <div
-            style={{
-              padding: 16,
-              border: '1px solid #f0f0f0',
-              borderRadius: 8,
-              minHeight: 120,
-              background: '#fafafa',
-            }}
-          >
-            {content ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-            ) : (
-              <Text type="secondary">暂无内容，点击"编辑原文"输入</Text>
-            )}
-          </div>
         )}
+      </div>
+
+      {/* 内容区：复用 MarkdownEditor（v0.6.0 工具栏按钮 large + 触控 44px） */}
+      <div style={{ marginBottom: 16 }}>
+        <MarkdownEditor
+          value={content}
+          onChange={setContent}
+          onBlurSave={(next) => save({ content: next })}
+        />
       </div>
 
       {/* 图片画廊 */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
           <Text strong>图片（{images.length}）</Text>
-          <Space>
+          <Space wrap>
             <input
               ref={fileInputRef}
               type="file"
@@ -307,7 +256,14 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
               style={{ display: 'none' }}
               onChange={(e) => { handleUpload(e.target.files); e.target.value = '' }}
             />
-            <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>上传图片</Button>
+            <Button
+              size={btnSize}
+              icon={<UploadOutlined />}
+              onClick={() => fileInputRef.current?.click()}
+              style={{ minHeight: 44 }}
+            >
+              上传图片
+            </Button>
           </Space>
         </div>
 
@@ -323,28 +279,40 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
               <>
                 <Button
                   shape="circle"
+                  size={isPhone ? 'large' : 'middle'}
                   icon={<LeftOutlined />}
                   onClick={() => setImgIndex((i) => (i - 1 + images.length) % images.length)}
-                  style={{ position: 'absolute', left: 12 }}
+                  style={{ position: 'absolute', left: isPhone ? 8 : 12, minWidth: 44, minHeight: 44 }}
                 />
                 <Button
                   shape="circle"
+                  size={isPhone ? 'large' : 'middle'}
                   icon={<RightOutlined />}
                   onClick={() => setImgIndex((i) => (i + 1) % images.length)}
-                  style={{ position: 'absolute', right: 12 }}
+                  style={{ position: 'absolute', right: isPhone ? 8 : 12, minWidth: 44, minHeight: 44 }}
                 />
               </>
             )}
           </div>
         ) : (
-          <div style={{ padding: 40, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 8, color: '#999' }}>
+          <div style={{ padding: isPhone ? 24 : 40, textAlign: 'center', border: '1px dashed #d9d9d9', borderRadius: 8, color: '#999' }}>
             暂无图片，点击"上传图片"添加
           </div>
         )}
 
-        {/* 缩略图列表 */}
+        {/* 缩略图列表：手机端可横向滚动 */}
         {hasImages && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              marginTop: 12,
+              flexWrap: 'nowrap',
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              paddingBottom: 4,
+            }}
+          >
             {images.map((img, i) => (
               <div
                 key={img}
@@ -356,6 +324,7 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
                   borderRadius: 4,
                   overflow: 'hidden',
                   cursor: 'pointer',
+                  flexShrink: 0,
                 }}
                 onClick={() => setImgIndex(i)}
               >
@@ -373,7 +342,7 @@ function NoteEditor({ note, token, onBack, onDelete, onReload }: NoteEditorProps
                   danger
                   icon={<DeleteOutlined />}
                   onClick={(e) => { e.stopPropagation(); handleDeleteImage(img) }}
-                  style={{ position: 'absolute', top: 0, right: 0, background: 'rgba(0,0,0,0.5)' }}
+                  style={{ position: 'absolute', top: 0, right: 0, background: 'rgba(0,0,0,0.5)', minWidth: 28, minHeight: 28 }}
                 />
               </div>
             ))}

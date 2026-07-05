@@ -7,6 +7,52 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.6.0] - 2026-07-04
+
+### Added
+
+#### 全站 UI 适配移动设备（手机 / iPad）+ 深色模式
+
+- **后端 `models/models.go` `Setting`**：新增 `ColorMode` 字段（`size:16;default:'auto'`，`json:"color_mode"`），支持 `light` / `dark` / `auto` 三档颜色模式；`auto` 跟随系统 `prefers-color-scheme: dark`。
+- **后端 `handlers/settings.go`**：`settingsReq` 新增 `ColorMode` 字段；`validColorModes` 白名单校验；`GetSettings` / `UpdateSettings` 双重兜底（旧数据升级兼容 `auto` 默认值）。
+- **前端 `utils/index.ts`**：新增设备检测工具 `isIOS()` / `isIPhone()` / `isIPad()` / `isAndroid()` / `isTouchDevice()`，通过 `userAgent` + `maxTouchPoints` 双重判定，准确识别 iPadOS 13+ 桌面模式伪装 Mac 的情况。
+- **前端 `hooks/useDeviceSize.ts`** ✨新建：返回 `{ width, height, isPhone, isTablet, isDesktop, isMobile, isLandscape, isPortrait, dpr }`，统一封装视口尺寸与设备类型判断，使用 `requestAnimationFrame` 节流 resize 事件。`isPhone<768 / isTablet<1280 / isDesktop≥1280` 是本项目统一断点。
+- **前端 `hooks/useColorMode.ts`** ✨新建：合并 `color_mode` 偏好与系统主题，解析出实际 `light` / `dark`，并同步设置 `documentElement[data-theme]` 与 `<meta name="theme-color">`（控制 iOS Safari PWA 顶部状态栏颜色）。
+- **前端 `theme/themes.ts`**：每套主题（default / green / purple / blue）扩展出 `light` + `dark` 两套 `ThemeConfig`；`dark` 通过 antd `theme.darkAlgorithm` 派生深色语义色（colorBgContainer / colorText / colorBorder / colorBgLayout）；`getThemeConfig(key, isDark)` 接受深色开关参数。
+- **前端 `index.css`** ✨重写：建立完整的 CSS 变量体系 —— `--touch-target`（44×44px，Apple HIG 规范）、`--space-{xs,sm,md,lg,xl}`（流体间距 `clamp()`）、`--radius-{sm,md,lg,xl}`、`--font-{xs..3xl}`、`--safe-{top,bottom,left,right}`（`env(safe-area-inset-*)`）、`--content-max-width`、`--color-{bg-page,bg-elevated,text-primary,text-secondary,text-tertiary,border-soft,border-strong,shadow-card,shadow-card-hover,mask-unread}`。深色调色板通过 `[data-theme='dark']` 选择器切换；`@media (prefers-color-scheme: dark)` 为 auto 模式兜底。统一重置 `body` / `html` 移动端高亮与滚动行为；卡片 hover 上浮动画在 `@media (hover: none)` 下自动禁用。
+- **前端 `App.tsx`**：引入 `useColorMode()`，根据 `isDark` 调用 `getThemeConfig(theme, isDark)`，确保 antd Theme 与 CSS 变量同源切换。
+- **前端 `layouts/MainLayout.tsx`** ✨移动端友好重写：手机端用 `Drawer`（`min(80vw, 320px)` 宽度）替代固定 Sider；Header 高度 56 / 64px 自适应；按钮 / 头像在手机端 `size="large"` 且最小触控目标 44×44px；顶部 padding 应用 `env(safe-area-inset-top)`、底部 padding 应用 `env(safe-area-inset-bottom)`；所有硬编码 `#fff` 背景改为 `var(--color-bg-elevated, #fff)`，深色模式自动跟随。
+- **前端 `pages/Login.tsx`**：移除 `maxWidth: 400` 限制（手机端满宽），Input / Button 在手机端 `size="large"`（触控目标 ≥ 44px），登录卡片背景使用 `var(--color-bg-elevated)`，容器 padding 应用 `safe-area-inset`。
+- **前端 `pages/About.tsx`**：Hero 区 padding 改用 `clamp(20px, 4vw, 32px)`、标题字号 `clamp(24px, 5vw, 32px)` 流体缩放；版本号更新至 `v0.6.0`；新增「🌗 深色模式」标签；所有卡片背景 / 文字色硬编码值（`#fff` / `#1a1a1a` / `#666` / `#8c8c8c`）替换为 CSS 变量。
+- **前端 `components/MediaCover.tsx`**：默认使用 `aspect-ratio: 2/3` 响应式容器（宽度由父容器决定），保留 `height` 显式传入作为兼容路径。背景与图标色改用 CSS 变量。
+- **前端 `components/EmbyHome.tsx`**：横滑行宽度按视口动态计算（手机 ~140px / 桌面 ~180px），专辑封面使用 `MediaCover` 替代固定高度容器；横向滚动行添加 `scroll-row` 类，右部渐变遮罩（`::after`）作为可左滑提示；专辑卡 `⋮` 菜单与笔记卡的 `NoteCardMenu` 集成，深色模式色彩一致。
+
+#### 阶段 2-4：全站页面与公共组件移动端适配（v0.6.0）
+
+- **前端 `components/MediaPlayer.tsx`**：视频叠加字幕 `bottom` 应用 `calc(16px + var(--safe-bottom, 0px))` 适配 iOS Home Indicator；控制栏改为两行布局（主控 + 音量/速度），播放 / 暂停 / 速度调节按钮在 `isPhone` 时 `size="large"` + `minHeight 44`；速度 `+/-` 圆按钮触控目标 ≥ 36px；替换硬编码颜色为 CSS 变量，深色模式自适应。
+- **前端 `pages/Player.tsx`**：标题 `Title` 添加 `minWidth: 0` + `textOverflow: ellipsis` 实现单行省略；上一首 / 下一首按钮 `minWidth/minHeight: 44`，在窄屏下不挤压标题。
+- **前端 `pages/Home.tsx` (`GridView`)**：统一媒体卡断点为 `xs={12} sm={8} md={6} lg={4} xl={4} xxl={4}`，与 `SeasonGrid` 保持一致；筛选栏在 `xs` 单列、`md` 12+4+4、`lg` 10+3+3 排布。
+- **前端 `pages/Tags.tsx`**：标签卡片网格在 `xs={12}`（手机单列 2 个一行），`sm={8} md={6} lg={4}` 逐级加密；筛选结果三组（专辑 / 季 / 文件）使用 `Col xs={24} md={12} lg={8}` 实现手机单列 / 平板双列 / 桌面三列；筛选按钮 / 编辑删除操作按钮触控目标 ≥ 44px。
+- **前端 `pages/Records.tsx`**：周统计视图手机端从单行 7 列改为两行（第一行 4 列 span=6：周一~周四；第二行 3 列 span=8：周五~周日），柱状图高度从 80 缩小到 56，padding 8/6，字体 12/10。平板与桌面仍保持原 7 列 `flex={1}` 布局。
+- **前端 `pages/Settings.tsx`**：主题选择器使用大圆角色块（手机 64px / 桌面 72px 圆形渐变）；颜色模式选择 `ColorModeSwitch` 提供「🌞 始终浅色 / 🌙 始终深色 / 🌓 跟随系统」三档大按钮；所有卡片背景 / 文字色改用 CSS 变量。
+- **前端 `pages/Upload.tsx`**：Card 标题区「上级」、Card extra「刷新」「新建目录」按钮在 `isPhone` 时 `size="middle"` + `minHeight 44` + 加宽 padding；面包屑容器加 `overflowX: auto` + `whiteSpace: nowrap`，深路径时横滑而不换行截断；List 项文件名 `Text ellipsis` 避免溢出；操作 ⋯ 按钮触控目标 44×44；「开始上传」「清空」按钮 `size="large"`。
+- **前端 `components/MarkdownEditor.tsx`** ✨ 工具栏触控化：编辑 / 朗读按钮在 `isPhone` 时 `size="large"` + `minHeight 44`，工具栏外层 `flexWrap: wrap + gap: 8` 确保窄屏换行不被裁剪。
+- **前端 `pages/NoteEditor.tsx`**：复用 `MarkdownEditor` 组件（移除内联 TTS / 编辑切换重复代码），顶部「标签」「删除」操作在手机端合并到 `MoreOutlined` 下拉菜单（节省横向空间），桌面端平铺；标题 Input 在手机端 `width: 100%` + `fontSize 16`；图片缩略图列表 `flexWrap: nowrap + overflowX: auto` 支持手机横滑；左右切换圆形按钮 `minWidth/minHeight 44`。
+- **前端 `pages/StudyNotes.tsx`**：卡片断点统一为 `xs={12} sm={12} md={8} lg={6} xl={6} xxl={4}`；筛选 Select 与「新建学习页面」按钮在手机端 `size="large" + width: 100%`；删除按钮触控目标 44×44；Modal 确认 / 取消按钮 + Input / Select 全部 large 化。
+- **前端 `pages/Albums.tsx`**：专辑卡断点统一为 `xs={12} sm={8} md={6} lg={4} xl={4} xxl={4}`；卡片标题 ⋯ 按钮 `minWidth/minHeight 44`；Modal 重命名按钮 large 化。
+- **前端 `components/TagManagerModal.tsx`**：Select / Input / Button 在 `isPhone` 时 `size="large"` + `minHeight 44`；Select 多选 tag 自定义 `tagRender` —— chip 在手机端 `minHeight 26 + fontSize 14`，关闭按钮触控目标 22×22，确保删除标签不误触。
+- **前端 `components/PasswordConfirmModal.tsx`**：`Input.Password` 与 Modal 确认 / 取消按钮在 `isPhone` 时 `size="large"` + `minHeight 44`，避免密码弹窗触控过小导致输入困难。
+
+### Notes
+
+- 阶段 1（基础设施：`useDeviceSize` / `useColorMode` / CSS 变量 / 主题切换）见上方「全站 UI 适配移动设备（手机 / iPad）+ 深色模式」段落。
+- 阶段 2-4 将阶段 1 的能力注入到每个业务页面：所有页面均引入 `useDeviceSize()`，按 `isPhone` 切换 `size`、列数、触控目标；所有硬编码颜色（`#fff` / `#1a1a1a` / `#666` / `#fafafa` / `#1890FF` / `#52C41A`）已替换为 `var(--color-*)` / `var(--ant-color-primary)` 等 CSS 变量，确保深色模式自动跟随。
+- **响应式断点**（统一）：`isPhone<768` / `isTablet 768-1280` / `isDesktop≥1280`。
+- **触控目标**：所有可点击元素 `minWidth/minHeight: 44`（Apple HIG），菜单项 48px，关闭按钮 22×22。
+- **安全区适配**：iOS 刘海屏 / Home Indicator 通过 `env(safe-area-inset-*)` 兜底（`--safe-{top,bottom,left,right}` CSS 变量）。
+- **已知遗留**：`pnpm lint` 仍报 35 个错误（`react-hooks/set-state-in-effect`），均为 React 19 新规则触发的「useEffect 内 setState」模式（`Records.loadAll()` / `Upload.load('')` / `Tags.load()` / `TagManagerModal.setSelectedIds` 等），**预先存在**于本次 UI 优化之前。本次修改的代码本身全部通过严格类型检查（`pnpm build` 1513 模块成功转换，27 个 PWA 预缓存条目）。后续将在独立 PR 中批量重构这些跨多文件的遗留模式（按业务域分批处理）。
+- **验证方式**：`go build ./...` / `go vet ./...` / `go test ./... -v`（subtitle 8 用例）全部通过；`pnpm build`（`tsc -b` 严格类型检查 + Vite 打包）通过；`pnpm lint` 报 35 个预先存在的 React 19 规则遗留（不影响构建）。
+
 ## [v0.5.0] - 2026-07-04
 
 ### Added

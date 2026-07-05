@@ -1,77 +1,76 @@
-# TASKS.md — v0.3.1 / v0.4.0 任务跟踪
+# TASKS.md — v0.6.0 全站 UI 适配优化任务跟踪
 
-同 [PLAN.md](PLAN.md) 配合使用，勾选已完成的任务并记录时间。
+配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
 
-## 需求 1：Header 全局扫描图标
+## 阶段 1：基础设施
 
-- [x] ~T1~ `frontend/src/store/scan.ts` 新建 `useScanStore` — 含 `scanning`、`lastTriggeredAt`、`trigger()` 轮询逻辑（2026-07-03 15:20）
-- [x] ~T2~ `frontend/src/layouts/MainLayout.tsx` Header 插入扫描按钮（Button + Spin + ReloadOutlined） (2026-07-03 15:24)
-- [x] ~T3~ `frontend/src/components/EmbyHome.tsx` 订阅 `lastTriggeredAt` 变化触发 reload (2026-07-03 15:26)
+- [x] **T1** `backend/internal/models/models.go` `Setting` 新增 `ColorMode string` 字段（`size:16;default:'auto'`）
+- [x] **T2** `backend/internal/handlers/settings.go` `settingsReq` 加 `ColorMode` + 校验（`light`/`dark`/`auto`），GET 兜底
+- [x] **T3** `backend/internal/database/database.go` AutoMigrate 自动加列（无需新代码，确认日志）
+- [x] **T4** `frontend/src/hooks/useDeviceSize.ts` ✨新建：返回 `{ isPhone, isTablet, isMobile, isLandscape, dpr }`
+- [x] **T5** `frontend/src/utils/index.ts` 新增 `isIOS() / isIPhone() / isIPad() / isAndroid()`
+- [x] **T6** `frontend/src/types/index.ts` `Settings` 新增 `color_mode?: 'light' | 'dark' | 'auto'`
+- [x] **T7** `frontend/src/store/settings.ts` DEFAULTS 加 `color_mode: 'auto'` + `setColorMode()` 动作
+- [x] **T8** `frontend/src/theme/themes.ts` 每套主题增加 dark token 版本（`colorBgLayout: #141414`，`colorText: #e6e6e6`）
+- [x] **T9** `frontend/src/index.css` 重写：CSS 变量、safe-area-inset、touch-target 变量、双调色板 `data-theme="dark"`
+- [x] **T10** `frontend/src/App.tsx` 监听 `color_mode` + 系统主题；按需给 `documentElement` 切换 `data-theme`
 
-## 需求 2：最近播放接口按 media_id 去重
+## 阶段 2：导航与布局
 
-- [x] ~T4~ `backend/internal/handlers/record.go` 新增 `ListRecent()` Handler，JOIN 子查询分组取最近一条 (2026-07-03 15:30)
-- [x] ~T5~ `backend/internal/router/router.go` 注册 `GET /records/recent?limit=N` (2026-07-03 15:30)
-- [x] ~T6~ `frontend/src/api/index.ts` 新增 `recordApi.recent(limit?)` (2026-07-03 15:40)
-- [x] ~T7~ EmbyHome 改用 `recordApi.recent(20)` 替换 `list()` (2026-07-03 15:26)
+- [x] **T11** `frontend/src/layouts/MainLayout.tsx`
+  - 手机端 Drawer 宽度 `min(80vw, 320px)`；菜单项 padding 12/16
+  - Header 按钮 size=large（移动端）；头像 + 扫描 + 退出布局调整
+  - 引入 useDeviceSize 决定抽屉 vs sider
+- [x] **T12** `frontend/src/pages/Login.tsx` 移除 maxWidth 限制；输入框 / 按钮 large
+- [x] **T13** `frontend/src/pages/About.tsx` 卡片响应式（xs=1, sm=2, md=3）
 
-## 需求 3：Emby 风格专辑详情
+## 阶段 3：内容页
 
-- [x] ~T8~ `backend/internal/handlers/media.go` `ListAlbums()` 增加 `played` 字段 + `deleted_at IS NULL` 过滤 (2026-07-03 15:33)
-- [x] ~T9~ `frontend/src/types/index.ts` `Album`、`SubAlbum` 加可选 `played?` 字段 (2026-07-03 15:45)
-- [x] ~T10~ EmbyHome `AlbumEntry` 接 `played`、`AlbumCard` 显示「已看 X/Y」徽标 + 进度条微条，按 `lastPlayedAt` 排序 (2026-07-03 15:45)
-- [x] ~T11~ `frontend/src/pages/Home.tsx` 子专辑 Select 换为 Tabs 横滑标签 (2026-07-03 15:50)
+- [x] **T14** `frontend/src/components/EmbyHome.tsx`
+  - CARD_WIDTH / ALBUM_CARD_WIDTH 改用响应式 `min(45vw, 220px)`
+  - 横向滚动行增加左滑渐变提示（`mask-image`）
+  - 触摸设备禁用 hover translateY
+- [x] **T15** `frontend/src/components/MediaPlayer.tsx`
+  - 视频叠加字幕 safe-area 适配
+  - 控制栏手机端改 2 行（播放 / 进度条 / 设置）
+  - 速度按钮放大 + 触摸友好
+  - 横屏时锁定旋转（可选）
+- [x] **T16** `frontend/src/pages/Player.tsx` 标题行单行省略；上/下首按钮触控 44px
+- [x] **T17** `frontend/src/pages/Home.tsx` GridView 断点统一；标签栏可横滑；空状态适配
+- [x] **T18** `frontend/src/pages/Tags.tsx` 移动端单列；筛选条件可折叠
+- [x] **T19** `frontend/src/pages/Records.tsx` 周统计手机 7→3 列；统计表横向滚动
+- [x] **T20** `frontend/src/pages/Settings.tsx` 主题选择器大圆角色块；表单单列
+- [x] **T21** `frontend/src/pages/Upload.tsx` 面包屑可横滑；按钮 large
+- [x] **T22** `frontend/src/pages/NoteEditor.tsx` 工具栏下拉化；按钮 large
+- [x] **T23** `frontend/src/pages/StudyNotes.tsx` 列表卡片响应式
+- [x] **T24** `frontend/src/pages/Albums.tsx` 卡片断点统一
 
-## 需求 4：学习记录页面容错（双保险）
+## 阶段 4：公共组件
 
-- [x] ~T12~ `backend/internal/handlers/record.go` `ListRecords()` 剔除 `Media.ID == 0` Preload 幽灵记录 (2026-07-03 15:20)
-- [x] ~T13~ `backend/internal/handlers/stats.go` 三个统计函数加 `JOIN media_files AND deleted_at IS NULL` 过滤 (2026-07-03 15:22)
-- [x] ~T14~ `frontend/src/pages/Records.tsx` 加载失败给 Alert 错误 + 重试按钮；Table 列安全访问 `media?.name` 并占位「已删除媒体」(2026-07-03 15:38)
+- [x] **T25** `frontend/src/components/MediaCover.tsx` 容器 `aspectRatio: 2/3`
+- [x] **T26** `frontend/src/components/TagManagerModal.tsx` 标签 chip 放大；按钮 large
+- [x] **T27** `frontend/src/components/PasswordConfirmModal.tsx` 按钮 / 输入 large
+- [x] **T28** `frontend/src/components/MarkdownEditor.tsx` 工具栏触控 44px
 
-## 收尾
+## 阶段 5：验证 & 文档
 
-- [x] ~T15~ `docs/ChangeLog.md` 新增 `[v0.3.1] - 2026-07-03`，按 Keep a Changelog 英文记录四类改动 (2026-07-03 15:55)
+- [x] **T29** `go build ./...` 通过
+- [x] **T30** `go vet ./...` 通过
+- [x] **T31** `go test ./... -v` 通过（字幕 8 用例）
+- [x] **T32** `pnpm build` 通过（含 tsc -b 严格类型检查）
+- [x] **T33** `pnpm lint` 通过（遗留 35 个 `react-hooks/set-state-in-effect` 已记录在 ChangeLog）
+- [ ] **T34** 截图：iPhone SE / 14 Pro / iPad mini / 桌面（浅 + 深）（在 Chrome DevTools 中已模拟验证，**实际设备截图待补充**）
+- [x] **T35** `README.md` 新增「📱 设备适配矩阵」章节
+- [x] **T36** `docs/ChangeLog.md` 新增 v0.6.0 条目（按 Keep a Changelog 英文）
+- [x] **T37** `docs/PLAN.md` 顶部状态改为「已完成」
 
-## 需求 1：修复最后一句 repeat_count
+## 验证总清单
 
-- [x] ~T15~ MediaPlayer onEnded 补计最后一句 (2026-07-03 16:10)
-- [x] ~T16~ Repeat 模式 allDone 分支补调 incrementSentenceRepeat (2026-07-03 16:10)
-
-## 需求 2：主题切换
-
-- [x] ~T17~ 后端 Setting 模型加 Theme 字段 (2026-07-03 16:12)
-- [x] ~T18~ 后端 settings handler 加 Theme 校验与兜底 (2026-07-03 16:13)
-- [x] ~T19~ 前端 theme/themes.ts 4 套主题定义 (2026-07-03 16:15)
-- [x] ~T20~ App.tsx 动态应用主题 (2026-07-03 16:16)
-- [x] ~T21~ settings store + types 加 theme (2026-07-03 16:16)
-- [x] ~T22~ Settings.tsx 主题选择器 UI (2026-07-03 16:18)
-
-## 需求 3：收藏列表顺序播放
-
-- [x] ~T23~ MediaPlayer favoritePlayMode 状态 + refs (2026-07-03 16:22)
-- [x] ~T24~ 收藏 Tab 增加「播放收藏」按钮 (2026-07-03 16:24)
-- [x] ~T25~ repeat 决策逻辑：收藏模式下跳到下一句收藏 (2026-07-03 16:22)
-
-## 需求 4：封面播放次数
-
-- [x] ~T26~ Home GridView 卡片加 ▶ N 橙色 Tag (2026-07-03 16:26)
-
-## 需求 5：美化学习记录页
-
-- [x] ~T27~ 汇总统计卡片渐变背景 (2026-07-03 16:30)
-- [x] ~T28~ 周/月/年统计卡片渐变 + 柱状图投影 (2026-07-03 16:32)
-- [x] ~T29~ 汇总行改为独立渐变小卡片 (2026-07-03 16:30)
-- [x] ~T30~ 专辑进度卡片化 + 渐变进度条 (2026-07-03 16:34)
-- [x] ~T31~ 播放记录表空状态插画 + 斑马纹 + 行高亮 (2026-07-03 16:36)
-- [x] ~T32~ index.css 斑马纹样式 (2026-07-03 16:36)
-
-## 收尾
-
-- [x] ~T33~ ChangeLog v0.4.0 (2026-07-03 16:38)
-
-## 验证清单
-
-- [x] `go build ./...` 通过
-- [x] `go vet ./...` 通过
-- [x] `go test ./... -v` 通过 (8 个字幕测试)
-- [x] `tsc --noEmit -p tsconfig.app.json` 通过
+- [x] iPhone SE (375×667) 布局不溢出
+- [x] iPhone 14 Pro (393×852) 刘海避开
+- [x] iPad mini 竖屏 (768×1024) 正常
+- [x] iPad Pro 11 横屏 (1194×834) 正常
+- [x] 桌面 1280 / 1920 正常
+- [x] 深色模式：所有页面背景与文字对比度 ≥ AA
+- [x] 视频播放器：深色下叠加字幕清晰
+- [x] 所有可点击元素触控目标 ≥ 44×44

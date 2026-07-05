@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { Card, Form, Input, Button, Tabs, message, Typography, Checkbox, Grid } from 'antd'
+import { Card, Form, Input, Button, Tabs, message, Typography, Checkbox } from 'antd'
 import { AudioOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { authApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 
 const { Title } = Typography
-const { useBreakpoint } = Grid
 
 const REMEMBER_KEY = 'echosub_remember'
 
@@ -26,12 +26,21 @@ function loadRemembered(): RememberedCredential | null {
   }
 }
 
+/**
+ * 登录 / 注册页（v0.6.0 起移动端友好）。
+ *
+ * 关键点：
+ * - 卡片宽度 min(100%, 400px)：手机端贴边，桌面端居中
+ * - 手机端 Input / Button size=large（触控目标 44px）
+ * - 背景 / 文字色使用 CSS 变量，深色模式自动跟随
+ * - iOS 顶部安全区：env(safe-area-inset-top)
+ */
 export default function Login() {
   const navigate = useNavigate()
   const setAuth = useAuthStore((s) => s.setAuth)
   const [loading, setLoading] = useState(false)
-  const screens = useBreakpoint()
-  const isMobile = !screens.md
+  const { isPhone, isTablet } = useDeviceSize()
+  const compactInput = isPhone
 
   const remembered = loadRemembered()
 
@@ -98,7 +107,11 @@ export default function Login() {
         ]}
         extra={isRegister ? '3-64 字符，仅字母/数字/下划线' : undefined}
       >
-        <Input placeholder="用户名" autoComplete="username" />
+        <Input
+          placeholder="用户名"
+          autoComplete="username"
+          size={compactInput ? 'large' : 'middle'}
+        />
       </Form.Item>
       <Form.Item
         label="密码"
@@ -127,15 +140,25 @@ export default function Login() {
         }
         extra={isRegister ? '8-64 字符，需同时包含字母和数字' : undefined}
       >
-        <Input.Password placeholder="密码" autoComplete={isRegister ? 'new-password' : 'current-password'} />
+        <Input.Password
+          placeholder="密码"
+          autoComplete={isRegister ? 'new-password' : 'current-password'}
+          size={compactInput ? 'large' : 'middle'}
+        />
       </Form.Item>
       {!isRegister && (
         <Form.Item name="remember" valuePropName="checked" style={{ marginBottom: 12 }}>
           <Checkbox>记住密码</Checkbox>
         </Form.Item>
       )}
-      <Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading} block>
+      <Form.Item style={{ marginBottom: 0 }}>
+        <Button
+          type="primary"
+          htmlType="submit"
+          loading={loading}
+          block
+          size={compactInput ? 'large' : 'middle'}
+        >
           {isRegister ? '注册' : '登录'}
         </Button>
       </Form.Item>
@@ -149,18 +172,31 @@ export default function Login() {
 
   return (
     <div style={{
-      minHeight: '100vh',
+      minHeight: '100svh',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#f0f2f5',
-      padding: isMobile ? 12 : 24,
+      // 背景：CSS 变量，深色模式自动跟随
+      background: 'var(--color-bg-page, #f0f2f5)',
+      padding: isPhone
+        ? 'calc(var(--safe-top, 0px) + 12px) 12px calc(var(--safe-bottom, 0px) + 12px)'
+        : (isTablet ? '32px 20px' : '48px 24px'),
+      boxSizing: 'border-box',
     }}>
-      <Card style={{ width: '100%', maxWidth: 400, boxShadow: '0 2px 8px rgba(0,0,0,0.09)' }}>
+      <Card
+        style={{
+          width: '100%',
+          // 手机端满宽（不限制 400px），桌面端最大 400
+          maxWidth: isPhone ? '100%' : 400,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.09)',
+          background: 'var(--color-bg-elevated, #fff)',
+        }}
+        styles={{ body: { padding: isPhone ? 20 : 24 } }}
+      >
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <AudioOutlined style={{ fontSize: 40, color: '#1677ff' }} />
+          <AudioOutlined style={{ fontSize: isPhone ? 36 : 40, color: 'var(--ant-color-primary, #1677ff)' }} />
           <Title level={3} style={{ marginTop: 8, marginBottom: 0 }}>EchoSub</Title>
-          <p style={{ color: '#888' }}>语言学习与课文背诵</p>
+          <p style={{ color: 'var(--color-text-tertiary, #888)' }}>语言学习与课文背诵</p>
         </div>
         <Tabs items={items} defaultActiveKey="login" centered />
       </Card>

@@ -39,6 +39,65 @@ export function formatRelative(iso: string): string {
   return date.toLocaleDateString('zh-CN')
 }
 
+// ===== 设备检测工具（v0.6.0 起） =====
+/**
+ * 检测当前是否在 iOS 设备（含 iPhone / iPad / iPod）。
+ * 通过 userAgent + platform 双重判定，避免 iPad Pro 伪装 Mac 时误判。
+ */
+export function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  // iPhone / iPad / iPod 直接识别
+  if (/iPhone|iPad|iPod/i.test(ua)) return true
+  // iPadOS 13+ 桌面版 Safari 会把 iPad 报为 Mac，配合 maxTouchPoints 判定
+  if (
+    ua.includes('Mac') &&
+    navigator.maxTouchPoints > 1 &&
+    !('msStream' in window)
+  ) {
+    return true
+  }
+  return false
+}
+
+/** 是否为 iPhone（窄屏手机） */
+export function isIPhone(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return /iPhone/i.test(navigator.userAgent)
+}
+
+/** 是否为 iPad（含 iPadOS 桌面模式） */
+export function isIPad(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  if (/iPad/i.test(ua)) return true
+  if (
+    ua.includes('Mac') &&
+    navigator.maxTouchPoints > 1 &&
+    !('msStream' in window)
+  ) {
+    return true
+  }
+  return false
+}
+
+/** 是否为 Android 设备 */
+export function isAndroid(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return /Android/i.test(navigator.userAgent)
+}
+
+/** 是否为触摸设备（手机 / 平板） */
+export function isTouchDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return (
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0 ||
+    isIOS() ||
+    isAndroid()
+  )
+}
+
 /**
  * 将 Markdown 原文转换为适合 TTS 朗读的纯文本。
  * 移除所有 Markdown 标记符号（#、-、>、**、`、[]() 等），保留可读文字内容。

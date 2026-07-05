@@ -139,7 +139,12 @@ type Setting struct {
 	PauseSeconds   float64 `json:"pause_seconds"`    // 句末停顿秒数
 	TTSVoice       string  `gorm:"size:64" json:"tts_voice"`     // TTS 默认语音
 	TTSSpeed       float64 `json:"tts_speed"`        // TTS 默认语速（0.5-2.0）
-	Theme          string  `gorm:"size:32;default:'default'" json:"theme"` // 界面主题标识
+	Theme          string  `gorm:"size:32;default:'default'" json:"theme"` // 界面色彩主题标识
+	// ColorMode 浅色 / 深色模式：light / dark / auto（v0.6.0 起）
+	// - light：始终浅色
+	// - dark：始终深色
+	// - auto：跟随系统 prefers-color-scheme: dark
+	ColorMode      string  `gorm:"size:16;default:'auto'" json:"color_mode"`
 }
 
 // TableName 显式指定表名（避免复数问题）

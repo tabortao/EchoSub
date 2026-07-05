@@ -2,12 +2,17 @@ import { useEffect, useState } from 'react'
 import { Modal, Select, Input, Button, Space, message } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { tagApi } from '@/api'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 import type { Tag, TagEntityType } from '@/types'
 
 /**
  * TagManagerModal 通用标签管理弹窗。
  * 支持任意实体类型（媒体 / 专辑 / 季 / 学习页），由调用方传入 entityType + entityId。
  * 设计为可复用：实体类型决定后端 attach/detach 的目标，但 UI 完全一致。
+ *
+ * v0.6.0 移动端适配：
+ * - Select / Input / Button 在 isPhone 时升级为 large（minHeight 44）
+ * - Modal OK / Cancel 按钮同步 large 化，确保触控目标合规
  */
 interface TagManagerModalProps {
   open: boolean
@@ -24,6 +29,7 @@ interface TagManagerModalProps {
 export default function TagManagerModal({
   open, entityType, entityId, currentTagIds, onClose, onSaved,
 }: TagManagerModalProps) {
+  const { isPhone } = useDeviceSize()
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>(currentTagIds)
   const [newTagName, setNewTagName] = useState('')
@@ -80,6 +86,10 @@ export default function TagManagerModal({
     note: '管理标签（学习页）',
   }
 
+  // 统一的触控目标尺寸：手机端 large，桌面 middle
+  const inputSize = isPhone ? 'large' : 'middle'
+  const btnMinHeight = 44
+
   return (
     <Modal
       title={titleByType[entityType] ?? '管理标签'}
@@ -90,11 +100,14 @@ export default function TagManagerModal({
       okText="保存"
       cancelText="取消"
       destroyOnClose
+      okButtonProps={{ size: inputSize, style: { minHeight: btnMinHeight } }}
+      cancelButtonProps={{ size: inputSize, style: { minHeight: btnMinHeight } }}
     >
-      <Space direction="vertical" style={{ width: '100%' }}>
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
         <Select
           mode="multiple"
           style={{ width: '100%' }}
+          size={inputSize}
           placeholder="选择已有标签"
           value={selectedIds}
           onChange={setSelectedIds}
@@ -102,6 +115,45 @@ export default function TagManagerModal({
           optionFilterProp="label"
           showSearch
           maxTagCount="responsive"
+          tagRender={({ value, closable, onClose: onTagClose }) => {
+            const tag = allTags.find((t) => t.id === value)
+            return (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: isPhone ? '2px 10px' : '0 8px',
+                  minHeight: isPhone ? 26 : 22,
+                  margin: '2px 4px 2px 0',
+                  background: 'var(--ant-color-primary-bg, #e6f4ff)',
+                  color: 'var(--ant-color-primary, #1677ff)',
+                  border: '1px solid color-mix(in srgb, var(--ant-color-primary) 30%, transparent)',
+                  borderRadius: 6,
+                  fontSize: isPhone ? 14 : 13,
+                  fontWeight: 500,
+                }}
+              >
+                {tag?.name ?? value}
+                {closable && (
+                  <span
+                    onClick={onTagClose}
+                    style={{
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: 22,
+                      minHeight: 22,
+                      borderRadius: 4,
+                    }}
+                  >
+                    ×
+                  </span>
+                )}
+              </span>
+            )
+          }}
         />
         <Space.Compact style={{ width: '100%' }}>
           <Input
@@ -110,8 +162,15 @@ export default function TagManagerModal({
             onChange={(e) => setNewTagName(e.target.value)}
             onPressEnter={handleCreateTag}
             maxLength={64}
+            size={inputSize}
+            style={{ minHeight: btnMinHeight }}
           />
-          <Button icon={<PlusOutlined />} onClick={handleCreateTag}>
+          <Button
+            icon={<PlusOutlined />}
+            onClick={handleCreateTag}
+            size={inputSize}
+            style={{ minHeight: btnMinHeight }}
+          >
             创建
           </Button>
         </Space.Compact>

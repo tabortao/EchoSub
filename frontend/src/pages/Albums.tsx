@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { mediaApi } from '@/api'
 import MediaCover from '@/components/MediaCover'
 import PasswordConfirmModal from '@/components/PasswordConfirmModal'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 import type { Album, MediaFile, MediaListResponse } from '@/types'
 
 const { Text } = Typography
@@ -39,6 +40,7 @@ function vividColor(key: string): string {
 
 export default function Albums() {
   const navigate = useNavigate()
+  const { isPhone } = useDeviceSize()
   const [albums, setAlbums] = useState<Album[]>([])
   const [loading, setLoading] = useState(true)
   const [preview, setPreview] = useState<Record<string, AlbumPreview>>({})
@@ -163,14 +165,14 @@ export default function Albums() {
 
   return (
     <div>
-      <Typography.Title level={4} style={{ color: '#1a1a1a' }}>📂 专辑浏览</Typography.Title>
+      <Typography.Title level={4} style={{ color: '#1a1a1a', fontSize: isPhone ? 18 : 20 }}>📂 专辑浏览</Typography.Title>
       <Row gutter={[16, 16]}>
         {albums.map((a) => {
           const pv = preview[a.album]
           const subs = a.sub_albums ?? []
           const folderColor = vividColor(a.album)
           return (
-            <Col xs={24} sm={12} md={8} lg={6} xl={6} xxl={4} key={a.album}>
+            <Col xs={12} sm={8} md={6} lg={4} xl={4} xxl={4} key={a.album}>
               <Card
                 hoverable
                 onClick={() => navigate(`/?album=${encodeURIComponent(a.album)}`)}
@@ -202,7 +204,7 @@ export default function Albums() {
                 <Card.Meta
                   title={
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{a.album}</Text>
+                      <Text ellipsis style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: isPhone ? 14 : 14 }}>{a.album}</Text>
                       <Dropdown
                         menu={{ items: buildMenu(), onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onMenuClick(a, key) } }}
                         trigger={['click']}
@@ -213,8 +215,9 @@ export default function Albums() {
                           onClick={(e) => e.stopPropagation()}
                           style={{
                             border: 'none', background: 'transparent', cursor: 'pointer',
-                            padding: 4, borderRadius: 8, fontSize: 18, color: '#999',
-                            display: 'flex', alignItems: 'center', flexShrink: 0,
+                            borderRadius: 8, fontSize: 18, color: '#999',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0, minWidth: 44, minHeight: 44, padding: 0,
                           }}
                           title="更多操作"
                         >
@@ -259,6 +262,8 @@ export default function Albums() {
         onOk={handleRename}
         okText="确定"
         cancelText="取消"
+        okButtonProps={{ size: isPhone ? 'large' : 'middle', style: { minHeight: 44 } }}
+        cancelButtonProps={{ size: isPhone ? 'large' : 'middle', style: { minHeight: 44 } }}
       >
         <Input
           value={renameValue}

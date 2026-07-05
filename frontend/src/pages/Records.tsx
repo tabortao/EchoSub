@@ -4,6 +4,7 @@ import { CheckCircleOutlined, PlayCircleOutlined, FolderOutlined, LeftOutlined, 
 import { recordApi } from '@/api'
 import type { ProgressResponse, PlayRecord, StudyStatsResponse } from '@/types'
 import { formatDuration, formatRelative } from '@/utils'
+import { useDeviceSize } from '@/hooks/useDeviceSize'
 import { useNavigate } from 'react-router-dom'
 
 const { Text } = Typography
@@ -28,6 +29,7 @@ function getMonday(d: Date): Date {
 
 export default function Records() {
   const navigate = useNavigate()
+  const { isPhone } = useDeviceSize()
   const [progress, setProgress] = useState<ProgressResponse | null>(null)
   const [records, setRecords] = useState<PlayRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -212,7 +214,7 @@ export default function Records() {
     </Row>
   )
 
-  // 渲染本周视图：周一~周日单行 7 列，每日数据下方展示
+  // 渲染本周视图：周一~周日单行 7 列（v0.6.0 移动端改为 3+4 两行）
   const renderWeekView = () => {
     if (statsLoading) {
       return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
@@ -228,66 +230,105 @@ export default function Records() {
     const maxPlay = Math.max(...stats.stats.map((s) => s.play_count), 1)
     const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
+    // 渲染单日柱状卡片
+    const renderDayCard = (s: { date: string; label: string; play_count: number; media_count: number; sentence_count: number; is_current: boolean }, i: number) => {
+      const barHeight = Math.max(6, (s.play_count / maxPlay) * 80)
+      const hasData = s.play_count > 0 || s.sentence_count > 0
+      const dayNum = s.date.split('-')[2]
+      // 手机端减小柱状图高度和内边距，确保 4/3 列布局下视觉密度合适
+      const chartHeight = isPhone ? 56 : 80
+      const paddingY = isPhone ? 8 : 10
+      return (
+        <div
+          style={{
+            borderRadius: 14,
+            padding: `${paddingY}px 6px`,
+            textAlign: 'center',
+            background: s.is_current
+              ? 'linear-gradient(135deg, color-mix(in srgb, var(--ant-color-primary) 12%, transparent), color-mix(in srgb, var(--ant-color-primary) 20%, transparent))'
+              : hasData
+                ? 'linear-gradient(180deg, #fff, #fef9f5)'
+                : '#fafafa',
+            border: s.is_current ? '2px solid var(--ant-color-primary)' : '1px solid #f0f0f0',
+            boxShadow: s.is_current ? `0 4px 12px color-mix(in srgb, var(--ant-color-primary) 15%, transparent)` : 'none',
+            opacity: hasData ? 1 : 0.5,
+            transition: 'all 0.2s',
+          }}
+        >
+          {/* 顶部：星期 + 日期号 */}
+          <div style={{
+            fontWeight: 700, fontSize: isPhone ? 12 : 13,
+            color: s.is_current ? 'var(--ant-color-primary)' : '#595959',
+          }}>
+            {weekdayLabels[i] ?? s.label}
+          </div>
+          <div style={{
+            fontSize: isPhone ? 10 : 11,
+            color: s.is_current ? 'var(--ant-color-primary)' : '#999',
+            marginBottom: isPhone ? 4 : 8, fontWeight: s.is_current ? 700 : 400,
+          }}>
+            {dayNum}日
+          </div>
+          {/* 柱状图 */}
+          <div style={{ height: chartHeight, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', marginBottom: isPhone ? 4 : 6 }}>
+            <div style={{
+              width: '55%',
+              height: barHeight,
+              background: hasData
+                ? 'linear-gradient(180deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))'
+                : '#e8e8e8',
+              borderRadius: '6px 6px 0 0',
+              transition: 'height 0.4s ease',
+              boxShadow: hasData ? `0 2px 6px color-mix(in srgb, var(--ant-color-primary) 25%, transparent)` : 'none',
+            }} />
+          </div>
+          {/* 下方每日数据 */}
+          <div style={{ fontSize: isPhone ? 10 : 11, lineHeight: 1.6, color: '#666' }}>
+            <div>🔊 {s.play_count}</div>
+            <div>🎵 {s.media_count}</div>
+            <div>✅ {s.sentence_count}</div>
+          </div>
+        </div>
+      )
+    }
+
+    // 手机端：分两行（4+3），每行 3-4 列；桌面/平板：保持单行 7 列
+    if (isPhone) {
+      const firstHalf = stats.stats.slice(0, 4)  // 周一~周四
+      const secondHalf = stats.stats.slice(4, 7) // 周五~周日
+      const startIdxFor = (offset: number) => offset
+      return (
+        <div>
+          {renderSummaryRow()}
+          {/* 第一行：周一~周四（4 列，span=6 等分） */}
+          <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
+            {firstHalf.map((s, idx) => (
+              <Col key={s.date} span={6}>
+                {renderDayCard(s, startIdxFor(idx))}
+              </Col>
+            ))}
+          </Row>
+          {/* 第二行：周五~周日（3 列，span=8 等分） */}
+          <Row gutter={[8, 8]}>
+            {secondHalf.map((s, idx) => (
+              <Col key={s.date} span={8}>
+                {renderDayCard(s, 4 + idx)}
+              </Col>
+            ))}
+          </Row>
+        </div>
+      )
+    }
+
     return (
       <div>
         {renderSummaryRow()}
         {/* 单行 7 列：周一~周日，每日数据下方展示 */}
         <Row gutter={[8, 8]}>
           {stats.stats.map((s, i) => {
-            const barHeight = Math.max(6, (s.play_count / maxPlay) * 80)
-            const hasData = s.play_count > 0 || s.sentence_count > 0
-            const dayNum = s.date.split('-')[2]
             return (
               <Col key={s.date} flex={1}>
-                <div
-                  style={{
-                    borderRadius: 14,
-                    padding: '10px 6px',
-                    textAlign: 'center',
-                    background: s.is_current
-                      ? 'linear-gradient(135deg, color-mix(in srgb, var(--ant-color-primary) 12%, transparent), color-mix(in srgb, var(--ant-color-primary) 20%, transparent))'
-                      : hasData
-                        ? 'linear-gradient(180deg, #fff, #fef9f5)'
-                        : '#fafafa',
-                    border: s.is_current ? '2px solid var(--ant-color-primary)' : '1px solid #f0f0f0',
-                    boxShadow: s.is_current ? `0 4px 12px color-mix(in srgb, var(--ant-color-primary) 15%, transparent)` : 'none',
-                    opacity: hasData ? 1 : 0.5,
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  {/* 顶部：星期 + 日期号 */}
-                  <div style={{
-                    fontWeight: 700, fontSize: 13,
-                    color: s.is_current ? 'var(--ant-color-primary)' : '#595959',
-                  }}>
-                    {weekdayLabels[i] ?? s.label}
-                  </div>
-                  <div style={{
-                    fontSize: 11, color: s.is_current ? 'var(--ant-color-primary)' : '#999',
-                    marginBottom: 8, fontWeight: s.is_current ? 700 : 400,
-                  }}>
-                    {dayNum}日
-                  </div>
-                  {/* 柱状图 */}
-                  <div style={{ height: 80, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', marginBottom: 6 }}>
-                    <div style={{
-                      width: '55%',
-                      height: barHeight,
-                      background: hasData
-                        ? 'linear-gradient(180deg, var(--ant-color-primary), color-mix(in srgb, var(--ant-color-primary) 70%, white))'
-                        : '#e8e8e8',
-                      borderRadius: '6px 6px 0 0',
-                      transition: 'height 0.4s ease',
-                      boxShadow: hasData ? `0 2px 6px color-mix(in srgb, var(--ant-color-primary) 25%, transparent)` : 'none',
-                    }} />
-                  </div>
-                  {/* 下方每日数据 */}
-                  <div style={{ fontSize: 11, lineHeight: 1.7, color: '#666' }}>
-                    <div>🔊 {s.play_count}</div>
-                    <div>🎵 {s.media_count}</div>
-                    <div>✅ {s.sentence_count}</div>
-                  </div>
-                </div>
+                {renderDayCard(s, i)}
               </Col>
             )
           })}

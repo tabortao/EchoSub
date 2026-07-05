@@ -6,6 +6,11 @@ import type { MediaFile } from '@/types'
 
 interface MediaCoverProps {
   media: MediaFile
+  /**
+   * 显式高度（像素）。未传时使用 `aspectRatio: 2/3` 响应式容器，
+   * 宽度由父容器决定，确保不同设备比例一致。
+   * 传值时退化为固定高度（用于特殊场景如小缩略图列表）。
+   */
   height?: number
   /** 浅色背景的着色 key。默认用 media.id，传入专辑名时同一专辑所有卡片颜色一致。 */
   colorKey?: string | number
@@ -28,12 +33,21 @@ function pastelColor(key: string | number): string {
   return `hsl(${hue}, ${sat}%, ${light}%)`
 }
 
-// MediaCover 渲染媒体封面：
-// - 有同名图片（cover_path）时直接显示该图片；
-// - 视频无封面图时通过 <video preload="metadata"> 显示首帧；
-// - 音频无封面图时用图标占位。
-// 无封面时使用基于 colorKey（默认 media.id）生成的浅色背景，视觉上区分不同媒体且不刺眼。
-export default function MediaCover({ media, height = 140, colorKey }: MediaCoverProps) {
+/**
+ * 媒体封面组件（v0.6.0 起响应式）。
+ *
+ * 行为：
+ * - 有同名图片（cover_path）时直接显示该图片；
+ * - 视频无封面图时通过 <video preload="metadata"> 显示首帧；
+ * - 音频无封面图时用图标占位。
+ * - 无封面时使用基于 colorKey（默认 media.id）生成的浅色背景。
+ *
+ * 响应式：
+ * - 默认使用 `aspect-ratio: 2/3` 容器，宽度由父容器决定，
+ *   配合 `objectFit: cover` 保证图片比例正确，避免拉伸或留白。
+ * - 显式传入 `height` 时退化为固定高度（兼容缩略图等场景）。
+ */
+export default function MediaCover({ media, height, colorKey }: MediaCoverProps) {
   const token = useAuthStore((s) => s.token) ?? ''
   const [imgError, setImgError] = useState(false)
   const [videoError, setVideoError] = useState(false)
@@ -48,18 +62,24 @@ export default function MediaCover({ media, height = 140, colorKey }: MediaCover
   const showVideoFrame = media.type === 'video' && !videoError && !hasImageCover
   const bg = pastelColor(colorKey ?? media.id)
 
+  // 容器样式：传 height 时固定高度；否则用 aspectRatio
+  const containerStyle: React.CSSProperties = {
+    background: hasImageCover || showVideoFrame ? 'var(--color-border-soft, #f0f2f5)' : bg,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    position: 'relative',
+    width: '100%',
+  }
+  if (height != null) {
+    containerStyle.height = height
+  } else {
+    containerStyle.aspectRatio = '2 / 3'
+  }
+
   return (
-    <div
-      style={{
-        height,
-        background: hasImageCover || showVideoFrame ? '#f0f2f5' : bg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        position: 'relative',
-      }}
-    >
+    <div style={containerStyle}>
       {hasImageCover ? (
         <img
           src={mediaApi.coverUrl(media.id, token)}
@@ -80,9 +100,9 @@ export default function MediaCover({ media, height = 140, colorKey }: MediaCover
         <>
           {/* 浅色背景上的图标，用主题色而非灰色更醒目 */}
           {media.type === 'video' ? (
-            <VideoCameraOutlined style={{ fontSize: 48, color: '#1677ff' }} />
+            <VideoCameraOutlined style={{ fontSize: 48, color: 'var(--ant-color-primary, #1677ff)' }} />
           ) : (
-            <AudioOutlined style={{ fontSize: 48, color: '#1677ff' }} />
+            <AudioOutlined style={{ fontSize: 48, color: 'var(--ant-color-primary, #1677ff)' }} />
           )}
         </>
       )}

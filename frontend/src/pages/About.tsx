@@ -82,19 +82,20 @@ export default function About() {
           marginBottom: 24,
           borderRadius: 24,
           border: 'none',
-          background: 'linear-gradient(135deg, rgba(255,122,69,0.08), rgba(242,146,12,0.08))',
+          background: 'linear-gradient(135deg, color-mix(in srgb, var(--ant-color-primary) 8%, transparent), color-mix(in srgb, #F2920C 8%, transparent))',
           overflow: 'hidden',
         }}
+        styles={{ body: { padding: 0 } }}
       >
-        <div style={{ padding: '32px 24px', textAlign: 'center' }}>
-          <div style={{ fontSize: 64, marginBottom: 12 }}>🎓</div>
-          <Title level={2} style={{ margin: 0, fontWeight: 800 }}>
+        <div style={{ padding: 'clamp(20px, 4vw, 32px) clamp(12px, 3vw, 24px)', textAlign: 'center' }}>
+          <div style={{ fontSize: 'clamp(48px, 12vw, 64px)', marginBottom: 12 }}>🎓</div>
+          <Title level={2} style={{ margin: 0, fontWeight: 800, fontSize: 'clamp(24px, 5vw, 32px)' }}>
             EchoSub
             <Text type="secondary" style={{ fontSize: 16, fontWeight: 400, marginLeft: 12 }}>
-              v0.4.0
+              v0.6.0
             </Text>
           </Title>
-          <Paragraph style={{ color: '#595959', fontSize: 15, marginTop: 12, maxWidth: 600, margin: '12px auto 0' }}>
+          <Paragraph style={{ color: 'var(--color-text-secondary, #595959)', fontSize: 15, marginTop: 12, maxWidth: 600, margin: '12px auto 0' }}>
             语言学习与课文背诵的自主托管 Web 应用。
             把视频/音频 + 字幕文件放入目录，自动识别专辑，提供逐句复读、TTS 朗读、
             学习进度跟踪等功能，让语言学习更高效有趣。
@@ -104,6 +105,7 @@ export default function About() {
             <Tag color="green">🔒 隐私优先</Tag>
             <Tag color="blue">🎨 4 套主题</Tag>
             <Tag color="purple">📱 响应式设计</Tag>
+            <Tag color="cyan">🌗 深色模式</Tag>
           </Space>
         </div>
       </Card>
@@ -123,14 +125,15 @@ export default function About() {
                   border: 'none',
                   boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
                   height: '100%',
+                  background: 'var(--color-bg-elevated, #fff)',
                 }}
                 hoverable
               >
                 <div style={{ fontSize: 36, marginBottom: 10 }}>{f.emoji}</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)', marginBottom: 6 }}>
                   {f.title}
                 </div>
-                <div style={{ color: '#666', fontSize: 13, lineHeight: 1.7 }}>
+                <div style={{ color: 'var(--color-text-secondary, #666)', fontSize: 13, lineHeight: 1.7 }}>
                   {f.desc}
                 </div>
               </Card>
@@ -156,6 +159,7 @@ export default function About() {
                   boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
                   height: '100%',
                   textAlign: 'center',
+                  background: 'var(--color-bg-elevated, #fff)',
                 }}
               >
                 <div style={{
@@ -168,8 +172,8 @@ export default function About() {
                   {s.num}
                 </div>
                 <div style={{ fontSize: 24, marginBottom: 4 }}>{s.emoji}</div>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{s.title}</div>
-                <div style={{ color: '#8c8c8c', fontSize: 12, lineHeight: 1.6 }}>{s.desc}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--color-text-primary, #1a1a1a)' }}>{s.title}</div>
+                <div style={{ color: 'var(--color-text-tertiary, #8c8c8c)', fontSize: 12, lineHeight: 1.6 }}>{s.desc}</div>
               </Card>
             </Col>
           ))}
@@ -194,8 +198,8 @@ export default function About() {
       {/* 作者信息 */}
       <div style={{ textAlign: 'center', padding: '24px 0' }}>
         <div style={{ fontSize: 32, marginBottom: 8 }}>👨‍💻</div>
-        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>作者：tabortao</div>
-        <div style={{ color: '#8c8c8c', fontSize: 13, marginBottom: 12 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: 'var(--color-text-primary, #1a1a1a)' }}>作者：tabortao</div>
+        <div style={{ color: 'var(--color-text-tertiary, #8c8c8c)', fontSize: 13, marginBottom: 12 }}>
           用 ❤️ 为语言学习者打造
         </div>
         <Space>
