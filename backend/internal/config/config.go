@@ -15,6 +15,19 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Media    MediaConfig
+	AI       AIConfig
+}
+
+// AIConfig AI 翻译配置（v0.8.0）
+// 所有字段都来自环境变量（用户选择：环境变量全局配置），
+// 不通过 config.yaml / 数据库存储。原因：API key 敏感，避免明文落盘。
+type AIConfig struct {
+	Enabled    bool   // 是否启用 AI 翻译（BaseURL + APIKey 都存在时为 true）
+	BaseURL    string // OpenAI 兼容接口 base url，如 https://api.openai.com/v1
+	APIKey     string // API 密钥
+	Model      string // 模型名，如 gpt-4o-mini / deepseek-chat / qwen-plus
+	TargetLang string // 默认翻译目标语言，如 Chinese
+	TimeoutSec int    // 单次请求超时（秒）
 }
 
 // ServerConfig HTTP 服务配置
@@ -61,6 +74,12 @@ func Default() *Config {
 			SupportedAudio:  []string{".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg"},
 			SupportedSubs:   []string{".srt", ".vtt"},
 			SupportedImages: []string{".jpg", ".jpeg", ".png", ".webp"},
+		},
+		AI: AIConfig{
+			BaseURL:    "https://api.openai.com/v1",
+			Model:      "gpt-4o-mini",
+			TargetLang: "Chinese",
+			TimeoutSec: 60,
 		},
 	}
 }
@@ -141,6 +160,31 @@ func Load() (*Config, error) {
 	}
 	if v := os.Getenv("ECHOSUB_MEDIA_DIR"); v != "" {
 		cfg.Media.Dir = v
+	}
+	// AI 配置（v0.8.0）：仅通过环境变量注入，API key 避免明文落盘
+	if v := os.Getenv("ECHOSUB_AI_BASE_URL"); v != "" {
+		cfg.AI.BaseURL = v
+	}
+	if v := os.Getenv("ECHOSUB_AI_API_KEY"); v != "" {
+		cfg.AI.APIKey = v
+	}
+	if v := os.Getenv("ECHOSUB_AI_MODEL"); v != "" {
+		cfg.AI.Model = v
+	}
+	if v := os.Getenv("ECHOSUB_AI_TARGET_LANG"); v != "" {
+		cfg.AI.TargetLang = v
+	}
+	if v := os.Getenv("ECHOSUB_AI_TIMEOUT"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i > 0 {
+			cfg.AI.TimeoutSec = i
+		}
+	}
+	// 启用判定：必须 BaseURL + APIKey 都有值才启用
+	cfg.AI.Enabled = cfg.AI.BaseURL != "" && cfg.AI.APIKey != ""
+	if cfg.AI.Enabled {
+		fmt.Printf("[INFO] AI 翻译已启用：%s / %s\n", cfg.AI.BaseURL, cfg.AI.Model)
+	} else {
+		fmt.Println("[INFO] AI 翻译未启用（未配置 ECHOSUB_AI_API_KEY）")
 	}
 
 	// 3. 确保数据目录存在

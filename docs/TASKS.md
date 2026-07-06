@@ -1,3 +1,71 @@
+# TASKS.md — v0.8.1 AI 双语字幕 + 连通性测试
+
+配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v0.8.1 AI 双语字幕 + 连通性测试（2026-07-06）
+
+### 后端
+
+- [x] **T1** `internal/handlers/ai.go` `translateReq` 新增 `mode` 字段（`replace` / `bilingual`，缺省 `bilingual`），bilingual 模式下后端拼接 `原文\n译文` 返回
+- [x] **T2** `internal/handlers/ai.go` 新增 `Test` handler（POST /api/v1/ai/test）— 用 `texts=["Hello"]` 调一次 AI，返回连通状态 / 模型 / 耗时 / 样例翻译 / 错误描述
+- [x] **T3** `internal/router/router.go` 注册 `ai.POST("/test", aiH.Test)` 路由
+- [x] **T4** `pkg/subtitle/subtitle_test.go` v0.8.0 的 14 个测试保持全绿（双语拼接复用现有 `parseNumberedLines` + `atomicWrite`，无新增测试）
+
+### 前端
+
+- [x] **T5** `src/types/index.ts` `AITranslateRequest.mode?: 'replace' | 'bilingual'`，`AITranslateResponse.translations` 注释明确两种模式语义
+- [x] **T6** `src/api/index.ts` `aiApi.test()` 调 `POST /ai/test`
+- [x] **T7** `src/components/SubtitleEditor.tsx` 工具栏新增「🌐 双语字幕 / ✍️ 替换原文」二选一，默认 `bilingual`；模式变化反映在翻译完成提示上
+- [x] **T8** `src/pages/Settings.tsx` `AICard` 标题栏新增「⚡ 测试连通性」按钮（在「刷新状态」左侧），AI 未启用时 disabled；测试结果用绿/红框展示，含状态文案、base url 主机名、模型、耗时与「Hello → 你好」样例翻译
+
+### 验证
+
+- [x] **T9** `go build ./...` exit code 0
+- [x] **T10** `go vet ./...` exit code 0
+- [x] **T11** `go test ./pkg/subtitle/...` 14/14 测试通过
+- [x] **T12** `pnpm build` exit code 0（1531 modules / 27 PWA precache / tsc -b 严格类型检查）
+- [x] **T13** 集成测试 `test-api.ps1` 13/16 PASS（v0.8.1 新增 2 段：14. /ai/test + 15. bilingual 模式，全部 PASS；3 项 FAIL 仍为预先存在的 lesson1 媒体名不匹配）
+- [x] **T14** ChangeLog.md v0.8.1 章节完整记录双语字幕与连通性测试实现
+- [x] **T15** PLAN.md / TASKS.md / README.md 同步更新
+
+---
+
+# TASKS.md — v0.8.0 字幕逐句编辑 + AI 翻译
+
+配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v0.8.0 字幕逐句编辑 + AI 翻译（2026-07-06）
+
+### 后端
+
+- [x] **T1** `internal/config/config.go` 新增 `AIConfig` 结构体 + `ECHOSUB_AI_*` 环境变量族（BASE_URL / API_KEY / MODEL / TARGET_LANG / TIMEOUT_SEC）
+- [x] **T2** `pkg/subtitle/subtitle.go` 新增 `WriteFile` / `WriteSRT` / `WriteVTT` 原子写回方法 + `FormatSRTTime` / `FormatVTTTime` 时间戳格式化
+- [x] **T3** `pkg/subtitle/subtitle_test.go` 新增 6 个测试（FormatSRTTime/FormatVTTTime/WriteSRT_RoundTrip/WriteVTT_RoundTrip/WriteFile_Unsupported/WriteSRT_Empty），合计 14 个测试全绿
+- [x] **T4** `internal/handlers/media.go` 新增 `UpdateSubtitle` handler（PUT /api/v1/media/:id/subtitle）— 鉴权 + 校验 + 原子写回
+- [x] **T5** `internal/handlers/ai.go` 新增 `AIHandler` + `Translate`（批量翻译代理 OpenAI 兼容接口）+ `Status`（脱敏配置状态查询）
+- [x] **T6** `internal/router/router.go` 注册 `/ai` 路由组 + 媒体 `PUT /:id/subtitle` 路由
+
+### 前端
+
+- [x] **T7** `src/types/index.ts` 新增 `AITranslateRequest` / `AITranslateResponse` / `AIStatus` / `AIUsage` 类型
+- [x] **T8** `src/api/index.ts` 新增 `aiApi` 模块 + `mediaApi.updateSubtitle` 方法
+- [x] **T9** `src/components/SubtitleEditor.tsx` 新建 — 每行 TextArea + 时间戳 InputNumber + 单条 AI 翻译 + 顶部 AI 翻译全部按钮 + 目标语言输入
+- [x] **T10** `src/components/MediaPlayer.tsx`「全文」Tab 顶部新增「编辑字幕」按钮 + `editing` 状态切换集成 SubtitleEditor
+- [x] **T11** `src/pages/Settings.tsx` 新增 `AICard` 组件 — 显示当前 AI 状态 + 模型 + 默认目标语言 + 完整环境变量配置说明
+
+### 验证
+
+- [x] **T12** `go build ./...` exit code 0
+- [x] **T13** `go vet ./...` exit code 0
+- [x] **T14** `go test ./...` 14/14 测试通过
+- [x] **T15** `pnpm build` exit code 0（1531 modules / 27 PWA precache）
+- [x] **T16** 修复 byte/rune 混用编译错误（looksLikeNumbered / stripNumberPrefix 重写为 `strings.HasPrefix` 整段匹配）
+- [x] **T17** ChangeLog.md / PLAN.md / TASKS.md 同步更新
+- [x] **T18** 集成测试脚本（`test-api.ps1`）新增 3 段：AI status / 字幕 update（真实写回 SRT 文件并自动恢复）/ AI translate（未启用 503）— PASS 11/14（3 项失败为预先存在的 lesson1 媒体名不匹配，与 v0.8.0 无关）
+- [x] **T19** README.md API 概览新增 `PUT /media/:id/subtitle` + 🤖 AI 翻译段落（`/ai/status` + `/ai/translate`）
+
+---
+
 # TASKS.md — v0.7.0 动物森友会风格全站 UI 重设计任务跟踪
 
 配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。

@@ -271,3 +271,71 @@ export interface ApiResponse<T = unknown> {
   message: string
   data: T
 }
+
+// ===== AI 翻译（v0.8.0 起）=====
+/** AI 翻译用量统计（OpenAI 兼容接口的 usage 字段） */
+export interface AIUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
+/** AI 批量翻译请求 */
+export interface AITranslateRequest {
+  /** 待翻译文本数组（顺序与响应 translations 一一对应） */
+  texts: string[]
+  /** 目标语言，可选；缺省使用后端配置默认值 */
+  target_lang?: string
+  /** 源语言，可选；缺省让 AI 自动识别 */
+  source_lang?: string
+  /**
+   * 翻译模式（v0.8.1 起）：
+   * - "replace"   ：用译文替换原文（v0.8.0 行为，保留兼容）
+   * - "bilingual" ：生成「原文\n译文」双语字幕（默认）
+   * 缺省时后端按 bilingual 处理
+   */
+  mode?: 'replace' | 'bilingual'
+}
+
+/** AI 批量翻译响应 */
+export interface AITranslateResponse {
+  /**
+   * 翻译结果（顺序与请求一致；缺失项可能为空串）
+   * - replace 模式下：单条译文
+   * - bilingual 模式下：「原文\n译文」，可直接写入 SRT 形成双语字幕
+   */
+  translations: string[]
+  /** 实际使用的模型 */
+  model: string
+  /** token 用量，缺省时为 null */
+  usage?: AIUsage | null
+}
+
+/** AI 配置状态（仅返回「是否启用」，不返回密钥） */
+export interface AIStatus {
+  enabled: boolean
+  /** 是否有 base url（不返回实际地址，只提示是否已配置） */
+  has_base_url: boolean
+  /** 当前默认模型 */
+  model: string
+  /** 默认目标语言 */
+  target_lang: string
+}
+
+/** AI 连通性测试响应（v0.8.1 起） */
+export interface AITestResponse {
+  /** 是否连通（HTTP 200 + 业务 ok=true） */
+  ok: boolean
+  /** AI 是否启用（与 /ai/status 一致） */
+  enabled: boolean
+  /** 实际调通的模型名 */
+  model: string
+  /** 脱敏后的 base url 主机名（如 api.openai.com） */
+  base_url_host: string
+  /** 测试样例翻译结果（连通时返回，例：'你好'） */
+  sample_translation?: string
+  /** 本次调用耗时（毫秒） */
+  latency_ms: number
+  /** 错误或成功描述 */
+  message: string
+}

@@ -19,6 +19,11 @@ import type {
   StudyNote,
   MediaRemark,
   ApiResponse,
+  AITranslateRequest,
+  AITranslateResponse,
+  AITestResponse,
+  AIStatus,
+  Sentence,
 } from '@/types'
 
 // ===== 认证 =====
@@ -159,6 +164,12 @@ export const mediaApi = {
   /** 删除文件备注 */
   deleteRemark: (mediaId: number) =>
     client.delete<ApiResponse>(`/media/${mediaId}/remark`),
+  /**
+   * 把编辑后的字幕句子数组原子写回原 SRT/VTT 文件（v0.8.0 起）
+   * 后端会校验 start/end/text 合法性，全部通过后调用 pkg/subtitle.WriteFile 写回磁盘
+   */
+  updateSubtitle: (id: number, sentences: Sentence[]) =>
+    client.put<ApiResponse<{ path: string; count: number }>>(`/media/${id}/subtitle`, { sentences }),
 }
 
 // ===== 标签 =====
@@ -275,4 +286,26 @@ export const settingsApi = {
 export const scanApi = {
   trigger: () => client.post<ApiResponse>('/scan/trigger'),
   status: () => client.get<ApiResponse<{ scanning: boolean }>>('/scan/status'),
+}
+
+// ===== AI 翻译（v0.8.0 起）=====
+export const aiApi = {
+  /**
+   * 批量翻译：把多条字幕一次发给后端代理，后端再转发到 OpenAI 兼容 chat/completions 接口
+   * 后端会按 "<序号>. <译文>" 解析 AI 输出，缺失项回退原文
+   * v0.8.1 起：payload.mode = "bilingual"（默认）时返回「原文\n译文」双语字幕
+   */
+  translate: (payload: AITranslateRequest) =>
+    client.post<ApiResponse<AITranslateResponse>>('/ai/translate', payload),
+  /**
+   * 查询 AI 是否启用 + 当前默认模型/目标语言
+   * 注意：API key 与 base url 始终只存在后端环境变量，前端不接触密钥
+   */
+  status: () => client.get<ApiResponse<AIStatus>>('/ai/status'),
+  /**
+   * AI 连通性测试（v0.8.1 起）：
+   * 用 texts=["Hello"] 调一次 AI，返回 ok/sample_translation/latency_ms，
+   * 设置页用它判断「未配置 / 网络问题 / key 无效 / 模型不对」等场景
+   */
+  test: () => client.post<ApiResponse<AITestResponse>>('/ai/test', {}),
 }

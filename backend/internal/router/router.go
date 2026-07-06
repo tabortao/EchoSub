@@ -52,6 +52,8 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			media.GET("/:id/stream", handlers.StreamMedia())
 			media.GET("/:id/cover", handlers.GetCover())
 			media.GET("/:id/subtitle", handlers.GetSubtitle())
+			// 字幕编辑写回：客户端传完整句子数组，原子写回原 SRT/VTT 文件（v0.8.0）
+			media.PUT("/:id/subtitle", handlers.UpdateSubtitle())
 			media.POST("/:id/tags", handlers.AssignTags())
 			media.PUT("/:id/rename", handlers.RenameMedia(cfg))
 			media.DELETE("/:id", handlers.DeleteMedia(cfg))
@@ -129,6 +131,15 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 		{
 			scan.POST("/trigger", scanH.Trigger())
 			scan.GET("/status", scanH.Status())
+		}
+
+		// AI 翻译（v0.8.0）+ 连通性测试（v0.8.1）
+		aiH := handlers.NewAIHandler(cfg)
+		ai := authed.Group("/ai")
+		{
+			ai.POST("/translate", aiH.Translate)
+			ai.GET("/status", aiH.Status)
+			ai.POST("/test", aiH.Test)
 		}
 	}
 }

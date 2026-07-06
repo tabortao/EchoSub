@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Row, Col, Table, Progress, Spin, Tag, Tabs, Button, Space, message, Alert, ConfigProvider, Typography } from 'antd'
+import { Card, Row, Col, Table, Progress, Spin, Tag, Tabs, Button, Space, Tooltip, message, Alert, ConfigProvider, Typography } from 'antd'
 import { CheckCircleOutlined, PlayCircleOutlined, FolderOutlined, LeftOutlined, RightOutlined, ReloadOutlined, FireOutlined, TrophyOutlined } from '@ant-design/icons'
 import { recordApi } from '@/api'
 import type { ProgressResponse, PlayRecord, StudyStatsResponse } from '@/types'

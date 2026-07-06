@@ -1,6 +1,9 @@
 package subtitle
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -175,5 +178,129 @@ func TestFormatDuration(t *testing.T) {
 		if got != c.want {
 			t.Errorf("FormatDuration(%v) = %q, want %q", c.sec, got, c.want)
 		}
+	}
+}
+
+// TestFormatSRTTime SRT 时间戳格式 HH:MM:SS,mmm
+func TestFormatSRTTime(t *testing.T) {
+	cases := []struct {
+		sec  float64
+		want string
+	}{
+		{0, "00:00:00,000"},
+		{1.5, "00:00:01,500"},
+		{65.25, "00:01:05,250"},
+		{3723.001, "01:02:03,001"},
+	}
+	for _, c := range cases {
+		got := FormatSRTTime(c.sec)
+		if got != c.want {
+			t.Errorf("FormatSRTTime(%v) = %q, want %q", c.sec, got, c.want)
+		}
+	}
+}
+
+// TestFormatVTTTime VTT 时间戳格式 HH:MM:SS.mmm
+func TestFormatVTTTime(t *testing.T) {
+	cases := []struct {
+		sec  float64
+		want string
+	}{
+		{0, "00:00:00.000"},
+		{1.5, "00:00:01.500"},
+		{65.25, "00:01:05.250"},
+	}
+	for _, c := range cases {
+		got := FormatVTTTime(c.sec)
+		if got != c.want {
+			t.Errorf("FormatVTTTime(%v) = %q, want %q", c.sec, got, c.want)
+		}
+	}
+}
+
+// TestWriteSRT_RoundTrip 验证 WriteSRT → ParseSRT 保持数据一致
+func TestWriteSRT_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.srt")
+	original := []Sentence{
+		{Index: 0, Start: 1.0, End: 3.0, Text: "Hello World"},
+		{Index: 1, Start: 4.5, End: 6.0, Text: "Line 1\nLine 2"},
+		{Index: 2, Start: 62.0, End: 65.25, Text: "Final 句子"},
+	}
+	if err := WriteSRT(path, original); err != nil {
+		t.Fatalf("WriteSRT failed: %v", err)
+	}
+	// 验证临时文件已被 rename 删除
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf(".tmp 文件未清理")
+	}
+	// 解析回来
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile failed: %v", err)
+	}
+	if len(got) != len(original) {
+		t.Fatalf("轮转后句数不对: got %d want %d", len(got), len(original))
+	}
+	for i, s := range got {
+		if s.Start != original[i].Start || s.End != original[i].End || s.Text != original[i].Text {
+			t.Errorf("第 %d 句轮转后不一致:\n got  start=%v end=%v text=%q\n want start=%v end=%v text=%q",
+				i, s.Start, s.End, s.Text, original[i].Start, original[i].End, original[i].Text)
+		}
+	}
+}
+
+// TestWriteVTT_RoundTrip 验证 WriteVTT → ParseVTT 保持数据一致
+func TestWriteVTT_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.vtt")
+	original := []Sentence{
+		{Index: 0, Start: 0.5, End: 2.8, Text: "First cue"},
+		{Index: 1, Start: 3.0, End: 5.5, Text: "Second cue"},
+	}
+	if err := WriteVTT(path, original); err != nil {
+		t.Fatalf("WriteVTT failed: %v", err)
+	}
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile failed: %v", err)
+	}
+	if len(got) != len(original) {
+		t.Fatalf("轮转后句数不对: got %d want %d", len(got), len(original))
+	}
+	for i, s := range got {
+		if s.Start != original[i].Start || s.End != original[i].End || s.Text != original[i].Text {
+			t.Errorf("第 %d 句不一致: got start=%v end=%v text=%q",
+				i, s.Start, s.End, s.Text)
+		}
+	}
+}
+
+// TestWriteFile_Unsupported 写入不支持的扩展名应该报错
+func TestWriteFile_Unsupported(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.txt")
+	err := WriteFile(path, []Sentence{{Index: 0, Start: 0, End: 1, Text: "x"}})
+	if err == nil {
+		t.Errorf("不支持的扩展名应该报错")
+	}
+	if !strings.Contains(err.Error(), "不支持的字幕格式") {
+		t.Errorf("错误信息不对: %v", err)
+	}
+}
+
+// TestWriteSRT_Empty 写空数组得到空文件（不应 panic）
+func TestWriteSRT_Empty(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "test.srt")
+	if err := WriteSRT(path, []Sentence{}); err != nil {
+		t.Fatalf("WriteSRT failed: %v", err)
+	}
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile failed: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("空文件应解析为空数组, got %d", len(got))
 	}
 }

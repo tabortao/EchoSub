@@ -66,6 +66,7 @@
 EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵场景设计。只需将视频 / 音频 + 字幕文件放入被监听的文件夹（NAS / 本地均可），EchoSub 会自动发现、Emby 风格解析元数据并按专辑 / 季分组，提供：
 
 - 🎬 **逐句复读播放器**：每句重复 M 次 → 暂停 K 秒 → 下一句；整体循环 N 次；速度 0.1 步进调节。
+- ✍️ **字幕逐句编辑 + AI 双语翻译**（v0.8.0 起）：播放器内可在线编辑每条字幕并通过 OpenAI 兼容接口批量翻译，v0.8.1 默认生成「原文 + 译文」双语字幕（中文 → 中英 / 英文 → 中英）。
 - 📚 **Markdown 学习页**：每个专辑可创建多份学习笔记，支持多图上传 + 全屏查看 + TTS 朗读。
 - 🏷️ **多态标签系统**（v0.5.0 起）：专辑 / 季 / 学习页 / 媒体四类实体可统一打标签与按标签筛选。
 - 🎨 **Emby 风格扫描**：自动识别 `folder.jpg` / `banner.jpg` / `tvshow.nfo` 等元数据。
@@ -86,6 +87,8 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 - **季（Sub-Album）支持**：媒体子目录自动作为季，独立封面 / 横幅 / 描述；季可继承专辑横幅。
 - **配对媒体**：同目录同名（仅扩展名不同）的 video + audio 自动配对，列表只显示 video，播放器可一键切换 🎬 视频 / 🎵 音频。
 - **字幕解析**：支持 SRT / WebVTT，统一为 `Sentence{Index, Start, End, Text}` 结构。处理 UTF-8 BOM、CRLF、`HH:MM:SS,mmm` / `MM:SS,mmm` / `SS,mmm` 时间戳格式。
+- **字幕逐句编辑**（v0.8.0 起）：播放器内可在线修改每条字幕的时间戳与文本，保存后原子写回 SRT / VTT 文件（先写 `.tmp` 再 `rename`）。
+- **AI 双语字幕**（v0.8.1 起）：通过 OpenAI 兼容代理接口批量翻译字幕，默认生成「原文 + 译文」双语字幕（中文 → 中英 / 英文 → 中英），可在播放器内一键应用。
 - **逐句复读播放器**：每句重复 M 次 → 暂停 K 秒 → 下一句；整体循环 N 次；速度 0.1 步进，范围 0.5~2.0。
 - **逐句进度跟踪**：标记句子完成状态、跟踪重复次数、收藏；按专辑 / 标签聚合统计。
 - **继续观看**：首页「继续观看」区显示未学完的媒体，自动从上次位置续播。
@@ -361,6 +364,7 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 | GET    | `/media/:id/stream`               | 流式播放（支持 HTTP Range）           |
 | GET    | `/media/:id/cover`                | 封面图片                              |
 | GET    | `/media/:id/subtitle`             | 已解析句子 + 进度                     |
+| PUT    | `/media/:id/subtitle`             | 字幕逐句编辑（v0.8.0）：原子写回 SRT/VTT 文件 |
 | GET    | `/media/:id/remark`               | 获取媒体备注 Markdown                 |
 | PUT    | `/media/:id/remark`               | 保存 / 覆盖媒体备注                   |
 | DELETE | `/media/:id/remark`               | 删除媒体备注                          |
@@ -431,6 +435,16 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 | GET    | `/scan/status`                    | 扫描器状态                            |
 | GET    | `/settings`                       | 获取用户设置                          |
 | PUT    | `/settings`                       | 更新用户设置（loop/sentence/pause/TTS）|
+
+### 🤖 AI 翻译（v0.8.0，OpenAI 兼容代理）
+
+| Method | Path                              | 描述                                  |
+|--------|-----------------------------------|--------------------------------------|
+| GET    | `/ai/status`                      | AI 配置状态（enabled / model / target_lang，**不返回** API key） |
+| POST   | `/ai/translate`                   | 批量翻译字幕（最多 200 条/次，转发到 OpenAI 兼容 `chat/completions`；v0.8.1 起支持 `mode=bilingual\|replace`，默认 `bilingual` 生成双语字幕）|
+| POST   | `/ai/test`                        | 连通性测试（v0.8.1 起；用 `texts=["Hello"]` 调一次 AI，返回 `{ok, enabled, model, base_url_host, sample_translation, latency_ms, message}`，便于在设置页一键验证）|
+
+> 配置：通过 `ECHOSUB_AI_BASE_URL` / `ECHOSUB_AI_API_KEY` / `ECHOSUB_AI_MODEL` 等环境变量注入后端，密钥不出前端、不进数据库。设置页「🤖 AI 翻译」卡片提供「⚡ 测试连通性」按钮，命中后即在卡片内显示绿色「连通正常」+ 耗时 +「Hello → 你好」样例。详见 [ChangeLog v0.8.0](docs/ChangeLog.md#v080---2026-07-06) 与 [ChangeLog v0.8.1](docs/ChangeLog.md#v081---2026-07-06)。
 
 ## 默认测试账号
 

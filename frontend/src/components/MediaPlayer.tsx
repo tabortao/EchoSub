@@ -14,6 +14,7 @@ import {
   MinusOutlined,
   PlusOutlined,
   FileTextOutlined,
+  EditOutlined,
 } from '@ant-design/icons'
 import { mediaApi, recordApi } from '@/api'
 import { useSettingsStore } from '@/store/settings'
@@ -21,6 +22,7 @@ import { useAuthStore } from '@/store/auth'
 import type { Sentence, PairedMedia, MediaType } from '@/types'
 import { formatDuration } from '@/utils'
 import MarkdownEditor from '@/components/MarkdownEditor'
+import SubtitleEditor from '@/components/SubtitleEditor'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
 
 const { Text } = Typography
@@ -86,6 +88,8 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   const [remarkLoaded, setRemarkLoaded] = useState(false)
   // 当前正在播放的媒体类型与 id：有配对时支持手动切换 video↔audio
   const [activeType, setActiveType] = useState<MediaType>(mediaType)
+  // 字幕编辑模式：true 时"全文" tab 显示 SubtitleEditor（v0.8.0）
+  const [editing, setEditing] = useState(false)
   // 切换 tab 时记录上一个进度，待新元素 ready 后回放
   const pendingSeekRef = useRef<number | null>(null)
 
@@ -144,6 +148,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   // 切换到不同媒体时，重置 activeType 为该媒体默认类型
   useEffect(() => {
     setActiveType(mediaType)
+    setEditing(false) // 切媒体时退出字幕编辑模式
   }, [mediaId, mediaType])
 
   // 备注失焦保存
@@ -848,11 +853,31 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
             {
               key: 'all',
               label: <span><OrderedListOutlined /> 全文</span>,
-              children: (
+              children: editing ? (
+                // 编辑模式：渲染 SubtitleEditor（v0.8.0）
+                <SubtitleEditor
+                  mediaId={mediaId}
+                  sentences={localSentences}
+                  onCancel={() => setEditing(false)}
+                  onSaved={(next) => {
+                    setLocalSentences(next)
+                    setEditing(false)
+                  }}
+                />
+              ) : (
                 <div>
                   <div style={{ marginBottom: 8, color: 'var(--color-text-secondary, #666)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <span style={{ fontSize: isPhone ? 12 : 13 }}>点击跳转，绿色为已完成</span>
                     <Space size="small" wrap>
+                      <Button
+                        size="small"
+                        type="primary"
+                        icon={<EditOutlined />}
+                        onClick={() => setEditing(true)}
+                        style={{ minHeight: 32 }}
+                      >
+                        编辑字幕
+                      </Button>
                       <EyeInvisibleOutlined />
                       <Switch checked={maskMode} onChange={onMaskModeChange} size="small" />
                       <span style={{ fontSize: 12 }}>遮挡模式</span>

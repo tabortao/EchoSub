@@ -174,4 +174,80 @@ func FormatDuration(sec float64) string {
 	return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 }
 
+// FormatSRTTime 将秒格式化为 SRT 时间戳 HH:MM:SS,mmm
+func FormatSRTTime(sec float64) string {
+	d := time.Duration(sec * float64(time.Second))
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	ms := int(d.Milliseconds()) % 1000
+	return fmt.Sprintf("%02d:%02d:%02d,%03d", h, m, s, ms)
+}
+
+// FormatVTTTime 将秒格式化为 VTT 时间戳 HH:MM:SS.mmm
+func FormatVTTTime(sec float64) string {
+	d := time.Duration(sec * float64(time.Second))
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	ms := int(d.Milliseconds()) % 1000
+	return fmt.Sprintf("%02d:%02d:%02d.%03d", h, m, s, ms)
+}
+
+// WriteFile 把句子数组写回字幕文件（按扩展名分发）。
+// 句子的 Index 字段将被忽略，重新从 1 开始编号。
+// 句子的 Start/End/Text 用于重建文件；Text 包含换行会原样保留。
+func WriteFile(path string, sentences []Sentence) error {
+	switch {
+	case strings.HasSuffix(strings.ToLower(path), ".srt"):
+		return WriteSRT(path, sentences)
+	case strings.HasSuffix(strings.ToLower(path), ".vtt"):
+		return WriteVTT(path, sentences)
+	default:
+		return fmt.Errorf("不支持的字幕格式: %s", path)
+	}
+}
+
+// WriteSRT 把句子数组写为 SRT 格式
+// 格式：序号行 / 时间行（HH:MM:SS,mmm --> HH:MM:SS,mmm） / 文本行 / 空行
+func WriteSRT(path string, sentences []Sentence) error {
+	var sb strings.Builder
+	for i, s := range sentences {
+		sb.WriteString(fmt.Sprintf("%d\n", i+1))
+		sb.WriteString(fmt.Sprintf("%s --> %s\n", FormatSRTTime(s.Start), FormatSRTTime(s.End)))
+		// 保留多行文本（按 \n 拆分）
+		sb.WriteString(strings.TrimSpace(s.Text))
+		sb.WriteString("\n\n")
+	}
+	return atomicWrite(path, []byte(sb.String()))
+}
+
+// WriteVTT 把句子数组写为 WebVTT 格式
+// 开头固定 WEBVTT 头，然后每条：时间行 + 文本 + 空行
+func WriteVTT(path string, sentences []Sentence) error {
+	var sb strings.Builder
+	sb.WriteString("WEBVTT\n\n")
+	for i, s := range sentences {
+		// VTT 序号非必需但加上便于阅读
+		sb.WriteString(fmt.Sprintf("%d\n", i+1))
+		sb.WriteString(fmt.Sprintf("%s --> %s\n", FormatVTTTime(s.Start), FormatVTTTime(s.End)))
+		sb.WriteString(strings.TrimSpace(s.Text))
+		sb.WriteString("\n\n")
+	}
+	return atomicWrite(path, []byte(sb.String()))
+}
+
+// atomicWrite 原子写文件：先写 .tmp 再 rename，避免编辑过程中崩溃导致源文件损坏。
+func atomicWrite(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return fmt.Errorf("写临时文件失败: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("重命名临时文件失败: %w", err)
+	}
+	return nil
+}
+
 

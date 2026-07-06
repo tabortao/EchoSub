@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
 import {
   Card, Form, InputNumber, Button, message, Spin, Typography, Divider,
-  Input, Avatar, Upload, Slider, Select, Space, Row, Col,
+  Input, Avatar, Upload, Slider, Select, Space, Row, Col, Tag, Alert,
 } from 'antd'
 import {
   UserOutlined, LockOutlined, PictureOutlined, CheckOutlined,
-  SunOutlined, MoonOutlined, DesktopOutlined,
+  SunOutlined, MoonOutlined, DesktopOutlined, ApiOutlined,
+  CheckCircleFilled, CloseCircleFilled,
 } from '@ant-design/icons'
 import { useSettingsStore } from '@/store/settings'
 import { useAuthStore } from '@/store/auth'
-import { authApi } from '@/api'
+import { aiApi, authApi } from '@/api'
 import { THEMES, type ThemeKey } from '@/theme/themes'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
-import type { ColorMode, Settings, User } from '@/types'
+import type { AIStatus, AITestResponse, ColorMode, Settings, User } from '@/types'
 
 const { Text } = Typography
 
@@ -242,6 +243,9 @@ export default function SettingsPage() {
 
       {/* 账户管理 */}
       <AccountCard />
+
+      {/* AI 翻译设置（v0.8.0 起）*/}
+      <AICard />
 
       {/* 说明 */}
       <Card
@@ -713,6 +717,193 @@ function AccountCard() {
           </Form>
         </div>
       </div>
+    </Card>
+  )
+}
+
+/**
+ * AI 翻译设置卡片（v0.8.0 起）。
+ *
+ * 设计：
+ *  - AI 配置（API key、base url、model）由后端环境变量提供，密钥不落盘、不经前端。
+ *  - 此页面只展示当前状态，并提供「环境变量配置说明」。
+ *  - 若 AI 未启用，编辑器中的"翻译"按钮会被禁用，提示用户去后端配置。
+ */
+function AICard() {
+  const [status, setStatus] = useState<AIStatus | null>(null)
+  const [loading, setLoading] = useState(true)
+  // 连通性测试结果（v0.8.1 起）
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<AITestResponse | null>(null)
+  const { isPhone } = useDeviceSize()
+
+  const refresh = async () => {
+    setLoading(true)
+    try {
+      const res = await aiApi.status()
+      setStatus(res.data.data as AIStatus)
+    } catch {
+      setStatus(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 测试 AI 连通性（v0.8.1）
+  const handleTest = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await aiApi.test()
+      setTestResult(res.data.data as AITestResponse)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '连通性测试失败'
+      setTestResult({
+        ok: false,
+        enabled: status?.enabled ?? false,
+        model: status?.model ?? '',
+        base_url_host: '',
+        latency_ms: 0,
+        message: msg,
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  useEffect(() => { refresh() }, [])
+
+  return (
+    <Card
+      style={{
+        marginBottom: 20,
+        borderRadius: 20,
+        border: 'none',
+        background: 'var(--color-bg-elevated, #fff)',
+        boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+      }}
+      styles={{ body: { padding: isPhone ? '16px' : '20px 24px' } }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 22 }}>🤖</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>AI 翻译</span>
+        <Text type="secondary" style={{ fontSize: 12 }}>用于字幕编辑页面的「AI 翻译全部 / 单条」功能</Text>
+        <div style={{ flex: 1 }} />
+        <Button size={isPhone ? 'middle' : 'small'} onClick={handleTest} loading={testing} disabled={!status?.enabled} style={{ minHeight: 32 }}>
+          ⚡ 测试连通性
+        </Button>
+        <Button size={isPhone ? 'middle' : 'small'} onClick={refresh} loading={loading} style={{ minHeight: 32 }}>刷新状态</Button>
+      </div>
+
+      {/* 当前状态 */}
+      {status && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          padding: isPhone ? '10px 12px' : '12px 16px',
+          background: status.enabled ? 'rgba(82, 196, 26, 0.08)' : 'rgba(245, 34, 45, 0.06)',
+          border: status.enabled ? '1px solid rgba(82, 196, 26, 0.3)' : '1px solid rgba(245, 34, 45, 0.2)',
+          borderRadius: 12, marginBottom: 12,
+        }}>
+          {status.enabled ? (
+            <CheckCircleFilled style={{ color: '#52c41a', fontSize: 20 }} />
+          ) : (
+            <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 20 }} />
+          )}
+          <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: isPhone ? 14 : 15 }}>
+            {status.enabled ? 'AI 翻译已启用' : 'AI 翻译未启用'}
+          </span>
+          {status.enabled && (
+            <>
+              <Tag color="blue" style={{ margin: 0 }}>模型 {status.model || '未设置'}</Tag>
+              <Tag color="purple" style={{ margin: 0 }}>默认目标 {status.target_lang || 'Chinese'}</Tag>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 连通性测试结果（v0.8.1） */}
+      {testResult && (
+        <div
+          data-testid="ai-test-result"
+          style={{
+            padding: isPhone ? '10px 12px' : '12px 16px',
+            background: testResult.ok ? 'rgba(82, 196, 26, 0.05)' : 'rgba(245, 34, 45, 0.05)',
+            border: testResult.ok ? '1px solid rgba(82, 196, 26, 0.3)' : '1px solid rgba(245, 34, 45, 0.25)',
+            borderRadius: 12,
+            marginBottom: 12,
+            fontSize: 13,
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: testResult.ok || !testResult.enabled ? 6 : 0 }}>
+            {testResult.ok ? (
+              <CheckCircleFilled style={{ color: '#52c41a' }} />
+            ) : (
+              <CloseCircleFilled style={{ color: '#ff4d4f' }} />
+            )}
+            <span style={{ fontWeight: 700, color: testResult.ok ? '#389e0d' : '#cf1322' }}>
+              {testResult.message || (testResult.ok ? '连通正常' : '连通失败')}
+            </span>
+            {testResult.base_url_host && (
+              <Tag style={{ margin: 0 }}>{testResult.base_url_host}</Tag>
+            )}
+            {testResult.model && (
+              <Tag color="blue" style={{ margin: 0 }}>{testResult.model}</Tag>
+            )}
+            {testResult.latency_ms > 0 && (
+              <Tag color="default" style={{ margin: 0 }}>{testResult.latency_ms} ms</Tag>
+            )}
+          </div>
+          {testResult.ok && testResult.sample_translation && (
+            <div style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>测试样例：</Text>{' '}
+              <span style={{ background: 'rgba(0,0,0,0.04)', padding: '1px 6px', borderRadius: 4 }}>
+                Hello
+              </span>{' '}
+              <Text type="secondary" style={{ fontSize: 12 }}>→</Text>{' '}
+              <span style={{ background: 'rgba(82, 196, 26, 0.12)', padding: '1px 6px', borderRadius: 4 }}>
+                {testResult.sample_translation}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 启用说明 */}
+      <Alert
+        type="info"
+        showIcon
+        icon={<ApiOutlined />}
+        message="AI 通过后端环境变量配置（密钥不会出现在前端，也不会被前端修改）"
+        description={
+          <div style={{ fontSize: 13, lineHeight: 1.7, marginTop: 4 }}>
+            <div>在 <Text code>backend/.env</Text> 或系统环境变量中设置以下变量后重启后端：</div>
+            <pre style={{
+              background: 'rgba(0,0,0,0.04)', padding: '10px 14px', borderRadius: 8,
+              fontSize: 12, marginTop: 8, marginBottom: 8, overflow: 'auto',
+              color: 'var(--color-text-primary)',
+            }}>
+{`# 必填：API 基础地址（OpenAI 兼容接口）
+ECHOSUB_AI_BASE_URL=https://api.openai.com/v1
+# 必填：API 密钥
+ECHOSUB_AI_API_KEY=sk-xxxxxxxxxxxxxx
+# 选填：模型名（默认 gpt-4o-mini）
+ECHOSUB_AI_MODEL=gpt-4o-mini
+# 选填：默认翻译目标语言（默认 Chinese）
+ECHOSUB_AI_TARGET_LANG=Chinese
+# 选填：单次请求超时秒数（默认 60）
+ECHOSUB_AI_TIMEOUT_SEC=60`}
+            </pre>
+            <div style={{ color: 'var(--color-text-tertiary)' }}>
+              兼容 OpenAI Chat Completions 协议的国内/本地服务均可使用，例如：
+              <Text code>https://api.deepseek.com/v1</Text> ·
+              <Text code>https://dashscope.aliyuncs.com/compatible-mode/v1</Text> ·
+              <Text code>http://localhost:11434/v1</Text>（Ollama）。
+            </div>
+          </div>
+        }
+        style={{ borderRadius: 12 }}
+      />
     </Card>
   )
 }

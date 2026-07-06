@@ -1,4 +1,31 @@
-# PLAN.md — v0.7.0 动物森友会风格全站 UI 重设计
+# PLAN.md — EchoSub 开发计划
+
+> 状态：v0.8.1 AI 双语字幕 + 连通性测试 已完成 | 日期：2026-07-06
+
+## 活跃里程碑：v0.8.1 AI 双语字幕 + 连通性测试（2026-07-06 完成）
+
+详见 [ChangeLog v0.8.1](ChangeLog.md#v081---2026-07-06) 与 [TASKS.md v0.8.1 段](TASKS.md)。
+
+### 交付内容
+- **AI 翻译改为「双语字幕」** — 后端 `translateReq` 加 `mode` 字段（`bilingual` 默认 / `replace` 可选），bilingual 模式下后端拼「原文\n译文」返回；前端 SubtitleEditor 工具栏新增「🌐 双语字幕 / ✍️ 替换原文」下拉，默认双语
+- **AI 连通性测试** — 后端 `POST /api/v1/ai/test` 用 `texts=["Hello"]` 调一次 AI，返回连通状态 / 模型 / 耗时 / 样例翻译；前端设置页「⚡ 测试连通性」按钮一键验证
+- **构建验证** — `go build ./...` / `go vet ./...` / `go test ./pkg/subtitle/...` 14/14 / `pnpm build` 1531 modules / 集成测试 13/16 PASS（v0.8.1 新增 2 段全 PASS）
+
+### 验证清单
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./pkg/subtitle/...` 14/14 测试通过
+- [x] `pnpm build` exit code 0（1531 modules / 27 PWA precache / tsc -b 严格类型检查）
+- [x] 集成测试 `test-api.ps1` 13/16 PASS（v0.8.1 新增 2 段：14. /ai/test + 15. bilingual 模式，全部 PASS；3 项 FAIL 仍为预先存在的 lesson1 媒体名不匹配）
+- [x] ChangeLog.md / PLAN.md / TASKS.md / README.md 同步更新
+
+---
+
+# 旧版：v0.8.0 字幕逐句编辑 + AI 翻译
+
+---
+
+# 旧版：v0.7.0 动物森友会风格全站 UI 重设计
 
 > 状态：已完成 | 版本：v0.7.0 | 日期：2026-07-05
 

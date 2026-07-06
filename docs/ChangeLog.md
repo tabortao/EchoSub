@@ -7,6 +7,82 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.8.1] - 2026-07-06
+
+### Changed
+
+#### AI 翻译改为「双语字幕」模式（v0.8.1）
+
+v0.8.0 的 AI 翻译会把原文**替换**为单语译文，对背诵学习场景不够友好。v0.8.1 起默认改为「保留原文 + 追加译文」的双语字幕生成，匹配「语言学习 + 文本背诵」的产品定位（英 → 中英 / 中 → 中英 — 后端按目标语言自动决定）。
+
+- **后端 `translateReq` 加 `mode` 字段** ([handlers/ai.go](backend/internal/handlers/ai.go))：
+  - `"replace"`（v0.8.0 行为）：译文替换原文
+  - `"bilingual"`（v0.8.1 默认）：返回「原文\n译文」，写入 SRT 后即双语字幕
+  - 缺省按 bilingual 处理，前端不传时也安全
+- **后端双语拼接** ([handlers/ai.go](backend/internal/handlers/ai.go))：AI 只负责返回单语译文（保持 v0.8.0 的 prompt 与解析逻辑不变），bilingual 模式下由后端统一 `texts[i] + "\n" + 译文`，保证原文与译文一致（避免 AI 改写原文）
+- **前端翻译模式下拉** ([components/SubtitleEditor.tsx](frontend/src/components/SubtitleEditor.tsx))：工具栏新增 🌐「双语字幕」/ ✍️「替换原文」二选一，默认双语；模式变化会反映在翻译完成提示上
+- **请求类型补全** ([types/index.ts](frontend/src/types/index.ts))：`AITranslateRequest.mode?: 'replace' | 'bilingual'`，`AITranslateResponse.translations` 注释明确两种模式下的语义
+
+#### AI 连通性测试按钮（v0.8.1）
+
+解决「后端配了 AI key 但用户不知道是否真的连得上 / 模型对不对」的痛点。
+
+- **后端连通性测试接口** ([handlers/ai.go](backend/internal/handlers/ai.go))：`POST /api/v1/ai/test`，用 `texts=["Hello"]` 调一次 AI，返回 `{ok, enabled, model, base_url_host, sample_translation, latency_ms, message}`；不连通时返回 `ok=false` + 错误描述（HTTP 200，业务字段表达）
+- **路由注册** ([internal/router/router.go](backend/internal/router/router.go))：新增 `ai.POST("/test", aiH.Test)`
+- **前端 API 封装** ([api/index.ts](frontend/src/api/index.ts))：`aiApi.test()` 调 `POST /ai/test`
+- **前端测试按钮** ([pages/Settings.tsx](frontend/src/pages/Settings.tsx))：`AICard` 标题栏新增「⚡ 测试连通性」按钮（在「刷新状态」左侧），AI 未启用时按钮 disabled；测试结果用绿/红框展示，包含状态文案、base url 主机名、模型、耗时与「Hello → 你好」样例翻译
+
+### Fixed
+
+无新增修复项；与 v0.8.0 共享回归测试。
+
+### Notes
+
+- **双语字幕的实际效果**：
+  - 英文原文 `Hello world` + AI 译文 `你好世界` → SRT 中该句文本为：
+    ```
+    Hello world
+    你好世界
+    ```
+    SRT 规范支持单条多行字幕，播放器会自动按行渲染为两行
+  - 中文原文 + AI 英译同理：`你好世界\nHello world`
+  - 字幕编辑器的 TextArea 也支持多行编辑，用户可以继续手动调整换行
+- **bilingual 模式复用现有 `parseNumberedLines` + `atomicWrite`**：双语拼接在前端/后端接口处完成，落到 SRT 时与普通编辑无差异；SRT 多行写入逻辑由 `pkg/subtitle.WriteSRT` 原生支持（每个时间码块内多行 = 多个文本行）
+- **AI 验证通过路径**：设 `ECHOSUB_AI_API_KEY=sk-xxx` 重启后端 → 设置页「⚡ 测试连通性」→ 显示绿色「连通正常」+ 耗时 + 「Hello → 你好」样例
+- **验证方式**：`go build ./...` exit code 0；`go vet ./...` exit code 0；`go test ./pkg/subtitle/...` 14/14 PASS；`pnpm build` exit code 0（1531 modules / 27 PWA precache / tsc -b 严格类型检查）；集成测试 `test-api.ps1` 13/16 PASS（v0.8.1 新增 2 段全 PASS，3 项 FAIL 仍为预先存在的 lesson1 媒体名不匹配）
+
+## [v0.8.0] - 2026-07-06
+
+### Added
+
+#### 字幕逐句编辑（v0.8.0）
+
+- **后端原子写回字幕文件** ([pkg/subtitle/subtitle.go](backend/pkg/subtitle/subtitle.go))：新增 `WriteFile` / `WriteSRT` / `WriteVTT` 方法，把句子数组原子写回原 SRT/VTT 文件（先写 `.tmp` 再 `rename`，避免编辑中崩溃导致原文件损坏）；新增 `FormatSRTTime` / `FormatVTTTime` 时间戳格式化函数。
+- **后端字幕编辑接口** ([handlers/media.go](backend/internal/handlers/media.go))：`PUT /api/v1/media/:id/subtitle`，接受完整 `sentences[]` 数组，校验 `start/end` 合法 + 文本非空 + 结束 ≥ 开始，写回成功后返回 `{path, count}`。
+- **前端独立编辑器** ([components/SubtitleEditor.tsx](frontend/src/components/SubtitleEditor.tsx))：每条字幕渲染 `InputNumber`（开始/结束时间戳）+ `Input.TextArea`（文本，可换行）+ 单条「翻译」按钮；顶部工具栏含「AI 翻译全部」「目标语言」「取消」「保存到字幕文件」四键。AI 未启用时按钮自动禁用并提示。
+- **播放器集成** ([components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx))：「全文」Tab 顶部新增「编辑字幕」按钮，点击切换为 SubtitleEditor；保存成功后回调刷新 `localSentences` 并退出编辑模式；切换媒体时自动退出编辑态。
+- **单元测试** ([pkg/subtitle/subtitle_test.go](backend/pkg/subtitle/subtitle_test.go))：新增 `TestFormatSRTTime` / `TestFormatVTTTime` 时间戳格式化测试，`TestWriteSRT_RoundTrip` / `TestWriteVTT_RoundTrip` 写后读一致性轮转测试，`TestWriteFile_Unsupported` 不支持格式测试，`TestWriteSRT_Empty` 空数组测试；总计 14 个测试全部通过。
+
+#### AI 翻译（OpenAI 兼容代理，v0.8.0）
+
+- **配置** ([internal/config/config.go](backend/internal/config/config.go))：新增 `AIConfig` 结构体 + `ECHOSUB_AI_*` 环境变量族（`BASE_URL` / `API_KEY` / `MODEL` / `TARGET_LANG` / `TIMEOUT_SEC`）；当且仅当 `BASE_URL` 与 `API_KEY` 都配置时 `AI.Enabled = true`；密钥只落环境变量，不进任何配置文件 / 数据库。
+- **后端代理接口** ([handlers/ai.go](backend/internal/handlers/ai.go))：
+  - `POST /api/v1/ai/translate`：批量翻译（一次最多 200 条），转发到 OpenAI 兼容 `chat/completions` 接口，prompt 把多条字幕打包成 `<序号>. <原文>` 列表要求 AI 一次返回，响应按行号前缀回填（兼容 `.`/`)`/`:`/`、`/`.`/`）` 分隔符，避免并发 N 次网络往返。
+  - `GET /api/v1/ai/status`：返回 `{enabled, has_base_url, model, target_lang}`，**不返回** base url / api key，密钥不出后端。
+- **路由** ([internal/router/router.go](backend/internal/router/router.go))：注册 `/ai` 路由组（鉴权要求登录，与其他 API 一致）。
+- **前端 API 封装** ([api/index.ts](frontend/src/api/index.ts))：新增 `aiApi.translate(payload)` 与 `aiApi.status()`；`mediaApi.updateSubtitle(id, sentences)` 支持把编辑后字幕写回后端。
+- **前端 AI 设置卡片** ([pages/Settings.tsx](frontend/src/pages/Settings.tsx))：在「账户管理」下方新增 🤖 AI 翻译卡片，展示当前启用状态、模型、默认目标语言，并提供完整环境变量配置说明（含 `OpenAI` / `DeepSeek` / `通义千问 compatible-mode` / `Ollama` 等兼容地址示例），让用户在不阅读源码的情况下也能启用。
+- **修复 byte/rune 混用编译错误** ([handlers/ai.go](backend/internal/handlers/ai.go))：`looksLikeNumbered` / `stripNumberPrefix` 重写为基于 `strings.HasPrefix` 整段子串匹配，规避中文标点（`、` `.`）在 `case` 中按 byte 解析导致的 `untyped rune constant overflows byte` 编译失败。
+- **依赖**：无新增第三方依赖，使用标准库 `net/http` + `encoding/json` 直连 OpenAI 兼容接口。
+
+### Changed
+
+- `frontend/src/types/index.ts`：新增 `AITranslateRequest` / `AITranslateResponse` / `AIStatus` / `AIUsage` 类型。
+- `frontend/src/api/index.ts`：新增 `aiApi` 模块与 `mediaApi.updateSubtitle`。
+- `frontend/src/components/MediaPlayer.tsx`：「全文」Tab 顶部新增「编辑字幕」按钮，引入 `editing` 状态切换；切换媒体时自动退出编辑模式。
+- `backend/internal/handlers/ai.go`：重写按行号解析函数，移除 byte/rune 混用；增加 `Status` handler 返回脱敏配置状态。
+- `scripts/test-api.ps1`：新增 3 段端到端测试（11. AI status / 12. Subtitle update / 13. AI translate），实际写回真实 SRT 文件验证 WriteFile 原子语义。
+
 ## [v0.7.3] - 2026-07-05
 
 ### Changed

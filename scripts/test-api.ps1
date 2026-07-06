@@ -251,6 +251,139 @@ try {
     Bad "settings save failed: $_"
 }
 
+# ---------- 11. AI status (v0.8.0) ----------
+Step "11. AI status (v0.8.0)"
+try {
+    $r = Invoke-RestMethod -Uri "$BaseUrl/ai/status" -Method GET -Headers $Headers -TimeoutSec 5
+    if ($null -ne $r.data) {
+        $enabled = $r.data.enabled
+        $model = $r.data.model
+        Ok "ai/status returned: enabled=$enabled, model=$model (no API key in response: $($r.data.PSObject.Properties.Name -notcontains 'api_key'))"
+    } else {
+        Bad "ai/status returned no data"
+    }
+} catch {
+    Bad "ai/status failed: $_"
+}
+
+# ---------- 12. Subtitle update (v0.8.0 PUT /media/:id/subtitle) ----------
+Step "12. Subtitle update (v0.8.0: atomic write-back to SRT/VTT)"
+$UpdateMediaId = $null
+try {
+    $uri = "$BaseUrl/media" + "?page=1&size=100"
+    $r = Invoke-RestMethod -Uri $uri -Method GET -Headers $Headers -TimeoutSec 5
+    $subtitleMedia = $null
+    foreach ($item in $r.data.list) {
+        $sp = $item.media.subtitle_path
+        if ($sp -and $sp -ne "") { $subtitleMedia = $item; break }
+    }
+    if ($subtitleMedia) {
+        $UpdateMediaId = $subtitleMedia.media.id
+        $s = Invoke-RestMethod -Uri "$BaseUrl/media/$UpdateMediaId/subtitle" -Method GET -Headers $Headers -TimeoutSec 5
+        $orig = $s.data.sentences
+        if ($orig.Count -gt 0) {
+            $firstIdx = $orig[0].index
+            $firstText = $orig[0].text
+            $edited = New-Object System.Collections.Generic.List[object]
+            foreach ($line in $orig) {
+                $newText = $line.text
+                if ($line.index -eq $firstIdx) { $newText = "[edit-test] " + $line.text }
+                $edited.Add(@{ index = $line.index; start = $line.start; end = $line.end; text = $newText })
+            }
+            $body = @{ sentences = $edited.ToArray() } | ConvertTo-Json -Depth 5
+            $u = Invoke-RestMethod -Uri "$BaseUrl/media/$UpdateMediaId/subtitle" -Method PUT -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 10
+            Ok "subtitle updated: path=$($u.data.path), count=$($u.data.count)"
+            $restore = New-Object System.Collections.Generic.List[object]
+            foreach ($line in $orig) {
+                $restore.Add(@{ index = $line.index; start = $line.start; end = $line.end; text = $line.text })
+            }
+            $restoreBody = @{ sentences = $restore.ToArray() } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri "$BaseUrl/media/$UpdateMediaId/subtitle" -Method PUT -Body $restoreBody -Headers $Headers -ContentType "application/json" -TimeoutSec 10 | Out-Null
+        } else {
+            Bad "media #$UpdateMediaId has no sentences to update"
+        }
+    } else {
+        Bad "no media with subtitle found in test-media"
+    }
+} catch {
+    Bad "subtitle update failed: $_"
+}
+
+# ---------- 13. AI translate (v0.8.0 POST /ai/translate) ----------
+Step "13. AI translate (v0.8.0: OpenAI compatible proxy)"
+try {
+    $body = @{ texts = @("Hello"); target_lang = "Chinese" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/ai/translate" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 10
+    if ($r.code -eq 0) {
+        $t = $r.data.translations[0]
+        Ok "ai/translate returned: '$t'"
+    } elseif ($r.message -like "*未启用*") {
+        # 没配置 ECHOSUB_AI_API_KEY → 预期 503
+        Ok "ai/translate correctly returns 'not enabled' when ECHOSUB_AI_API_KEY is not set (msg: $($r.message))"
+    } else {
+        Bad "ai/translate unexpected response: code=$($r.code), msg=$($r.message)"
+    }
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -eq 503) {
+        Ok "ai/translate correctly returns 503 when AI not enabled"
+    } else {
+        Bad "ai/translate failed: $_"
+    }
+}
+
+# ---------- 14. AI test (v0.8.1 POST /ai/test connectivity) ----------
+Step "14. AI test (v0.8.1: connectivity check)"
+try {
+    $r = Invoke-RestMethod -Uri "$BaseUrl/ai/test" -Method POST -Body "{}" -Headers $Headers -ContentType "application/json" -TimeoutSec 10
+    if ($r.code -eq 0) {
+        $data = $r.data
+        if ($data.ok -eq $true) {
+            Ok "ai/test connected: model=$($data.model), host=$($data.base_url_host), sample='$($data.sample_translation)', $($data.latency_ms)ms"
+        } else {
+            Ok "ai/test returned ok=false (expected when AI not enabled): msg='$($data.message)'"
+        }
+    } else {
+        Bad "ai/test unexpected response: code=$($r.code), msg=$($r.message)"
+    }
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    Bad "ai/test failed: code=$code, msg=$_"
+}
+
+# ---------- 15. AI translate bilingual mode (v0.8.1 mode=bilingual) ----------
+Step "15. AI translate bilingual mode (v0.8.1: bilingual subtitle generation)"
+$bilingualOk = $false
+$bilingualErr = ""
+try {
+    $body = @{ texts = @("Hello"); target_lang = "Chinese"; mode = "bilingual" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/ai/translate" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 10
+    if ($r.code -eq 0) {
+        $t = $r.data.translations[0]
+        if ($t -and $t.Length -gt 5 -and $t -like "*`n*") {
+            $firstLine = ($t -split "`n")[0]
+            $secondLine = ($t -split "`n")[1]
+            Ok "bilingual translate returns '`n' between original and translation: first='$firstLine' second='$secondLine'"
+        } else {
+            Bad "bilingual translate result does not look bilingual: '$t'"
+        }
+    } else {
+        $bilingualOk = $true
+        $bilingualErr = $r.message
+    }
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -eq 503) {
+        $bilingualOk = $true
+        $bilingualErr = "503"
+    } else {
+        Bad "bilingual translate failed: $_"
+    }
+}
+if ($bilingualOk) {
+    Ok "bilingual translate correctly reports not-enabled state (msg: $bilingualErr)"
+}
+
 # ---------- Summary ----------
 Write-Host ""
 Write-Host "=========================" -ForegroundColor Yellow

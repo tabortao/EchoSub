@@ -226,6 +226,66 @@ func GetSubtitle() gin.HandlerFunc {
 	}
 }
 
+// UpdateSubtitleReq 字幕编辑请求体
+// 客户端传完整句子列表（包含原文与编辑后文本），后端原子写回原 SRT/VTT 文件。
+// 句子的 start / end / text 都会被使用；index 字段被忽略，重新编号。
+type UpdateSubtitleReq struct {
+	Sentences []subtitle.Sentence `json:"sentences" binding:"required"`
+}
+
+// UpdateSubtitle 把编辑后的字幕写回 SRT/VTT 文件（v0.8.0）
+// PUT /api/v1/media/:id/subtitle
+// 鉴权：必须登录
+// 持久化：使用 pkg/subtitle.WriteFile 原子写回原字幕文件
+// 行为：写完后无需重新扫描（前端已经持有新 sentences，刷新页面会重读文件）
+func UpdateSubtitle() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		var m models.MediaFile
+		if err := database.DB.First(&m, id).Error; err != nil {
+			utils.Fail(c, http.StatusNotFound, "媒体不存在")
+			return
+		}
+		if m.SubtitlePath == nil || *m.SubtitlePath == "" {
+			utils.Fail(c, http.StatusNotFound, "无字幕文件")
+			return
+		}
+		var req UpdateSubtitleReq
+		if err := c.ShouldBindJSON(&req); err != nil {
+			utils.Fail(c, http.StatusBadRequest, "请求体格式错误: "+err.Error())
+			return
+		}
+		if len(req.Sentences) == 0 {
+			utils.Fail(c, http.StatusBadRequest, "sentences 不能为空")
+			return
+		}
+		// 校验：start / end / text 必须合法
+		for i, s := range req.Sentences {
+			if s.Start < 0 || s.End < 0 {
+				utils.Fail(c, http.StatusBadRequest, fmt.Sprintf("第 %d 行时间戳不能为负", i+1))
+				return
+			}
+			if s.End < s.Start {
+				utils.Fail(c, http.StatusBadRequest, fmt.Sprintf("第 %d 行结束时间早于开始时间", i+1))
+				return
+			}
+			if strings.TrimSpace(s.Text) == "" {
+				utils.Fail(c, http.StatusBadRequest, fmt.Sprintf("第 %d 行文本不能为空", i+1))
+				return
+			}
+		}
+		// 原子写回原文件
+		if err := subtitle.WriteFile(*m.SubtitlePath, req.Sentences); err != nil {
+			utils.Fail(c, http.StatusInternalServerError, "写回字幕文件失败: "+err.Error())
+			return
+		}
+		utils.OK(c, gin.H{
+			"path":  *m.SubtitlePath,
+			"count": len(req.Sentences),
+		})
+	}
+}
+
 // ListAlbums 列出所有专辑（含子专辑），带已看进度、封面、横幅与描述。
 // played 字段表示该专辑下，当前用户有过播放记录的媒体数量。
 // 同目录同名 video+audio 视为配对，列表计数时只算 video 一份，避免重复。
