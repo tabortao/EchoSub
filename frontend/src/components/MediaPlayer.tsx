@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Slider, Button, Space, InputNumber, Switch, Tag, Tooltip, message, Typography, Tabs } from 'antd'
 import {
   PlayCircleOutlined,
@@ -15,6 +16,7 @@ import {
   PlusOutlined,
   FileTextOutlined,
   EditOutlined,
+  BookOutlined,
 } from '@ant-design/icons'
 import { mediaApi, recordApi } from '@/api'
 import { useSettingsStore } from '@/store/settings'
@@ -54,6 +56,7 @@ const RATE_MAX = 2.0
 const RATE_STEP = 0.1
 
 export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPosition, sentences, playCount }: MediaPlayerProps) {
+  const navigate = useNavigate()
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
   const videoContainerRef = useRef<HTMLDivElement>(null)
   const subtitleListRef = useRef<HTMLDivElement>(null)
@@ -948,6 +951,18 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                           {/* 始终显示听遍数，让用户能看到每句的学习情况 */}
                           <Tag color={s.repeat_count > 0 ? 'orange' : 'default'} style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
                           {s.completed && <Tag color="success" style={{ margin: 0, flexShrink: 0 }}>已背</Tag>}
+                          <Tooltip title="查看句子详情（AI 翻译/逐词/语法）">
+                            <Button
+                              type="text"
+                              size={isPhone ? 'middle' : 'small'}
+                              icon={<BookOutlined />}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                navigate(`/play/${mediaId}/sentence/${s.index}`)
+                              }}
+                              style={{ minWidth: 36, minHeight: 36 }}
+                            />
+                          </Tooltip>
                           <Tooltip title={isFav ? '取消收藏' : '收藏重难点'}>
                             <Button
                               type="text"

@@ -339,3 +339,121 @@ export interface AITestResponse {
   /** 错误或成功描述 */
   message: string
 }
+
+// ============================================================================
+// v0.9.0 字典与句子解释
+// ============================================================================
+
+/** 字典查词请求 */
+export interface DictionaryRequest {
+  /** 要查询的单词（≤ 64 字符） */
+  word: string
+  /** 上下文句子（用于 AI 消歧） */
+  sentence?: string
+  /** 目标语言，缺省 Chinese */
+  target_lang?: string
+}
+
+/** 音标 */
+export interface DictionaryPronunciation {
+  uk: string
+  us: string
+}
+
+/** 字典例句 */
+export interface DictionaryExample {
+  sentence: string
+  translation: string
+}
+
+/** 字典词义 */
+export interface DictionaryMeaning {
+  part_of_speech: string
+  /** 目标语言释义（数组，按常用度排序） */
+  translation: string[]
+  /** 英文单语释义 */
+  definition: string
+  examples: DictionaryExample[]
+}
+
+/** 字典词族条目 */
+export interface DictionaryWordFamily {
+  word: string
+  part_of_speech: string
+  meaning: string
+  example?: DictionaryExample | null
+}
+
+/** 字典查询响应 */
+export interface DictionaryResponse {
+  headword: string
+  pronunciation: DictionaryPronunciation
+  meanings: DictionaryMeaning[]
+  word_family: DictionaryWordFamily[]
+  etymology: string
+  learner_tips: string[]
+}
+
+/** 句子解释功能开关 */
+export interface SentenceExplainFeatures {
+  word?: boolean
+  grammar?: boolean
+  translation?: boolean
+}
+
+/** 句子解释请求 */
+export interface SentenceExplainRequest {
+  /** 要解释的句子（≤ 500 字符） */
+  sentence: string
+  /** 目标语言，缺省 Chinese */
+  target_lang?: string
+  /** 源语言，缺省让 AI 自动识别 */
+  source_lang?: string
+  /** 启用的解释项；缺省全部开启 */
+  features?: SentenceExplainFeatures
+}
+
+/** 逐词拆解 */
+export interface WordBreakdown {
+  word: string
+  lemma: string
+  pos: string
+  meaning: string
+  note?: string
+}
+
+/** 语法点 */
+export interface GrammarPoint {
+  pattern: string
+  description: string
+  key_phrases: string[]
+}
+
+/** 句子解释响应 */
+export interface SentenceExplainResponse {
+  original: string
+  translation: string
+  words: WordBreakdown[]
+  grammar: GrammarPoint | null
+  notes: string
+}
+
+/** 词典数据源描述（用于词典设置页） */
+export interface DictionarySourceMeta {
+  /** 源 id（持久化 key） */
+  id: 'ai' | 'local'
+  /** 显示名 */
+  label: string
+  /** 图标 emoji */
+  emoji: string
+  /** 描述 */
+  description: string
+  /** 是否需要联网 */
+  requiresNetwork: boolean
+  /** 是否可被用户禁用（true=可禁用 / false=始终启用） */
+  canBeDisabled: boolean
+  /** 状态文案（如 '已配置' / '未启用'） */
+  statusText: string
+  /** 状态色调 */
+  statusKind: 'success' | 'warning' | 'default'
+}

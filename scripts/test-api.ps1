@@ -384,6 +384,73 @@ if ($bilingualOk) {
     Ok "bilingual translate correctly reports not-enabled state (msg: $bilingualErr)"
 }
 
+# ---------- 16. AI dictionary (v0.9.0 POST /ai/dictionary) ----------
+Step "16. AI dictionary (v0.9.0: AI lookup with structured entry)"
+try {
+    $body = @{ word = "apple"; sentence = "I eat an apple every day."; target_lang = "Chinese" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/ai/dictionary" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 15
+    if ($r.code -eq 0) {
+        $d = $r.data
+        # 关键字段校验：headword / pronunciation / meanings
+        if (-not $d.headword) { Bad "dictionary: missing headword"; return }
+        if ($d.meanings.Count -lt 1) { Bad "dictionary: meanings array empty"; return }
+        Ok "ai/dictionary returned: headword='$($d.headword)', meanings=$($d.meanings.Count), uk='$($d.pronunciation.uk)'"
+    } elseif ($r.message -like "*未启用*") {
+        Ok "ai/dictionary correctly returns 'not enabled' when ECHOSUB_AI_API_KEY is not set (msg: $($r.message))"
+    } else {
+        Bad "ai/dictionary unexpected response: code=$($r.code), msg=$($r.message)"
+    }
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -eq 503) {
+        Ok "ai/dictionary correctly returns 503 when AI not enabled"
+    } else {
+        Bad "ai/dictionary failed: $_"
+    }
+}
+
+# ---------- 17. AI sentence-explain (v0.9.0 POST /ai/sentence-explain) ----------
+Step "17. AI sentence-explain (v0.9.0: sentence translation / words / grammar)"
+try {
+    $body = @{ sentence = "I have been studying English for three years."; target_lang = "Chinese" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/ai/sentence-explain" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 15
+    if ($r.code -eq 0) {
+        $e = $r.data
+        # 关键字段校验：original / translation / words
+        if (-not $e.original) { Bad "sentence-explain: missing original"; return }
+        if (-not $e.translation) { Bad "sentence-explain: missing translation"; return }
+        Ok "ai/sentence-explain returned: original='$($e.original.Substring(0, [Math]::Min(40, $e.original.Length)))...', words=$($e.words.Count), grammar=$($e.grammar.pattern)"
+    } elseif ($r.message -like "*未启用*") {
+        Ok "ai/sentence-explain correctly returns 'not enabled' when ECHOSUB_AI_API_KEY is not set (msg: $($r.message))"
+    } else {
+        Bad "ai/sentence-explain unexpected response: code=$($r.code), msg=$($r.message)"
+    }
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -eq 503) {
+        Ok "ai/sentence-explain correctly returns 503 when AI not enabled"
+    } else {
+        Bad "ai/sentence-explain failed: $_"
+    }
+}
+
+# ---------- 18. AI dictionary missing-word (v0.9.0 validation) ----------
+Step "18. AI dictionary missing-word validation"
+try {
+    $body = @{ } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/ai/dictionary" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 5
+    Bad "ai/dictionary should reject empty word, got code=$($r.code), msg=$($r.message)"
+} catch {
+    $code = $_.Exception.Response.StatusCode.value__
+    if ($code -eq 400) {
+        Ok "ai/dictionary correctly returns 400 when word missing"
+    } elseif ($code -eq 503) {
+        Ok "ai/dictionary returns 503 first when AI not enabled (auth/validation bypassed)"
+    } else {
+        Bad "ai/dictionary unexpected status: $code"
+    }
+}
+
 # ---------- Summary ----------
 Write-Host ""
 Write-Host "=========================" -ForegroundColor Yellow

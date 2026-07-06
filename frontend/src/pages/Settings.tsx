@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card, Form, InputNumber, Button, message, Spin, Typography, Divider,
   Input, Avatar, Upload, Slider, Select, Space, Row, Col, Tag, Alert,
@@ -10,6 +11,7 @@ import {
 } from '@ant-design/icons'
 import { useSettingsStore } from '@/store/settings'
 import { useAuthStore } from '@/store/auth'
+import { useDictionaryStore } from '@/store/dictionary'
 import { aiApi, authApi } from '@/api'
 import { THEMES, type ThemeKey } from '@/theme/themes'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
@@ -246,6 +248,9 @@ export default function SettingsPage() {
 
       {/* AI 翻译设置（v0.8.0 起）*/}
       <AICard />
+
+      {/* 词典设置入口（v0.9.0 起）*/}
+      <DictionaryCard />
 
       {/* 说明 */}
       <Card
@@ -904,6 +909,64 @@ ECHOSUB_AI_TIMEOUT_SEC=60`}
         }
         style={{ borderRadius: 12 }}
       />
+    </Card>
+  )
+}
+
+/**
+ * 词典设置入口卡片（v0.9.0）
+ * 仅作为跳转到独立词典设置页的入口，详细配置在 /settings/dictionary
+ */
+function DictionaryCard() {
+  const navigate = useNavigate()
+  const { isPhone } = useDeviceSize()
+  const { defaultSourceId } = useDictionaryStore()
+  const [status, setStatus] = useState<AIStatus | null>(null)
+  useEffect(() => {
+    aiApi.status().then((r) => setStatus(r.data.data)).catch(() => { /* 静默 */ })
+  }, [])
+
+  return (
+    <Card
+      style={{
+        marginTop: 20,
+        marginBottom: 20,
+        borderRadius: 20,
+        border: 'none',
+        background: 'var(--color-bg-elevated, #fff)',
+        boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+      }}
+      styles={{ body: { padding: isPhone ? '16px' : '20px 24px' } }}
+    >
+      <div
+        onClick={() => navigate('/settings/dictionary')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/settings/dictionary') } }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+          padding: 4, borderRadius: 12, minHeight: 44,
+        }}
+      >
+        <span style={{ fontSize: 28 }}>📖</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>
+            词典
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-tertiary, #8c8c8c)', marginTop: 2 }}>
+            管理查词源（AI / 本地）+ 默认词典选择 + 连通性测试
+          </div>
+        </div>
+        <Space size={4} wrap>
+          <Tag color={status?.enabled ? 'green' : 'orange'}>
+            {status?.enabled ? 'AI 已就绪' : 'AI 未配置'}
+          </Tag>
+          <Tag color="blue">
+            默认：{defaultSourceId === 'ai' ? 'AI 词典' : '本地词典'}
+          </Tag>
+        </Space>
+        <span style={{ fontSize: 20, color: 'var(--color-text-tertiary, #8c8c8c)' }}>›</span>
+      </div>
     </Card>
   )
 }

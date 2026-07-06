@@ -24,6 +24,10 @@ import type {
   AITestResponse,
   AIStatus,
   Sentence,
+  DictionaryRequest,
+  DictionaryResponse,
+  SentenceExplainRequest,
+  SentenceExplainResponse,
 } from '@/types'
 
 // ===== 认证 =====
@@ -308,4 +312,16 @@ export const aiApi = {
    * 设置页用它判断「未配置 / 网络问题 / key 无效 / 模型不对」等场景
    */
   test: () => client.post<ApiResponse<AITestResponse>>('/ai/test', {}),
+  /**
+   * 字典查词（v0.9.0 起）：
+   * 把单词发给后端，AI 返回结构化 DictionaryResponse（音标/词义/例句/词族/词源）
+   */
+  dictionary: (payload: DictionaryRequest) =>
+    client.post<ApiResponse<DictionaryResponse>>('/ai/dictionary', payload),
+  /**
+   * 句子解释（v0.9.0 起）：
+   * 对单条句子生成结构化讲解（翻译/逐词拆解/语法点/学习提示）
+   */
+  sentenceExplain: (payload: SentenceExplainRequest) =>
+    client.post<ApiResponse<SentenceExplainResponse>>('/ai/sentence-explain', payload),
 }

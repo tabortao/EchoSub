@@ -6,8 +6,10 @@ import Albums from '@/pages/Albums'
 import Tags from '@/pages/Tags'
 import Records from '@/pages/Records'
 import Settings from '@/pages/Settings'
+import DictionarySettings from '@/pages/DictionarySettings'
 import About from '@/pages/About'
 import Player from '@/pages/Player'
+import SentenceDetail from '@/pages/SentenceDetail'
 import Upload from '@/pages/Upload'
 import StudyNotes from '@/pages/StudyNotes'
 import NoteEditorPage from '@/pages/NoteEditor'
@@ -42,8 +44,10 @@ const routes: RouteObject[] = [
       { path: 'notes/:id', element: <NoteEditorPage /> },
       { path: 'records', element: <Records /> },
       { path: 'settings', element: <Settings /> },
+      { path: 'settings/dictionary', element: <DictionarySettings /> },
       { path: 'about', element: <About /> },
       { path: 'play/:id', element: <Player /> },
+      { path: 'play/:id/sentence/:idx', element: <SentenceDetail /> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

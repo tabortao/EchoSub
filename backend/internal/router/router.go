@@ -133,13 +133,16 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			scan.GET("/status", scanH.Status())
 		}
 
-		// AI 翻译（v0.8.0）+ 连通性测试（v0.8.1）
+		// AI 翻译（v0.8.0）+ 连通性测试（v0.8.1）+ 字典与句子解释（v0.9.0）
 		aiH := handlers.NewAIHandler(cfg)
 		ai := authed.Group("/ai")
 		{
 			ai.POST("/translate", aiH.Translate)
 			ai.GET("/status", aiH.Status)
 			ai.POST("/test", aiH.Test)
+			// 字典与句子解释（v0.9.0）
+			ai.POST("/dictionary", aiH.Dictionary)
+			ai.POST("/sentence-explain", aiH.ExplainSentence)
 		}
 	}
 }

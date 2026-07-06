@@ -67,7 +67,8 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 
 - 🎬 **逐句复读播放器**：每句重复 M 次 → 暂停 K 秒 → 下一句；整体循环 N 次；速度 0.1 步进调节。
 - ✍️ **字幕逐句编辑 + AI 双语翻译**（v0.8.0 起）：播放器内可在线编辑每条字幕并通过 OpenAI 兼容接口批量翻译，v0.8.1 默认生成「原文 + 译文」双语字幕（中文 → 中英 / 英文 → 中英）。
-- 📚 **Markdown 学习页**：每个专辑可创建多份学习笔记，支持多图上传 + 全屏查看 + TTS 朗读。
+- � **AI 字典 + 句子解释**（v0.9.0 起）：设置中可配置词典源；点击每条字幕进入「句子详情页」查看整句翻译 / 逐词拆解 / 语法解析；逐词点击触发 AI 查词弹窗（音标 / 词义 / 词族 / 词源 / 学习提示）。
+- �📚 **Markdown 学习页**：每个专辑可创建多份学习笔记，支持多图上传 + 全屏查看 + TTS 朗读。
 - 🏷️ **多态标签系统**（v0.5.0 起）：专辑 / 季 / 学习页 / 媒体四类实体可统一打标签与按标签筛选。
 - 🎨 **Emby 风格扫描**：自动识别 `folder.jpg` / `banner.jpg` / `tvshow.nfo` 等元数据。
 - 🔒 **未读蒙版 + 继续观看**：未学习资源显示灰蒙版 + 🔒 提示；首页自动列出未学完的媒体。
@@ -443,8 +444,12 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 | GET    | `/ai/status`                      | AI 配置状态（enabled / model / target_lang，**不返回** API key） |
 | POST   | `/ai/translate`                   | 批量翻译字幕（最多 200 条/次，转发到 OpenAI 兼容 `chat/completions`；v0.8.1 起支持 `mode=bilingual\|replace`，默认 `bilingual` 生成双语字幕）|
 | POST   | `/ai/test`                        | 连通性测试（v0.8.1 起；用 `texts=["Hello"]` 调一次 AI，返回 `{ok, enabled, model, base_url_host, sample_translation, latency_ms, message}`，便于在设置页一键验证）|
+| POST   | `/ai/dictionary`                  | 字典查词（v0.9.0 起；请求体 `{word, sentence?, target_lang?}`，AI 返回结构化词条 `headword / pronunciation(uk,us) / meanings[] / word_family[] / etymology / learner_tips[]`，可选 `sentence` 用于上下文消歧）|
+| POST   | `/ai/sentence-explain`            | 句子解释（v0.9.0 起；请求体 `{sentence, target_lang?, source_lang?, features?}`，AI 返回 `original / translation / words[] / grammar / notes`；`features.word/grammar/translation` 可按需关闭，缺省三个全开）|
 
 > 配置：通过 `ECHOSUB_AI_BASE_URL` / `ECHOSUB_AI_API_KEY` / `ECHOSUB_AI_MODEL` 等环境变量注入后端，密钥不出前端、不进数据库。设置页「🤖 AI 翻译」卡片提供「⚡ 测试连通性」按钮，命中后即在卡片内显示绿色「连通正常」+ 耗时 +「Hello → 你好」样例。详见 [ChangeLog v0.8.0](docs/ChangeLog.md#v080---2026-07-06) 与 [ChangeLog v0.8.1](docs/ChangeLog.md#v081---2026-07-06)。
+>
+> 字典与句子解释共用同一 AI 配置；词典体系采用可插拔数据源设计（`id='ai'` 已实装，`id='local'` 预留扩展点），具体见 [ChangeLog v0.9.0](docs/ChangeLog.md#v090---2026-07-06)。在播放器中点击字幕右侧「📖」按钮可进入「句子详情页」（路径 `/play/:id/sentence/:idx`），从单词卡片二次点击触发 AI 查词弹窗。
 
 ## 默认测试账号
 

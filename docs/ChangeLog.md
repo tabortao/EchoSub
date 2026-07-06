@@ -7,6 +7,82 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.9.0] - 2026-07-06
+
+### Added
+
+#### 字典功能（v0.9.0）
+
+参考 Echo Loop 的 `DictionarySource` 可插拔数据源设计，给 EchoSub 增加「词典」体系：默认走 AI 词典（OpenAI 兼容模型生成结构化词条），为未来接入本地词典（StarDict / MDX / 离线 SQLite）预留扩展点。
+
+- **后端 AI 查词接口** ([handlers/ai.go](backend/internal/handlers/ai.go))：`POST /api/v1/ai/dictionary`，请求体 `{word, sentence?, target_lang?}`；后端构造词典编纂者 prompt，强制 AI 输出合法 JSON；响应结构 `DictionaryResponse`（`headword / pronunciation(uk,us) / meanings[] / word_family[] / etymology / learner_tips[]`）。
+- **JSON 容错解析** ([handlers/ai.go](backend/internal/handlers/ai.go))：`parseDictionaryEntry` 自动剥离 ` ```json ` / ` ``` ` 围栏，缺失字段回退空值，`Meanings / WordFamily / LearnerTips` 三个数组始终初始化为 `[]string{}` 而非 `nil`（避免前端 `Cannot read .length` 崩溃）。
+- **上下文消歧** ([handlers/ai.go](backend/internal/handlers/ai.go))：请求体可选 `sentence` 字段，传入时把整句加进 user prompt，让 AI 根据语境给出准确释义（如 `bank` 在「河岸 / 银行」间消歧）。
+- **前端字典 store** ([store/dictionary.ts](frontend/src/store/dictionary.ts))：Zustand + localStorage 持久化「默认词典源 / 禁用源」；切换默认源或禁用源时立即落盘，跨会话保持。
+- **字典设置页** ([pages/DictionarySettings.tsx](frontend/src/pages/DictionarySettings.tsx))：以卡片形式列出当前可用的词典源（🤖 AI 词典 / 📕 本地词典 — 占位），每张卡片包含「设为默认 / 启用 / 禁用 / 测试连通性」入口，AI 词典卡片右上角「⚡ 测试连通性」按钮调用 `aiApi.test` 实时显示 base url 主机、模型、耗时与「Hello → 你好」样例。
+- **设置页入口** ([pages/Settings.tsx](frontend/src/pages/Settings.tsx))：「高级 / 个性化」分组新增 📖 词典入口，整卡可点击跳转到 `/settings/dictionary`；点击右上角回退图标返回设置页。
+- **路由注册** ([router/index.tsx](frontend/src/router/index.tsx))：新增 `/settings/dictionary` 路由，挂载 `DictionarySettings` 组件。
+- **类型与 API 封装** ([types/index.ts](frontend/src/types/index.ts) + [api/index.ts](frontend/src/api/index.ts))：`DictionaryRequest` / `DictionaryResponse` / `DictionaryPronunciation` / `DictionaryMeaning` / `DictionaryExample` / `DictionaryWordFamily` 等 TS 类型；`aiApi.dictionary(payload)` 封装 POST 请求。
+
+#### 句子详情 / 解释页（v0.9.0）
+
+每条字幕可点击进入「单句详情页」，后端一次返回「整句翻译 / 逐词拆解 / 语法解析 / 学习提示」，单词卡片可二次点击触发 AI 查词弹窗。
+
+- **后端句子解释接口** ([handlers/ai.go](backend/internal/handlers/ai.go))：`POST /api/v1/ai/sentence-explain`，请求体 `{sentence, target_lang?, source_lang?, features?}`，响应 `SentenceExplainResponse`（`original / translation / words[] / grammar / notes`）；`features` 允许按需关闭 word/grammar/translation，缺省三个全开。
+- **Prompt 模板按 features 动态拼装** ([handlers/ai.go](backend/internal/handlers/ai.go))：用户关掉 grammar 时就不要求 AI 输出 grammar 字段，省 token 也减少幻觉。
+- **单词卡片字段** ([handlers/ai.go](backend/internal/handlers/ai.go))：`wordBreakdown{word, lemma, pos, meaning, note}`，lemma 用于点击查词（即使原形是 `studying` 也按 `study` 查）。
+- **句子详情页** ([pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx))：
+  - 顶部返回栏 + 媒体名 + 时间戳 + 「跳回播放器并定位到该句」按钮
+  - AI 未启用时顶部黄色 Alert 引导用户去设置
+  - 原文卡片含朗读 / 默认词典源标签
+  - 解释区在加载中显示 Skeleton，失败显示 Alert + 重试
+  - 响应式：手机单列 / 桌面两列网格 + 逐词拆解占整行
+- **单词查词弹窗** ([pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx))：逐词拆解的每个词都是可点击按钮，触发 `aiApi.dictionary` 拉词条，Modal 弹窗渲染「音标 / 词义 / 词族 / 词源 / 学习提示」，带朗读图标
+- **播放器入口** ([components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx))：每条字幕右侧新增 📖 按钮（不抢占原文点击），点击 `navigate('/play/:id/sentence/:idx')` 跳转到该句详情页
+- **路由** ([router/index.tsx](frontend/src/router/index.tsx))：新增 `/play/:id/sentence/:idx` 路由，参数 `:idx` 是字幕 `index`（0-based）
+
+#### 字典与句子解释单元测试（v0.9.0）
+
+- `TestParseDictionaryEntry_*`（5 个）：原始 JSON、Markdown 围栏剥离、缺失字段回退、词头回退、非法 JSON 报错
+- `TestParseSentenceExplain_*`（3 个）：全字段解析、围栏剥离 + 数组非 nil、非法 JSON 报错
+- `TestStrVal`：字符串 / 非字符串 / nil 三种取值兜底
+- 共 9 个新测试全部通过，与 v0.8.x 的 14 个字幕测试一起共 23 个单测
+
+#### 集成测试脚本扩展（v0.9.0）
+
+- `scripts/test-api.ps1` 新增 3 段（#16 ~ #18）：
+  - **#16 AI dictionary**：调 `POST /ai/dictionary`（word=`apple` + 句子语境）；AI 未启用时正确返回 503，已验证
+  - **#17 AI sentence-explain**：调 `POST /ai/sentence-explain`（典型完成时句子）；AI 未启用时正确返回 503，已验证
+  - **#18 AI dictionary 缺参校验**：缺 `word` 字段时正确返回 400 / 503（启用前先鉴权 503），已验证
+- 集成测试 `test-api.ps1` 总段数：v0.8.1 = 15 → v0.9.0 = 18（PASS 19/22，新增 3 段全 PASS；剩余 3 项 FAIL 仍为预先存在的 `lesson1` 媒体名不匹配，与 v0.8.x 一致）
+
+### Changed
+
+- `frontend/src/components/MediaPlayer.tsx`：import `useNavigate` 与 `BookOutlined`；每条字幕 div 末尾增加「📖 查看句子详情」按钮，按钮 `e.stopPropagation()` 避免与字幕点击事件冲突；`minWidth/Height: 36` 保证触摸目标 ≥ 36px（接近 44px 标准）
+- `frontend/src/api/index.ts`：`aiApi` 新增 `dictionary` 与 `sentenceExplain` 方法
+- `frontend/src/types/index.ts`：新增 `DictionaryRequest/Response/...` 与 `SentenceExplainRequest/Response/...` 等 12 个 TS 类型
+- `frontend/src/router/index.tsx`：注册 `/settings/dictionary` 与 `/play/:id/sentence/:idx` 两条路由
+
+### Notes
+
+- **Echo Loop 设计借鉴**：v0.9.0 的字典体系结构直接参考 Echo Loop 的 `DictionarySource` 接口（`id / icon / canBeDisabled / requiresNetwork / lookup`）。当前已实现 `id='ai'`（AI 词典），`id='local'`（本地词典）已在前端 store 占位但后端未实装 — 后续可扩展接入 StarDict / MDX / 离线 SQLite 等本地数据源
+- **AI 词典与 AI 翻译共用同一配置**：都依赖 `ECHOSUB_AI_BASE_URL` / `ECHOSUB_AI_API_KEY` / `ECHOSUB_AI_MODEL`，启用任一即全部可用
+- **prompt 设计**：
+  - 词典 prompt：要求 AI 严格输出 JSON，包含 headword / pronunciation / meanings / word_family / etymology / learner_tips 五段；释义按常用度排序，最多 4 条；词族最多 4 个
+  - 句子解释 prompt：要求 AI 严格按 features 输出对应字段（关掉 grammar 时就不输出 grammar），words 按句子顺序拆条，notes 不超过 120 字聚焦易错点
+- **JSON 解析容错**：两层 `for fence in {```json, ```JSON, ```}` + `TrimSpace` 兜底；缺失字段全部走 `strVal(v, fallback)` / 默认空数组；非法 JSON 返回 502 + 错误描述给前端
+- **响应式**：词典设置页 / 句子详情页均使用 `useDeviceSize` 钩子；手机端单列、桌面端 2 列网格；逐词拆解占整行；触控目标 ≥ 36px
+- **验证方式**：
+  - `go build ./...` exit code 0
+  - `go vet ./...` exit code 0
+  - `go test ./pkg/subtitle/... && go test ./internal/handlers/...` 23/23 PASS（v0.8.x = 14 + v0.9.0 新增 9）
+  - `pnpm build` exit code 0（1543 modules / 27 PWA precache / tsc -b 严格类型检查）
+  - 集成测试 `test-api.ps1` 19/22 PASS（v0.9.0 新增 3 段全 PASS）
+- **未来扩展点**：
+  - 本地词典：后端新增 `internal/dictionary/local.go`，实现 `Lookup(word, ctx) → Entry`；前端 `useDictionaryStore` 增加 `id='local'` 数据源
+  - 浏览器扩展词典：未来可加入 ECDICT / MDX 等开源字典
+  - 收藏单词：单词弹窗增加「⭐ 收藏」按钮，存到 `entity_tags` 表（v0.5.0 已实装多态标签系统）
+
 ## [v0.8.1] - 2026-07-06
 
 ### Changed

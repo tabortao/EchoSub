@@ -1,3 +1,44 @@
+# TASKS.md — v0.9.0 AI 字典 + 句子解释
+
+配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v0.9.0 AI 字典 + 句子解释（2026-07-06）
+
+### 后端
+
+- [x] **T1** `internal/handlers/ai.go` 新增 `Dictionary` handler（POST /api/v1/ai/dictionary）— 词典编纂者 prompt，强制 JSON 输出；请求 `{word, sentence?, target_lang?}`；响应 `headword / pronunciation(uk,us) / meanings[] / word_family[] / etymology / learner_tips[]`
+- [x] **T2** `internal/handlers/ai.go` `parseDictionaryEntry` JSON 容错解析 — 剥离 ` ```json ` / ` ``` ` 围栏，缺失字段回退空值，`Meanings / WordFamily / LearnerTips` 数组始终初始化为 `[]string{}`（避免前端 `.length` 崩溃）
+- [x] **T3** `internal/handlers/ai.go` 新增 `ExplainSentence` handler（POST /api/v1/ai/sentence-explain）— 教师 prompt；请求 `{sentence, target_lang?, source_lang?, features?}`；响应 `original / translation / words[] / grammar / notes`；`features.word/grammar/translation` 可按需关闭
+- [x] **T4** `internal/handlers/ai.go` `parseSentenceExplain` JSON 容错解析（同样容错 + 数组非 nil 兜底）
+- [x] **T5** `internal/handlers/ai.go` 共享 `callRaw` 单次裸调用（与批量 `callOpenAI` 解耦，复用同一 OpenAI 客户端）
+- [x] **T6** `internal/router/router.go` 注册 `ai.POST("/dictionary", aiH.Dictionary)` + `ai.POST("/sentence-explain", aiH.ExplainSentence)` 路由
+- [x] **T7** `internal/handlers/ai_test.go` 新增 9 个测试（5 dictionary + 3 sentence + 1 strVal）— 与 v0.8.x 的 14 个字幕测试一起共 23/23 PASS
+
+### 前端
+
+- [x] **T8** `src/store/dictionary.ts` 新建 — zustand + localStorage 持久化「默认词典源 / 禁用源」；切换默认源或禁用源时立即落盘；禁用当前默认源时回退到 `ai`
+- [x] **T9** `src/types/index.ts` 新增 12 个 TS 类型 — `DictionaryRequest / DictionaryResponse / DictionaryPronunciation / DictionaryMeaning / DictionaryExample / DictionaryWordFamily` + `SentenceExplainRequest / SentenceExplainResponse / SentenceExplainFeatures / WordBreakdown / GrammarPoint`
+- [x] **T10** `src/api/index.ts` `aiApi` 新增 `dictionary(payload)` + `sentenceExplain(payload)` 方法
+- [x] **T11** `src/pages/DictionarySettings.tsx` 新建 — AI 词典卡片 + 本地词典占位卡片；每张卡片含「设为默认 / 启用 / 禁用 / 测试连通性」入口；AI 卡片「⚡ 测试连通性」按钮调用 `aiApi.test` 显示连通状态 / base url 主机 / 模型 / 耗时 / 样例翻译
+- [x] **T12** `src/pages/SentenceDetail.tsx` 新建 — 顶部返回栏 + 媒体名 + 时间戳 + 「跳回播放器并定位到该句」按钮；AI 未启用时顶部黄色 Alert；原文卡片含朗读 / 默认词典源标签；解释区加载中 Skeleton / 失败 Alert + 重试；响应式（手机单列 / 桌面 2 列 + 逐词拆解占整行）
+- [x] **T13** `src/pages/SentenceDetail.tsx` 单词查词弹窗 — 逐词拆解的每个词都是可点击按钮，触发 `aiApi.dictionary` 拉词条，Modal 弹窗渲染「音标 / 词义 / 词族 / 词源 / 学习提示」
+- [x] **T14** `src/components/MediaPlayer.tsx` import `useNavigate` + `BookOutlined`；每条字幕 div 末尾增加「📖 查看句子详情」按钮，`stopPropagation` 避免冲突，`minWidth/Height: 36` 保证触摸目标
+- [x] **T15** `src/pages/Settings.tsx`「高级 / 个性化」分组新增 📖 词典入口，整卡可点击跳转到 `/settings/dictionary`
+- [x] **T16** `src/router/index.tsx` 注册 `/settings/dictionary` + `/play/:id/sentence/:idx` 两条路由
+
+### 验证
+
+- [x] **T17** `go build ./...` exit code 0
+- [x] **T18** `go vet ./...` exit code 0
+- [x] **T19** `go test ./pkg/subtitle/... ./internal/handlers/...` 23/23 测试通过（14 subtitle + 9 dictionary/sentence）
+- [x] **T20** `pnpm build` exit code 0（1543 modules / 27 PWA precache / tsc -b 严格类型检查）
+- [x] **T21** 集成测试 `test-api.ps1` 19/22 PASS（v0.9.0 新增 3 段：16. /ai/dictionary + 17. /ai/sentence-explain + 18. 缺参校验，全部 PASS；3 项 FAIL 仍为预先存在的 lesson1 媒体名不匹配）
+- [x] **T22** ChangeLog.md v0.9.0 章节完整记录字典 / 句子解释 / 单元测试 / 集成测试扩展
+- [x] **T23** PLAN.md / TASKS.md / README.md 同步更新
+- [x] **T24** README.md API 概览新增 `POST /ai/dictionary` + `POST /ai/sentence-explain` 两行；特征列表新增「📖 AI 字典 + 句子解释」
+
+---
+
 # TASKS.md — v0.8.1 AI 双语字幕 + 连通性测试
 
 配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。

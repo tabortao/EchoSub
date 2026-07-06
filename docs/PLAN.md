@@ -1,8 +1,36 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v0.8.1 AI 双语字幕 + 连通性测试 已完成 | 日期：2026-07-06
+> 状态：v0.9.0 AI 字典 + 句子解释 已完成 | 日期：2026-07-06
 
-## 活跃里程碑：v0.8.1 AI 双语字幕 + 连通性测试（2026-07-06 完成）
+## 活跃里程碑：v0.9.0 AI 字典 + 句子解释（2026-07-06 完成）
+
+参考 `docs/Reference/Echo-Loop` 的 `DictionarySource` 可插拔数据源设计，给 EchoSub 增加「词典」体系，并实现「点击单句进入详情页」的学习闭环。
+
+详见 [ChangeLog v0.9.0](ChangeLog.md#v090---2026-07-06) 与 [TASKS.md v0.9.0 段](TASKS.md)。
+
+### 交付内容
+- **AI 字典** — 后端 `POST /api/v1/ai/dictionary`（请求 `{word, sentence?, target_lang?}`，响应 `headword / pronunciation(uk,us) / meanings[] / word_family[] / etymology / learner_tips[]`）；JSON 容错解析（剥离围栏、缺失字段回退空值、数组始终非 nil）；上下文消歧
+- **句子解释** — 后端 `POST /api/v1/ai/sentence-explain`（请求 `{sentence, target_lang?, source_lang?, features?}`，响应 `original / translation / words[] / grammar / notes`）；`features.word/grammar/translation` 可按需关闭，prompt 模板按 features 动态拼装
+- **字典设置页** — `frontend/src/pages/DictionarySettings.tsx`，AI 词典卡片含「⚡ 测试连通性」按钮（复用 v0.8.1 `aiApi.test`）；zustand + localStorage 持久化默认源 / 禁用源
+- **句子详情页** — `frontend/src/pages/SentenceDetail.tsx`，响应式布局（手机单列 / 桌面 2 列 + 逐词拆解占整行）；单词卡片可点击触发 AI 查词弹窗
+- **播放器入口** — `MediaPlayer` 每条字幕右侧新增 📖 按钮（`stopPropagation` 避免冲突），点击 `navigate('/play/:id/sentence/:idx')` 跳转
+- **设置页入口** — `Settings.tsx`「高级 / 个性化」分组新增 📖 词典入口
+- **单测** — 新增 9 个 AI 字典 / 句子解释 JSON 解析测试（v0.8.x = 14 + v0.9.0 新增 9 = 23/23 PASS）
+- **集成测试** — `test-api.ps1` 新增 3 段（#16 dictionary / #17 sentence-explain / #18 缺参校验），全部 PASS
+
+### 验证清单
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./pkg/subtitle/... ./internal/handlers/...` 23/23 测试通过（14 subtitle + 9 dictionary/sentence）
+- [x] `pnpm build` exit code 0（1543 modules / 27 PWA precache / tsc -b 严格类型检查）
+- [x] 集成测试 `test-api.ps1` 19/22 PASS（v0.9.0 新增 3 段：16. /ai/dictionary + 17. /ai/sentence-explain + 18. 缺参校验，全部 PASS；3 项 FAIL 仍为预先存在的 lesson1 媒体名不匹配）
+- [x] ChangeLog.md / PLAN.md / TASKS.md / README.md 同步更新
+
+---
+
+# 旧版：v0.8.1 AI 双语字幕 + 连通性测试（2026-07-06 完成）
+
+> 状态：已完成 | 版本：v0.8.1 | 日期：2026-07-06
 
 详见 [ChangeLog v0.8.1](ChangeLog.md#v081---2026-07-06) 与 [TASKS.md v0.8.1 段](TASKS.md)。
 
