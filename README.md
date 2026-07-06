@@ -53,7 +53,8 @@
 - [🧪 测试方法](#-测试方法)
 - [🏗️ 生产构建](#-生产构建)
 - [📚 API 概览](#-api-概览)
-- [📊 学习记录页面](#-学习记录页面)
+- [� 词典（v0.9.0 起）](#-词典v090-起)
+- [�📊 学习记录页面](#-学习记录页面)
 - [🏷️ 标签管理（v0.5.0 多态）](#-标签管理v050-多态)
 - [🐳 Docker / NAS 部署](#-docker--nas-部署)
 - [🗂️ 版本管理](#-版本管理)
@@ -67,8 +68,9 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 
 - 🎬 **逐句复读播放器**：每句重复 M 次 → 暂停 K 秒 → 下一句；整体循环 N 次；速度 0.1 步进调节。
 - ✍️ **字幕逐句编辑 + AI 双语翻译**（v0.8.0 起）：播放器内可在线编辑每条字幕并通过 OpenAI 兼容接口批量翻译，v0.8.1 默认生成「原文 + 译文」双语字幕（中文 → 中英 / 英文 → 中英）。
-- � **AI 字典 + 句子解释**（v0.9.0 起）：设置中可配置词典源；点击每条字幕进入「句子详情页」查看整句翻译 / 逐词拆解 / 语法解析；逐词点击触发 AI 查词弹窗（音标 / 词义 / 词族 / 词源 / 学习提示）。
-- �📚 **Markdown 学习页**：每个专辑可创建多份学习笔记，支持多图上传 + 全屏查看 + TTS 朗读。
+- 🤖 **AI 字典 + 句子解释**（v0.9.0 起）：设置中可配置词典源；点击每条字幕进入「句子详情页」查看整句翻译 / 逐词拆解 / 语法解析；逐词点击触发 AI 查词弹窗（音标 / 词义 / 词族 / 词源 / 学习提示）。
+- 📕 **本地词典**（v0.9.1 起）：用户上传自己的 CSV 词库即可离线查词，零 token 消耗；查词支持精确匹配 + 简单词形 fallback（`studies → study`），句子详情页默认「本地优先 → AI 兜底」。
+- 📚 **Markdown 学习页**：每个专辑可创建多份学习笔记，支持多图上传 + 全屏查看 + TTS 朗读。
 - 🏷️ **多态标签系统**（v0.5.0 起）：专辑 / 季 / 学习页 / 媒体四类实体可统一打标签与按标签筛选。
 - 🎨 **Emby 风格扫描**：自动识别 `folder.jpg` / `banner.jpg` / `tvshow.nfo` 等元数据。
 - 🔒 **未读蒙版 + 继续观看**：未学习资源显示灰蒙版 + 🔒 提示；首页自动列出未学完的媒体。
@@ -102,6 +104,14 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 - **媒体备注（Remark）**：每个媒体文件可附一段 Markdown 备注，默认预览模式，一键切换编辑。
 - **TTS 朗读**：基于 VoiceCraft API (`https://tts.wangwangit.com`)，可配置默认语音与速度（0.5~2.0）。
 - **学习统计**：周 / 月 / 年三视图，柱状图展示播放次数、媒体数、句子数；按专辑的「已学/总数」进度条。
+
+### 📖 词典（v0.9.0 起）
+
+- **可插拔数据源设计**：参考 Echo Loop `DictionarySource` 抽象，每种词典源（AI / 本地 / 未来的 StarDict / MDX）都是独立源；通过设置页启用 / 禁用 / 设为默认。
+- **AI 词典**（v0.9.0）：调用 OpenAI 兼容模型，按「词典编纂者」prompt 生成结构化词条（音标 / 词义 / 例句 / 词族 / 词源 / 学习提示）；支持传入 `sentence` 进行上下文消歧。
+- **本地词典**（v0.9.1）：用户上传自己的 CSV 词库（`word,phonetic,translation`，表头列名兼容多种英文别名），单本最大 50 MiB；查词走 SQL（精确 + 简单词形 fallback），零 token 消耗。
+- **句子详情页**：点击每条字幕进入 `/play/:id/sentence/:idx`，AI 一次返回「整句翻译 / 逐词拆解 / 语法解析 / 学习提示」；单词卡片可二次点击触发查词弹窗（本地优先 → AI 兜底）。
+- **偏好持久化**：默认词典源 / 禁用源 / 是否本地命中时仍调 AI（`preferLocalHit`）通过 zustand + localStorage 持久化，跨会话保留。
 
 ### 🏷️ 标签管理（v0.5.0 多态）
 
@@ -447,9 +457,21 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 | POST   | `/ai/dictionary`                  | 字典查词（v0.9.0 起；请求体 `{word, sentence?, target_lang?}`，AI 返回结构化词条 `headword / pronunciation(uk,us) / meanings[] / word_family[] / etymology / learner_tips[]`，可选 `sentence` 用于上下文消歧）|
 | POST   | `/ai/sentence-explain`            | 句子解释（v0.9.0 起；请求体 `{sentence, target_lang?, source_lang?, features?}`，AI 返回 `original / translation / words[] / grammar / notes`；`features.word/grammar/translation` 可按需关闭，缺省三个全开）|
 
-> 配置：通过 `ECHOSUB_AI_BASE_URL` / `ECHOSUB_AI_API_KEY` / `ECHOSUB_AI_MODEL` 等环境变量注入后端，密钥不出前端、不进数据库。设置页「🤖 AI 翻译」卡片提供「⚡ 测试连通性」按钮，命中后即在卡片内显示绿色「连通正常」+ 耗时 +「Hello → 你好」样例。详见 [ChangeLog v0.8.0](docs/ChangeLog.md#v080---2026-07-06) 与 [ChangeLog v0.8.1](docs/ChangeLog.md#v081---2026-07-06)。
+### 📕 本地词典（v0.9.1，CSV 离线词库）
+
+| Method | Path                              | 描述                                  |
+|--------|-----------------------------------|--------------------------------------|
+| GET    | `/dictionary/local`               | 列出已上传的本地词典（含元数据 / 词条数 / 软删除状态）|
+| POST   | `/dictionary/local/upload`        | 上传并导入 CSV 词典（multipart；字段 `file` / `name` / `description` / `source_lang` / `target_lang`；事务批量写库，每 1000 条一批，单本最大 50 MiB）|
+| DELETE | `/dictionary/local/:id`           | 删除词典（软删除，词条由 `JOIN` 过滤）|
+| POST   | `/dictionary/local/lookup`        | 查词（请求体 `{word, sentence?, dict_id?}`，响应 `{found, entries[]}`；精确匹配优先，未命中时按常见后缀回退到原形再查；`matched_by` 标识 `exact` 或 `lemma:<原形>`）|
+| GET    | `/dictionary/local/status`        | 词典系统总状态（`dict_count` / `entry_count` / `max_bytes` / `max_name_len`）|
+
+> 配置：无需额外配置；上传后立即可用。CSV 格式 `word,phonetic,translation`（表头列名兼容 `word/term/lemma/headword` + `phonetic/ipa/pronunciation` + `translation/definition/meaning/gloss`），UTF-8 编码，无表头时按位置取 word / phonetic / translation。
 >
-> 字典与句子解释共用同一 AI 配置；词典体系采用可插拔数据源设计（`id='ai'` 已实装，`id='local'` 预留扩展点），具体见 [ChangeLog v0.9.0](docs/ChangeLog.md#v090---2026-07-06)。在播放器中点击字幕右侧「📖」按钮可进入「句子详情页」（路径 `/play/:id/sentence/:idx`），从单词卡片二次点击触发 AI 查词弹窗。
+> 字典与句子解释共用同一 AI 配置；词典体系采用可插拔数据源设计（`id='ai'` 与 `id='local'` 均已实装），具体见 [ChangeLog v0.9.0](docs/ChangeLog.md#v090---2026-07-06) 与 [ChangeLog v0.9.1](docs/ChangeLog.md#v091---2026-07-06)。在播放器中点击字幕右侧「📖」按钮可进入「句子详情页」（路径 `/play/:id/sentence/:idx`），从单词卡片二次点击触发查词弹窗（**本地优先 → AI 兜底**）。
+
+> 配置：通过 `ECHOSUB_AI_BASE_URL` / `ECHOSUB_AI_API_KEY` / `ECHOSUB_AI_MODEL` 等环境变量注入后端，密钥不出前端、不进数据库。设置页「🤖 AI 翻译」卡片提供「⚡ 测试连通性」按钮，命中后即在卡片内显示绿色「连通正常」+ 耗时 +「Hello → 你好」样例。详见 [ChangeLog v0.8.0](docs/ChangeLog.md#v080---2026-07-06) 与 [ChangeLog v0.8.1](docs/ChangeLog.md#v081---2026-07-06)。
 
 ## 默认测试账号
 
@@ -580,7 +602,7 @@ volumes:
 
 - 每个自然日的所有变更合并为 **一个** 版本号（如 `v0.7.0`），详见 [docs/ChangeLog.md](docs/ChangeLog.md)。
 - 版本遵循 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范，仅使用 `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` 六类。
-- 当前活跃版本：**v0.7.0**（动物森友会风格全站 UI 重设计）。
+- 当前活跃版本：**v0.9.1**（本地词典 + AI 词典体系，参考 Echo Loop `DictionarySource` 抽象）。
 
 ## 🏝️ 动森风格设计语言（v0.7.0）
 

@@ -1,8 +1,40 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v0.9.0 AI 字典 + 句子解释 已完成 | 日期：2026-07-06
+> 状态：v0.9.1 本地词典 已完成 | 日期：2026-07-06
 
-## 活跃里程碑：v0.9.0 AI 字典 + 句子解释（2026-07-06 完成）
+## 活跃里程碑：v0.9.1 本地词典（2026-07-06 完成）
+
+继 v0.9.0 引入 AI 词典后，本轮补全「本地词典」数据源，让用户上传自己的 CSV 词库即可离线查词（零 token 消耗）。设计上仍遵循 v0.9.0 参考的 Echo Loop `DictionarySource` 抽象，前端 store 早就预留了 `id='local'`，本次让后端真正落地。
+
+详见 [ChangeLog v0.9.1](ChangeLog.md#v091---2026-07-06) 与 [TASKS.md v0.9.1 段](TASKS.md)。
+
+### 交付内容
+- **数据模型** — `LocalDictionary`（词典元数据：name/description/file_name/size_bytes/entry_count/source_lang/target_lang/软删除）与 `DictEntry`（dict_id/word/phonetic/translation + 联合索引 `(dict_id, word)`）两张表，AutoMigrate + 软删除
+- **CSV 解析器** ([pkg/dictcsv/dictcsv.go](backend/pkg/dictcsv/dictcsv.go))：兼容多种表头列名（word/term/lemma/headword + phonetic/ipa/pronunciation + translation/definition/meaning/gloss），空行 / 引号容错，同 word 去重；`Lemmas(word)` 简单词形 fallback（剥离 ing/ed/s/es/er/est/ly 等后缀）
+- **后端接口**（[handlers/local_dict.go](backend/internal/handlers/local_dict.go)）
+  - `GET /api/v1/dictionary/local` — 列出已上传词典
+  - `POST /api/v1/dictionary/local/upload` — multipart 上传 CSV → 事务写库（每 1000 条一批），单本最大 50 MiB
+  - `DELETE /api/v1/dictionary/local/:id` — 软删除词典
+  - `POST /api/v1/dictionary/local/lookup` — 精确匹配 + 词形 fallback，返回 `matched_by: "exact" | "lemma:<原形>"`
+  - `GET /api/v1/dictionary/local/status` — 词典系统总状态
+- **路由注册**（[router/router.go](backend/internal/router/router.go)）：authed 组下新增 `/dictionary` 子路由
+- **CSV 解析单测** — 5 个测试用例（基础 / 表头列名 / 空行非法 / 真实 10 行 / 词形 fallback），全部 PASS
+- **前端 API + Store** — `localDictApi.{list,status,upload,remove,lookup}` 五个方法；`useDictionaryStore` 扩展 `localDicts` / `preferLocalHit`（持久化偏好，默认 true）
+- **前端词典设置页** — 新增「本地词典」管理卡：Dragger 上传 / 列表 / 统计 / 删除二次确认 / 进度条 / 刷新按钮；新增「默认词典源」单选卡
+- **句子详情页查词逻辑** — 单词点击优先查本地词典（命中且 `preferLocalHit=true` 直接返回；命中且 false 时本地为主 + AI 增强；未命中时 AI 兜底），弹窗按来源分两组展示
+- **Bug 修复** — 本地词典级联删除失效（软删除不触发触发器）→ 查词时 `JOIN local_dictionaries ld WHERE ld.deleted_at IS NULL` 显式过滤；GORM 链式条件累积 bug → 工厂函数 `makeBase()` 每次新建查询条件
+
+### 验证清单
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（subtitle 8 + dictcsv 5 + handlers 9 ≈ 22 个测试）
+- [x] `pnpm build` exit code 0（tsc -b 严格类型检查通过，27 PWA precache）
+- [x] 集成测试 `test-api.ps1`：v0.9.1 新增 5 段（#19 ~ #23）全 PASS，本地词典 8 项断言全绿
+- [x] ChangeLog.md / PLAN.md / TASKS.md / README.md 同步更新
+
+---
+
+# 旧版：v0.9.0 AI 字典 + 句子解释（2026-07-06 完成）
 
 参考 `docs/Reference/Echo-Loop` 的 `DictionarySource` 可插拔数据源设计，给 EchoSub 增加「词典」体系，并实现「点击单句进入详情页」的学习闭环。
 

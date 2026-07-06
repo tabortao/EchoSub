@@ -144,5 +144,16 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			ai.POST("/dictionary", aiH.Dictionary)
 			ai.POST("/sentence-explain", aiH.ExplainSentence)
 		}
+
+		// 本地词典（v0.9.1）：用户上传 CSV → 查词
+		dictH := handlers.NewLocalDictHandler(cfg)
+		dict := authed.Group("/dictionary")
+		{
+			dict.GET("/local", dictH.ListLocalDicts)
+			dict.GET("/local/status", dictH.LocalDictStatus)
+			dict.POST("/local/upload", dictH.UploadLocalDict)
+			dict.POST("/local/lookup", dictH.LookupLocalDict)
+			dict.DELETE("/local/:id", dictH.DeleteLocalDict)
+		}
 	}
 }

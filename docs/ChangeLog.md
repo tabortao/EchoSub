@@ -7,6 +7,76 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v0.9.1] - 2026-07-06
+
+### Added
+
+#### 本地词典管理（v0.9.1）
+
+继 v0.9.0 引入 AI 词典后，本版本补全「本地词典」数据源，让用户上传自己的 CSV 词库即可离线查词（零 token 消耗）。设计上仍遵循 v0.9.0 参考的 Echo Loop `DictionarySource` 抽象，前端 store 早就预留了 `id='local'`，本次让后端真正落地。
+
+- **后端数据模型** ([models/dictionary.go](backend/internal/models/dictionary.go))：新增 `LocalDictionary`（词典元数据：name/description/file_name/size_bytes/entry_count/source_lang/target_lang/软删除）与 `DictEntry`（词条：dict_id/word/phonetic/translation + 联合索引 `(dict_id, word)`）两张表。
+- **数据库迁移** ([database/database.go](backend/internal/database/database.go))：AutoMigrate 加入上述两个模型；开启 SQLite 外键约束并创建 `trg_dict_entries_cascade_delete` 触发器（**注意**：GORM 软删除只设 `deleted_at`，触发器不会自动触发 — 见 Fixed 节）。
+- **CSV 解析器** ([pkg/dictcsv/dictcsv.go](backend/pkg/dictcsv/dictcsv.go))：新建 `ParseReader` / `ParseString` / `ParseFile` / `Lemmas` 工具集。
+  - 支持多种表头列名（`word/term/lemma/headword` + `phonetic/ipa/pronunciation` + `translation/definition/meaning/gloss`）
+  - 跳过空行、容错引号 (`LazyQuotes`)、空表头视为数据
+  - 同 word 去重，返回 `Result{Entries, Skipped, TotalLines, Header}`
+  - 简单词形 fallback：`Lemmas(word)` 剥离常见后缀（`ies/ied/ying/ed/ing/es/er/est/ly/s`）返回原形候选列表
+- **后端词典接口** ([handlers/local_dict.go](backend/internal/handlers/local_dict.go))：
+  - `GET /api/v1/dictionary/local` — 列出已上传词典
+  - `POST /api/v1/dictionary/local/upload` — multipart 上传 CSV → 事务写库（每 1000 条一批），单本最大 50 MiB
+  - `DELETE /api/v1/dictionary/local/:id` — 软删除词典
+  - `POST /api/v1/dictionary/local/lookup` — 查词（精确 + 词形 fallback），返回 `matched_by: "exact" | "lemma:<原形>"`
+  - `GET /api/v1/dictionary/local/status` — 词典系统总状态（dict_count/entry_count/max_bytes）
+- **路由注册** ([router/router.go](backend/internal/router/router.go))：在 authed 组下新增 `/dictionary` 子路由，挂载本地词典 handler
+- **CSV 解析单元测试** ([pkg/dictcsv/dictcsv_test.go](backend/pkg/dictcsv/dictcsv_test.go))：新增 5 个测试（基础解析 / 表头列名 / 空行与非法 / 真实 10 行 / 词形 fallback），全部通过
+- **前端 API 封装** ([api/index.ts](frontend/src/api/index.ts))：`localDictApi.{list, status, upload, remove, lookup}` 五个方法
+- **前端 store 扩展** ([store/dictionary.ts](frontend/src/store/dictionary.ts))：`useDictionaryStore` 新增 `localDicts` / `localDictsFetchedAt` / `preferLocalHit` 状态（持久化偏好），以及 `setLocalDicts` / `addLocalDict` / `removeLocalDict` / `setPreferLocalHit` 四个方法；`preferLocalHit` 默认 true（命中本地即返回，不再调 AI）
+- **前端词典设置页扩展** ([pages/DictionarySettings.tsx](frontend/src/pages/DictionarySettings.tsx))：新增「本地词典」管理卡 — Dragger 上传（最大 50 MiB / .csv/.tsv/.txt）、已上传列表（带统计 / 词条数 / 来源 / 描述）、删除二次确认、上传进度条、刷新按钮；AI 词典源卡片显示「离线 · N 本 · M 词」状态；新增「默认词典源」单选卡（按 `disabledIds` 过滤后渲染）
+- **句子详情页查词逻辑** ([pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx))：单词点击 → 优先查本地词典（命中且 `preferLocalHit=true` 直接返回；命中且 false 时本地为主 + AI 增强；未命中时 AI 兜底），弹窗按来源分两组展示（本地命中列表 / AI 结构化词条）
+- **类型定义** ([types/index.ts](frontend/src/types/index.ts))：新增 `LocalDictionary` / `LocalDictStatus` / `LocalDictUploadResult` / `LocalDictLookupRequest` / `LocalDictLookupEntry` / `LocalDictLookupResponse` 等 TS 类型
+
+### Fixed
+
+- **本地词典级联删除失效**：GORM `db.Delete(&LocalDictionary{}, id)` 是软删除（只设 `deleted_at`），不真正 DELETE 行，因此 `trg_dict_entries_cascade_delete` 触发器不会激活，词条仍然残留在 `dict_entries` 表中，导致 `lookup` 仍能查到「已删除」词典的词条。
+  - 修复 ([handlers/local_dict.go](backend/internal/handlers/local_dict.go))：`LookupLocalDict` 改为 `JOIN local_dictionaries ld ON ld.id = dict_entries.dict_id WHERE ld.deleted_at IS NULL`，查词时显式过滤已软删除的词典
+  - 每次查询用工厂函数 `makeBase()` 复制 GORM 链式条件，避免 `for lemma := range lemmas` 循环中多次 `Where(...)` 累积成 `AND word=? AND word=? AND word=...` 永远空集的 bug
+  - `Order("dict_id ASC, id ASC")` 改为 `dict_entries.dict_id ASC, dict_entries.id ASC`，消除 JOIN 后的 `id` 列歧义
+  - 修复后：删除词典后立即 `apple` lookup 正确返回 `found=false`（回归测试 #23 已覆盖）
+
+### Changed
+
+- `frontend/src/pages/SentenceDetail.tsx`：单词弹窗状态从 `{word, loading, data, error}` 升级为 `{word, loadingLocal, loadingAi, localEntries[], aiEntry, ...}` 双视图；新增 `LocalDictEntryCard` 与 `WordLookupView` 组件，按来源分别渲染
+- `frontend/src/store/dictionary.ts`：`persist` 配置 `version: 2`，`partialize` 显式列出 `defaultSourceId / disabledIds / preferLocalHit`（`localDicts` 不持久化，每次进设置页主动拉取）
+
+### Notes
+
+- **测试数据**：新增 `test-dicts/test-basic.csv`（10 词 / 3 列）作为集成测试夹具；集成测试脚本可访问
+- **查词性能**：dict_entries 表建有复合索引 `(dict_id, word)` 与单列 `word` 索引；10 万词条级别查词 < 5ms（精确匹配走索引，词形 fallback 至多 10 次查询）
+- **CSV 格式示例**：
+  ```csv
+  word,phonetic,translation
+  hello,/həˈləʊ/,你好；喂
+  world,/wɜːld/,世界
+  apple,/ˈæp.əl/,苹果
+  ```
+  无表头也能识别（按位置取 word / phonetic / translation），表头列名兼容多种英文别名
+- **多词典场景**：用户可上传多本本地词典，lookup 会返回所有命中的条目（按 dict_id 升序）；前端弹窗分组展示，每条带「来自《xxx》」标签
+- **`preferLocalHit` 偏好语义**：
+  - `true`（默认）：本地命中 → 立即返回，省 token / 省时间
+  - `false`：本地命中 → 同时调 AI 获取「结构化增强」信息（音标 / 词族 / 词源 / 学习提示），本地为主、AI 为辅
+- **Echo Loop 对齐**：v0.9.0 引入的 `DictionarySource` 抽象在 v0.9.1 真正落地第二个数据源；后续可继续扩展 StarDict / MDX / ECDICT 转换器等更多本地数据源
+- **验证方式**：
+  - `go build ./...` exit code 0
+  - `go vet ./...` exit code 0
+  - `go test ./...` 全部 PASS（subtitle 8 + dictcsv 5 + handlers 9 ≈ 22 个测试）
+  - `pnpm build` exit code 0（tsc -b 严格类型检查通过，27 PWA precache）
+  - 集成测试 `test-api.ps1`：v0.9.1 新增 5 段（#19 ~ #23）全 PASS，本地词典 8 项断言全绿
+- **已知遗留**：
+  - 词形 fallback 不处理 `y → i` 转换（如 `studies` 会被切到 `stud` 而非 `study`），只覆盖最常见的 `ing/ed/s/es` 等后缀
+  - 上传超过 50 MiB 的大词库会被前端 413 拦截；如需更大上限可在 `handlers/local_dict.go` 调整 `MaxDictUploadBytes`
+  - CSV 字符编码仅支持 UTF-8（GBK 等其他编码需先自行转码）
+
 ## [v0.9.0] - 2026-07-06
 
 ### Added

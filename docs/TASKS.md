@@ -1,6 +1,54 @@
-# TASKS.md — v0.9.0 AI 字典 + 句子解释
+# TASKS.md — v0.9.1 本地词典
 
 配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v0.9.1 本地词典（2026-07-06）
+
+### 后端
+
+- [x] **T1** `internal/models/dictionary.go` 新建 — 定义 `LocalDictionary`（name/description/file_name/size_bytes/entry_count/source_lang/target_lang + `gorm.DeletedAt` 软删除）与 `DictEntry`（dict_id/word/phonetic/translation + 联合索引 `(dict_id, word)` + 单列 `word` 索引）两张表
+- [x] **T2** `internal/database/database.go` AutoMigrate 注册上述两个模型；开启 SQLite `PRAGMA foreign_keys=ON`；创建 `trg_dict_entries_cascade_delete` 触发器（**注意**：GORM 软删除不触发 — 见 T15）
+- [x] **T3** `pkg/dictcsv/dictcsv.go` 新建 `ParseReader / ParseString / ParseFile / Lemmas` 工具集
+  - 兼容表头列名：`word/term/lemma/headword` + `phonetic/ipa/pronunciation` + `translation/definition/meaning/gloss`
+  - 跳过空行、`csv.LazyQuotes` 容错、空表头按位置取 word/phonetic/translation
+  - 同 word 去重、返回 `Result{Entries, Skipped, TotalLines, Header}`
+  - `Lemmas(word)` 剥离常见后缀（`ies/ied/ying/ed/ing/es/er/est/ly/s`）返回原形候选列表
+- [x] **T4** `internal/handlers/local_dict.go` 新建 `LocalDictHandler`，5 个接口
+  - `ListLocalDicts` `GET /api/v1/dictionary/local`
+  - `UploadLocalDict` `POST /api/v1/dictionary/local/upload`（multipart，事务写库，每 1000 条一批，单本最大 50 MiB，扩展名 `.csv/.tsv/.txt`）
+  - `DeleteLocalDict` `DELETE /api/v1/dictionary/local/:id`（软删除）
+  - `LookupLocalDict` `POST /api/v1/dictionary/local/lookup`（精确 + 词形 fallback，返回 `matched_by: "exact" | "lemma:<原形>"`）
+  - `LocalDictStatus` `GET /api/v1/dictionary/local/status`（dict_count/entry_count/max_bytes/max_name_len）
+- [x] **T5** `internal/router/router.go` 在 authed 组下新增 `/dictionary` 子路由，挂载 `LocalDictHandler`
+- [x] **T6** `pkg/dictcsv/dictcsv_test.go` 新建 5 个测试：基础解析 / 表头列名 / 空行与非法 / 真实 10 行 / 词形 fallback
+- [x] **T7** `test-dicts/test-basic.csv` 集成测试夹具（10 词 / 3 列：word,phonetic,translation）
+
+### 前端
+
+- [x] **T8** `src/api/index.ts` 新增 `localDictApi = { list, status, upload, remove, lookup }` 五个方法
+- [x] **T9** `src/types/index.ts` 新增 6 个 TS 类型 — `LocalDictionary / LocalDictStatus / LocalDictUploadResult / LocalDictLookupRequest / LocalDictLookupEntry / LocalDictLookupResponse`
+- [x] **T10** `src/store/dictionary.ts` `useDictionaryStore` 扩展 `localDicts / localDictsFetchedAt / preferLocalHit` 状态 + `setLocalDicts / addLocalDict / removeLocalDict / setPreferLocalHit` 四个方法；`persist` 配置 `version: 2`，`partialize` 显式列出持久化字段（`localDicts` 不持久化，每次进设置页主动拉取）
+- [x] **T11** `src/pages/DictionarySettings.tsx` 新增「本地词典」管理卡 — Dragger 上传（最大 50 MiB / .csv/.tsv/.txt）、已上传列表（带统计 / 词条数 / 来源 / 描述 / 软删除时间）、删除二次确认、上传进度条、刷新按钮；AI 词典源卡片显示「离线 · N 本 · M 词」状态；新增「默认词典源」单选卡（按 `disabledIds` 过滤后渲染）+「本地命中时是否仍调 AI」开关
+- [x] **T12** `src/pages/SentenceDetail.tsx` 单词查词逻辑升级为「本地优先 → AI 兜底」：状态机 `WordLookupState{word, loadingLocal, loadingAi, localEntries[], localTried, aiEntry, aiTried, error}`；命中分支按 `preferLocalHit` 决定是否调 AI 增强；新增 `LocalDictEntryCard` 与 `WordLookupView` 组件按来源分别渲染
+
+### 验证 & Bug 修复
+
+- [x] **T13** `go build ./...` exit code 0
+- [x] **T14** `go vet ./...` exit code 0
+- [x] **T15** **Bug 修复 — 本地词典级联删除失效** — GORM `db.Delete(&LocalDictionary{}, id)` 是软删除（只设 `deleted_at`），不真正 DELETE 行，因此 `trg_dict_entries_cascade_delete` 触发器不会激活，词条仍然残留。
+  - 修复：`LookupLocalDict` 改为 `JOIN local_dictionaries ld ON ld.id = dict_entries.dict_id WHERE ld.deleted_at IS NULL` 查词时显式过滤
+  - 每次查询用工厂函数 `makeBase()` 复制 GORM 链式条件，避免 `for lemma := range lemmas` 循环中多次 `Where(...)` 累积成 `AND word=? AND word=? AND word=...` 永远空集的 bug
+  - `Order("dict_id ASC, id ASC")` 改为 `dict_entries.dict_id ASC, dict_entries.id ASC`，消除 JOIN 后的 `id` 列歧义
+- [x] **T16** `go test ./...` 全部 PASS（subtitle 8 + dictcsv 5 + handlers 9 ≈ 22 个测试）
+- [x] **T17** `pnpm build` exit code 0（tsc -b 严格类型检查通过，27 PWA precache）
+- [x] **T18** 集成测试 `test-api.ps1`：v0.9.1 新增 5 段（#19 ~ #23）全 PASS，本地词典 8 项断言全绿（精确命中 / fallback 命中 / 不存在 / 列表 / 上传 / 状态 / 删除 / 删除后查不到）
+- [x] **T19** ChangeLog.md v0.9.1 章节完整记录本地词典 / CSV 解析 / 单元测试 / 集成测试扩展 / Bug 修复
+- [x] **T20** PLAN.md / TASKS.md / README.md 同步更新
+- [x] **T21** README.md API 概览新增 5 行：`GET /dictionary/local` / `POST /dictionary/local/upload` / `DELETE /dictionary/local/:id` / `POST /dictionary/local/lookup` / `GET /dictionary/local/status`；特征列表新增「📕 本地词典（CSV 离线词库）」
+
+---
+
+# TASKS.md — v0.9.0 AI 字典 + 句子解释
 
 ## v0.9.0 AI 字典 + 句子解释（2026-07-06）
 

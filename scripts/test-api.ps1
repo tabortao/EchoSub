@@ -451,6 +451,172 @@ try {
     }
 }
 
+# ---------- 19. Local dictionary status (v0.9.1 GET /dictionary/local/status) ----------
+Step "19. Local dictionary status (v0.9.1: status before upload)"
+try {
+    $r = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local/status" -Method GET -Headers $Headers -TimeoutSec 5
+    if ($r.code -eq 0) {
+        $d = $r.data
+        Ok "local dict status: available=$($d.available), dict_count=$($d.dict_count), entry_count=$($d.entry_count)"
+    } else {
+        Bad "local dict status unexpected: code=$($r.code), msg=$($r.message)"
+    }
+} catch {
+    Bad "local dict status failed: $_"
+}
+
+# ---------- 20. Local dictionary upload (v0.9.1 POST /dictionary/local/upload) ----------
+Step "20. Local dictionary upload (v0.9.1: CSV import)"
+$TestDictPath = Join-Path $RepoRoot "test-dicts\test-basic.csv"
+$TestDictId = $null
+if (Test-Path $TestDictPath) {
+    try {
+        # PowerShell 5.1: use HttpClient multipart upload via .NET
+        Add-Type -AssemblyName System.Net.Http
+        $httpClient = New-Object System.Net.Http.HttpClient
+        $content = New-Object System.Net.Http.MultipartFormDataContent
+        $fileStream = [System.IO.File]::OpenRead($TestDictPath)
+        $fileContent = New-Object System.Net.Http.StreamContent $fileStream
+        $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("text/csv")
+        $content.Add($fileContent, "file", [System.IO.Path]::GetFileName($TestDictPath))
+        $nameContent = New-Object System.Net.Http.StringContent "TestBasic"
+        $nameContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("text/plain")
+        $content.Add($nameContent, "name")
+        $httpClient.DefaultRequestHeaders.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", $Token)
+        $resp = $httpClient.PostAsync("$BaseUrl/dictionary/local/upload", $content).GetAwaiter().GetResult()
+        $respBody = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $fileStream.Close()
+        $r = $respBody | ConvertFrom-Json
+        if ($r.code -eq 0) {
+            $TestDictId = $r.data.id
+            Ok "local dict uploaded: id=$TestDictId, name='$($r.data.name)', entry_count=$($r.data.entry_count), skipped=$($r.data.skipped), total_lines=$($r.data.total_lines)"
+        } else {
+            Bad "local dict upload failed: code=$($r.code), msg=$($r.message)"
+        }
+    } catch {
+        Bad "local dict upload exception: $_"
+    }
+} else {
+    Bad "test-dicts\test-basic.csv not found"
+}
+
+# ---------- 21. Local dictionary list (v0.9.1 GET /dictionary/local) ----------
+Step "21. Local dictionary list (v0.9.1: list uploaded dictionaries)"
+try {
+    $r = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local" -Method GET -Headers $Headers -TimeoutSec 5
+    if ($r.code -eq 0) {
+        $cnt = $r.data.dictionaries.Count
+        if ($cnt -ge 1 -and $TestDictId) {
+            $hit = $r.data.dictionaries | Where-Object { $_.id -eq $TestDictId } | Select-Object -First 1
+            if ($hit) {
+                Ok "local dict list contains uploaded id=$TestDictId (total: $cnt, this dict: name='$($hit.name)', entries=$($hit.entry_count))"
+            } else {
+                Bad "local dict list does not contain id=$TestDictId"
+            }
+        } else {
+            Bad "local dict list empty (count=$cnt), expected >= 1"
+        }
+    } else {
+        Bad "local dict list failed: code=$($r.code), msg=$($r.message)"
+    }
+} catch {
+    Bad "local dict list exception: $_"
+}
+
+# ---------- 22. Local dictionary lookup (v0.9.1 POST /dictionary/local/lookup) ----------
+Step "22. Local dictionary lookup (v0.9.1: exact + lemma fallback)"
+try {
+    # 22a) 精确命中
+    $body = @{ word = "apple" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local/lookup" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 5
+    if ($r.code -eq 0 -and $r.data.found -and $r.data.entries.Count -ge 1) {
+        $e = $r.data.entries[0]
+        Ok "exact lookup 'apple' hit: word='$($e.word)', phonetic='$($e.phonetic)', translation='$($e.translation)', matched_by=$($e.matched_by), dict='$($e.dict_name)'"
+    } else {
+        Bad "exact lookup 'apple' failed: found=$($r.data.found), entries=$($r.data.entries.Count)"
+    }
+} catch {
+    Bad "local lookup exception: $_"
+}
+
+try {
+    # 22b) 词形回退 1：apples -> apple (去掉 s)
+    $body = @{ word = "apples" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local/lookup" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 5
+    if ($r.code -eq 0 -and $r.data.found -and $r.data.entries.Count -ge 1) {
+        $e = $r.data.entries[0]
+        if ($e.matched_by -eq "exact" -or $e.matched_by -like "lemma:*") {
+            Ok "lemma fallback 'apples' -> 'apple' hit: word='$($e.word)', matched_by=$($e.matched_by), translation='$($e.translation)'"
+        } else {
+            Ok "lemma fallback 'apples' returned: matched_by=$($e.matched_by), word='$($e.word)'"
+        }
+    } else {
+        Bad "lemma fallback 'apples' failed: found=$($r.data.found), entries=$($r.data.entries.Count)"
+    }
+} catch {
+    Bad "local lookup (lemma apples) exception: $_"
+}
+
+try {
+    # 22c) 词形回退 2：studying -> study (去掉 ing)
+    $body = @{ word = "studying" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local/lookup" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 5
+    if ($r.code -eq 0 -and $r.data.found -and $r.data.entries.Count -ge 1) {
+        $e = $r.data.entries[0]
+        if ($e.matched_by -like "lemma:*") {
+            Ok "lemma fallback 'studying' -> 'study' hit: matched_by=$($e.matched_by), translation='$($e.translation)'"
+        } else {
+            Ok "lemma fallback 'studying' returned: matched_by=$($e.matched_by) (word='$($e.word)')"
+        }
+    } else {
+        Bad "lemma fallback 'studying' failed: found=$($r.data.found), entries=$($r.data.entries.Count)"
+    }
+} catch {
+    Bad "local lookup (lemma studying) exception: $_"
+}
+
+try {
+    # 22d) 未命中：xyzabc 不在词库
+    $body = @{ word = "xyzabc" } | ConvertTo-Json
+    $r = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local/lookup" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 5
+    if ($r.code -eq 0 -and -not $r.data.found) {
+        Ok "miss lookup 'xyzabc' correctly returns found=false (entries=$($r.data.entries.Count))"
+    } else {
+        Bad "miss lookup 'xyzabc' expected found=false, got found=$($r.data.found)"
+    }
+} catch {
+    Bad "local lookup (miss) exception: $_"
+}
+
+# ---------- 23. Local dictionary delete (v0.9.1 DELETE /dictionary/local/:id) ----------
+Step "23. Local dictionary delete (v0.9.1: cascade delete entries)"
+if ($TestDictId) {
+    try {
+        $r = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local/$TestDictId" -Method DELETE -Headers $Headers -TimeoutSec 5
+        if ($r.code -eq 0 -and $r.data.deleted) {
+            Ok "local dict id=$TestDictId deleted"
+        } else {
+            Bad "local dict delete failed: code=$($r.code), msg=$($r.message)"
+        }
+    } catch {
+        Bad "local dict delete exception: $_"
+    }
+    # 验证级联删除：再次 lookup 应 found=false
+    try {
+        $body = @{ word = "apple" } | ConvertTo-Json
+        $r2 = Invoke-RestMethod -Uri "$BaseUrl/dictionary/local/lookup" -Method POST -Body $body -Headers $Headers -ContentType "application/json" -TimeoutSec 5
+        if ($r2.code -eq 0 -and -not $r2.data.found) {
+            Ok "cascade delete verified: 'apple' lookup now returns found=false (entries table cleared)"
+        } else {
+            Bad "cascade delete failed: 'apple' still found (found=$($r2.data.found))"
+        }
+    } catch {
+        Bad "post-delete lookup exception: $_"
+    }
+} else {
+    Bad "skipped (no test dict id)"
+}
+
 # ---------- Summary ----------
 Write-Host ""
 Write-Host "=========================" -ForegroundColor Yellow

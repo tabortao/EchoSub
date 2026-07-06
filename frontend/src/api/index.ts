@@ -28,6 +28,11 @@ import type {
   DictionaryResponse,
   SentenceExplainRequest,
   SentenceExplainResponse,
+  LocalDictListResponse,
+  LocalDictStatus,
+  LocalDictUploadResult,
+  LocalDictLookupRequest,
+  LocalDictLookupResponse,
 } from '@/types'
 
 // ===== 认证 =====
@@ -324,4 +329,40 @@ export const aiApi = {
    */
   sentenceExplain: (payload: SentenceExplainRequest) =>
     client.post<ApiResponse<SentenceExplainResponse>>('/ai/sentence-explain', payload),
+}
+
+// ===== 本地词典（v0.9.1 起）=====
+// 用户上传 CSV → 后端解析入库；查词走 SQL（精确 + 简单词形 fallback）
+export const localDictApi = {
+  /**
+   * 列出已导入的本地词典（按创建时间倒序）
+   */
+  list: () => client.get<ApiResponse<LocalDictListResponse>>('/dictionary/local'),
+  /**
+   * 本地词典系统状态：总词典数、词条数、可用性、上传体积上限
+   */
+  status: () => client.get<ApiResponse<LocalDictStatus>>('/dictionary/local/status'),
+  /**
+   * 上传并导入 CSV 词典（multipart/form-data）
+   * - file: 必填，CSV / TSV / TXT
+   * - name: 必填，词典名
+   * - description / source_lang / target_lang: 可选
+   */
+  upload: (form: FormData) =>
+    client.post<ApiResponse<LocalDictUploadResult>>('/dictionary/local/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  /**
+   * 删除本地词典（级联删除其下词条）
+   */
+  remove: (id: number) =>
+    client.delete<ApiResponse<{ id: number; deleted: true }>>(`/dictionary/local/${id}`),
+  /**
+   * 查词：精确匹配 + 简单词形 fallback
+   * @param payload.word 待查单词
+   * @param payload.sentence 可选上下文（当前版本未使用，预留）
+   * @param payload.dict_id 可选，限定只查某本词典；缺省 = 全部
+   */
+  lookup: (payload: LocalDictLookupRequest) =>
+    client.post<ApiResponse<LocalDictLookupResponse>>('/dictionary/local/lookup', payload),
 }

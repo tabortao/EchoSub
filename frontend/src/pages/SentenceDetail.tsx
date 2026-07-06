@@ -4,7 +4,11 @@
  * 设计：
  * - 顶部展示原文 + 媒体名 + 时间戳
  * - 「整句翻译 / 语法 / 逐词」三块由后端 /ai/sentence-explain 一次返回
- * - 单词卡片可点击展开「词典详情」/ai/dictionary 弹窗
+ * - 单词卡片可点击展开「词典详情」弹窗
+ *   - v0.9.1：查词逻辑改为「本地优先 → AI 兜底」
+ *     - 本地词典命中 + `preferLocalHit=true`：直接展示本地结果
+ *     - 本地词典命中 + `preferLocalHit=false`：本地为主 + AI 并列展示
+ *     - 本地词典未命中：调用 AI 兜底
  * - 响应式：手机端 1 列、桌面 2 列（翻译 + 解析）
  *
  * 入口：
@@ -19,13 +23,15 @@ import {
   ArrowLeftOutlined, SoundOutlined,
   BulbOutlined, ReloadOutlined, BookOutlined,
   CheckCircleFilled, ClockCircleOutlined,
+  BookFilled, RobotFilled,
 } from '@ant-design/icons'
-import { aiApi, mediaApi } from '@/api'
+import { aiApi, localDictApi, mediaApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { useDictionaryStore } from '@/store/dictionary'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
 import type {
-  DictionaryResponse, Sentence, SentenceExplainResponse, AIStatus,
+  AIStatus, DictionaryResponse, Sentence, SentenceExplainResponse,
+  LocalDictLookupEntry, LocalDictLookupResponse,
 } from '@/types'
 
 const { Text, Title, Paragraph } = Typography
@@ -40,12 +46,40 @@ function fmtTime(seconds: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms, 3)}`
 }
 
+/** 单词弹窗状态（v0.9.1：支持本地 + AI 两种来源） */
+type WordLookupState = {
+  word: string
+  loadingLocal: boolean
+  loadingAi: boolean
+  /** 本地命中条目（可能为空数组） */
+  localEntries: LocalDictLookupEntry[]
+  /** 是否已尝试本地查词 */
+  localTried: boolean
+  /** AI 命中（null = 未命中或未尝试） */
+  aiEntry: DictionaryResponse | null
+  /** 是否已尝试 AI */
+  aiTried: boolean
+  /** 整体错误（本地 / AI 都不可用时显示） */
+  error: string | null
+}
+
+const EMPTY_LOOKUP: WordLookupState = {
+  word: '',
+  loadingLocal: false,
+  loadingAi: false,
+  localEntries: [],
+  localTried: false,
+  aiEntry: null,
+  aiTried: false,
+  error: null,
+}
+
 export default function SentenceDetailPage() {
   const navigate = useNavigate()
   const { id, idx } = useParams<{ id: string; idx: string }>()
   const { isPhone } = useDeviceSize()
   const token = useAuthStore((s) => s.token)
-  const { defaultSourceId } = useDictionaryStore()
+  const { defaultSourceId, localDicts, preferLocalHit, setLocalDicts } = useDictionaryStore()
 
   const [mediaName, setMediaName] = useState<string>('')
   const [sentence, setSentence] = useState<Sentence | null>(null)
@@ -58,7 +92,29 @@ export default function SentenceDetailPage() {
   const [errorExplain, setErrorExplain] = useState<string | null>(null)
 
   // 单词词典弹窗
-  const [wordModal, setWordModal] = useState<{ word: string; loading: boolean; data: DictionaryResponse | null; error: string | null } | null>(null)
+  const [wordLookup, setWordLookup] = useState<WordLookupState | null>(null)
+
+  // 是否启用本地查词（依赖：用户上传了至少一本本地词典）
+  const localAvailable = localDicts.length > 0
+
+  // 0. 懒加载本地词典列表（v0.9.1）
+  //   用户可能直接通过句子点击进入此页而未访问设置页，
+  //   此处补一次拉取，保证 localDicts 非空时能立即启用本地查词
+  useEffect(() => {
+    if (!token) return
+    // TTL 30 分钟，避免每次进页面都请求
+    const TTL_MS = 30 * 60 * 1000
+    const age = Date.now() - (useDictionaryStore.getState().localDictsFetchedAt ?? 0)
+    if (age < TTL_MS && useDictionaryStore.getState().localDicts.length > 0) return
+    let cancelled = false
+    localDictApi.list()
+      .then((res) => {
+        if (cancelled) return
+        setLocalDicts(res.data.data.dictionaries ?? [])
+      })
+      .catch(() => { /* 静默失败：本地词典不可用就走 AI 兜底 */ })
+    return () => { cancelled = true }
+  }, [token, setLocalDicts])
 
   // 1. 拉取媒体元数据 + 字幕（含该句）
   useEffect(() => {
@@ -109,20 +165,82 @@ export default function SentenceDetailPage() {
   }
   useEffect(() => { if (sentence) loadExplain() }, [sentence?.index, sentence?.text]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 3. 单词查词
+  // 3. 单词查词（v0.9.1：本地优先 → AI 兜底）
+  //
+  // 策略：
+  //   a) 若本地词典可用，先调 localDictApi.lookup
+  //   b) 本地命中 + preferLocalHit=true：直接展示本地结果，不再调 AI
+  //   c) 本地命中 + preferLocalHit=false：本地为主，并并行调 AI 增强
+  //   d) 本地未命中：调 AI 兜底
+  //   e) 本地不可用：直接调 AI
   const handleWordClick = async (word: string) => {
     if (!sentence) return
-    setWordModal({ word, loading: true, data: null, error: null })
+    const initial: WordLookupState = {
+      ...EMPTY_LOOKUP,
+      word,
+      loadingLocal: localAvailable,
+    }
+    setWordLookup(initial)
+
+    // 1) 先查本地
+    let localRes: LocalDictLookupResponse | null = null
+    if (localAvailable) {
+      try {
+        const r = await localDictApi.lookup({ word, sentence: sentence.text })
+        localRes = r.data.data
+      } catch {
+        // 本地查询失败不阻塞，交给 AI 兜底
+        localRes = null
+      }
+    }
+    const localHit = !!localRes && localRes.found && localRes.entries.length > 0
+
+    // 2) 决定是否调 AI
+    const needAi = !localHit || !preferLocalHit
+    if (!needAi) {
+      // 命中本地 + preferLocalHit=true：直接展示本地
+      setWordLookup({
+        ...initial,
+        localEntries: localRes?.entries ?? [],
+        localTried: true,
+        loadingLocal: false,
+      })
+      return
+    }
+
+    // 3) 并行/串行调 AI 兜底（或增强）
+    //    - 本地未命中：AI 是唯一来源
+    //    - 本地命中 + preferLocalHit=false：本地先展示，AI 并行加载
+    setWordLookup((prev) => ({
+      ...(prev ?? initial),
+      localEntries: localRes?.entries ?? [],
+      localTried: localAvailable,
+      loadingLocal: false,
+      loadingAi: true,
+    }))
+
     try {
-      const res = await aiApi.dictionary({
+      const aiRes = await aiApi.dictionary({
         word,
         sentence: sentence.text,
         target_lang: aiStatus?.target_lang || 'Chinese',
       })
-      setWordModal({ word, loading: false, data: res.data.data, error: null })
+      setWordLookup((prev) => ({
+        ...(prev ?? initial),
+        aiEntry: aiRes.data.data,
+        aiTried: true,
+        loadingAi: false,
+      }))
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '查词失败'
-      setWordModal({ word, loading: false, data: null, error: msg })
+      setWordLookup((prev) => {
+        const next = { ...(prev ?? initial), aiTried: true, loadingAi: false }
+        // 本地也无结果时，error 才有意义
+        if (!next.localEntries || next.localEntries.length === 0) {
+          next.error = msg
+        }
+        return next
+      })
     }
   }
 
@@ -287,16 +405,20 @@ export default function SentenceDetailPage() {
 
       {/* 单条单词词典弹窗 */}
       <Modal
-        title={<Space><BookOutlined /> {wordModal?.word ?? ''}</Space>}
-        open={!!wordModal}
-        onCancel={() => setWordModal(null)}
+        title={<Space><BookOutlined /> {wordLookup?.word ?? ''}</Space>}
+        open={!!wordLookup}
+        onCancel={() => setWordLookup(null)}
         footer={null}
-        width={isPhone ? '95vw' : 640}
+        width={isPhone ? '95vw' : 680}
         destroyOnHidden
       >
-        {wordModal?.loading && <Skeleton active paragraph={{ rows: 5 }} />}
-        {wordModal?.error && <Alert type="error" showIcon message={wordModal.error} />}
-        {wordModal?.data && <DictionaryView entry={wordModal.data} onSpeak={handleSpeak} />}
+        {wordLookup && (
+          <WordLookupView
+            state={wordLookup}
+            onSpeak={handleSpeak}
+            isPhone={isPhone}
+          />
+        )}
       </Modal>
     </div>
   )
@@ -430,10 +552,128 @@ function SentenceExplainView({
   )
 }
 
-/** 字典查询结果视图（用于单词弹窗） */
+/** 单词查词结果视图（v0.9.1：本地 + AI 双视图） */
+function WordLookupView({
+  state, onSpeak, isPhone,
+}: {
+  state: WordLookupState
+  onSpeak: (text: string) => void
+  isPhone: boolean
+}) {
+  // 加载中
+  if (state.loadingLocal || state.loadingAi) {
+    return (
+      <div>
+        <Skeleton active paragraph={{ rows: 4 }} />
+        {state.loadingAi && state.localEntries.length > 0 && (
+          <Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
+            <RobotFilled /> AI 增强中…
+          </Text>
+        )}
+      </div>
+    )
+  }
+  // 整体错误：本地 + AI 都没结果
+  if (state.error && state.localEntries.length === 0 && !state.aiEntry) {
+    return <Alert type="error" showIcon message={state.error} />
+  }
+  // 都没命中
+  if (state.localEntries.length === 0 && !state.aiEntry) {
+    return <Empty description={`未找到 "${state.word}" 的释义`} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+  }
+
+  return (
+    <div>
+      {/* 本地命中（可能多条） */}
+      {state.localEntries.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <BookFilled style={{ color: 'var(--ant-color-primary)' }} />
+            <Text strong style={{ fontSize: 14 }}>本地词典命中</Text>
+            <Tag color="green">{state.localEntries.length} 条</Tag>
+          </div>
+          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            {state.localEntries.map((e, i) => (
+              <LocalDictEntryCard key={`${e.dict_id}-${i}`} entry={e} onSpeak={onSpeak} isPhone={isPhone} />
+            ))}
+          </Space>
+        </div>
+      )}
+
+      {/* AI 结果（兜底或增强） */}
+      {state.aiEntry && (
+        <div>
+          {state.localEntries.length > 0 && <Divider style={{ margin: '8px 0 12px' }}>AI 增强</Divider>}
+          <DictionaryView entry={state.aiEntry} onSpeak={onSpeak} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 本地词典单条命中（v0.9.1） */
+function LocalDictEntryCard({
+  entry, onSpeak, isPhone,
+}: {
+  entry: LocalDictLookupEntry
+  onSpeak: (text: string) => void
+  isPhone: boolean
+}) {
+  const matchedLabel = entry.matched_by === 'exact'
+    ? '精确'
+    : entry.matched_by.startsWith('lemma:')
+      ? `原形 ${entry.matched_by.slice(6)}`
+      : entry.matched_by
+  return (
+    <div
+      style={{
+        background: 'var(--color-bg-page, #fafafa)',
+        borderRadius: 12,
+        padding: isPhone ? '10px 12px' : '12px 14px',
+        border: '1px solid var(--color-border-soft, rgba(0,0,0,0.06))',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Text strong style={{ fontSize: 16, color: 'var(--ant-color-primary)' }}>{entry.word}</Text>
+        <Tooltip title="朗读">
+          <Button
+            type="text"
+            size="small"
+            icon={<SoundOutlined />}
+            onClick={() => onSpeak(entry.word)}
+          />
+        </Tooltip>
+        {entry.word !== entry.original && (
+          <Text type="secondary" style={{ fontSize: 12 }}>原词 {entry.original}</Text>
+        )}
+        <Tag color={entry.matched_by === 'exact' ? 'green' : 'orange'} style={{ fontSize: 11 }}>
+          {matchedLabel}
+        </Tag>
+        <div style={{ flex: 1 }} />
+        <Text type="secondary" style={{ fontSize: 11 }}>📕 {entry.dict_name}</Text>
+      </div>
+      {entry.phonetic && (
+        <div style={{ marginTop: 4 }}>
+          <Text code style={{ fontSize: 12 }}>{entry.phonetic}</Text>
+        </div>
+      )}
+      <Paragraph style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.6 }}>
+        {entry.translation}
+      </Paragraph>
+    </div>
+  )
+}
+
+/** AI 字典查询结果视图 */
 function DictionaryView({ entry, onSpeak }: { entry: DictionaryResponse; onSpeak: (text: string) => void }) {
   return (
     <div>
+      {/* 来源标签 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <RobotFilled style={{ color: 'var(--ant-color-primary)' }} />
+        <Text strong style={{ fontSize: 14 }}>AI 词典</Text>
+        <Tag color="blue">结构化</Tag>
+      </div>
       {/* 词头 + 音标 */}
       <Space direction="vertical" size={2} style={{ width: '100%' }}>
         <Space>

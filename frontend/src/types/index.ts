@@ -457,3 +457,73 @@ export interface DictionarySourceMeta {
   /** 状态色调 */
   statusKind: 'success' | 'warning' | 'default'
 }
+
+// ============================================================================
+// v0.9.1 本地词典（用户上传 CSV）
+// ============================================================================
+
+/** 本地词典条目（v0.9.1） */
+export interface LocalDictionary {
+  id: number
+  name: string
+  description: string
+  file_name: string
+  size_bytes: number
+  entry_count: number
+  source_lang: string
+  target_lang: string
+  created_at: string
+  updated_at: string
+}
+
+/** 本地词典列表响应 */
+export interface LocalDictListResponse {
+  dictionaries: LocalDictionary[]
+}
+
+/** 本地词典系统状态 */
+export interface LocalDictStatus {
+  available: boolean
+  dict_count: number
+  entry_count: number
+  max_bytes: number
+  max_name_len: number
+}
+
+/** 本地词典上传结果 */
+export interface LocalDictUploadResult {
+  id: number
+  name: string
+  entry_count: number
+  skipped: number
+  total_lines: number
+  header: string[]
+}
+
+/** 本地词典查词请求 */
+export interface LocalDictLookupRequest {
+  word: string
+  sentence?: string
+  dict_id?: number
+}
+
+/** 本地词典查词单条命中 */
+export interface LocalDictLookupEntry {
+  dict_id: number
+  dict_name: string
+  /** 实际命中的词形（可能是 fallback 后的原形） */
+  word: string
+  /** 用户传入的原词 */
+  original: string
+  phonetic: string
+  translation: string
+  /** "exact" 精确匹配 / "lemma:study" 词形回退 */
+  matched_by: string
+}
+
+/** 本地词典查词响应 */
+export interface LocalDictLookupResponse {
+  word: string
+  found: boolean
+  entries: LocalDictLookupEntry[]
+}
