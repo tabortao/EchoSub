@@ -150,6 +150,28 @@ type Setting struct {
 // TableName 显式指定表名（避免复数问题）
 func (Tag) TableName() string { return "tags" }
 
+// WordFavorite 用户收藏的单词（v1.3.0 起）
+//
+// 设计：
+//   - 联合唯一索引 (user_id, word) 保证同一用户同一单词只有一条收藏
+//   - Source 字段记录首次收藏时的来源（ai / local / builtin / youdao / cambridge / ...）
+//     后续多次收藏同一词不会更新该字段，保留首次来源
+//   - Note 用户可附的笔记（可选）
+//   - HitCount 查词次数（备用统计字段，目前仅维护，不在 API 强约束）
+type WordFavorite struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	UserID     uint      `gorm:"uniqueIndex:idx_user_word;not null" json:"user_id"`
+	Word       string    `gorm:"size:128;uniqueIndex:idx_user_word;not null" json:"word"`
+	Source     string    `gorm:"size:32" json:"source"`
+	Note       string    `gorm:"type:text" json:"note"`
+	HitCount   int       `json:"hit_count"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// TableName 显式指定表名
+func (WordFavorite) TableName() string { return "word_favorites" }
+
 // EntityType 枚举：标签可关联的实体类型
 const (
 	EntityTypeMedia = "media" // 媒体文件（沿用 GORM media_tags，但元数据走 entity_tags）

@@ -1,8 +1,78 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v1.2.0 Echo Loop 复读模式 + 句子原文按词查词 + 词典智能回退 + 移除学习计划 已完成 | 日期：2026-07-06
+> 状态：v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）已完成 | 日期：2026-07-06
 
-## 活跃里程碑：v1.2.0 Echo Loop 复读模式 + 句子原文按词查词 + 词典智能回退 + 移除学习计划（2026-07-06 完成）
+## 活跃里程碑：v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）（2026-07-06 完成）
+
+本轮完成两件事，对应两个长期痛点：
+
+1. **网页词典不再 `window.open` 跳新标签页**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) / [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx)）：Cambridge / Oxford / 有道等 7 个网页词典改为「后端 fetch + XSS 清洗 + 弹窗内渲染」，用户停留在当前页面就能看完整释义；弹窗内可一键切换源。失败兜底 `blocked=true` 时弹窗提供「在新窗口打开」按钮，不让用户卡住。
+2. **单词收藏 + 侧边栏「⭐ 收藏」页**（[backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) / [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) / [frontend/src/store/wordFavorites.ts](frontend/src/store/wordFavorites.ts)）：新增 `WordFavorite` 数据模型 + 5 个 REST API + Zustand 持久化 store；查词弹窗标题栏 ⭐ 按钮一键收藏，侧边栏「⭐ 收藏」页分「📜 句子」/「🔤 单词」两个 tab 集中管理（句子来自 `SentenceProgress.favorited=true`，单词来自 `word_favorites` 表），方便复习。
+
+### 一、目标与设计原则
+
+#### 1. 网页词典抓取 / 清洗 / 渲染
+
+- **后端抓取**：`net/http` 6s 超时 + 1MiB 响应上限 + 模拟 Chrome UA（避免 UA 过滤），用 `golang.org/x/net/html` AST 遍历 + `microcosm-cc/bluemonday` 白名单
+- **去噪策略**：删除 `<script> / <style> / <noscript> / <iframe> / <svg> / <header> / <nav> / <footer> / <aside> / <form>` 及 class/id 命中 `nav|menu|sidebar|footer|header|ad-|ads|advert|banner|cookie|consent|popup|modal|toolbar|breadcrumb|promo|share|social|comment|related|recommend|survey` 的元素
+- **链接重写**：相对链接 → 绝对链接；`<a>` 强制 `target=_blank rel=noopener noreferrer`，避免在 iframe 中跳转污染 SPA 路由
+- **失败兜底**：目标网站返回 403/反爬时，响应 `blocked=true` + `error` 字段，弹窗显示「部分词典对抓取有限制，可点击下方「在新窗口打开」手动查看」
+
+#### 2. 单词收藏体系
+
+- **数据模型**：`WordFavorite { id, user_id, word, source, note, hit_count, created_at, updated_at }`，联合唯一索引 `(user_id, word)`
+- **幂等**：`POST /word-favorites` 同 user 重复收藏同 word 不报错，`hit_count++` 即可；`source` 记录首次收藏来源（`ai / local / builtin / youdao / cambridge / ...`），不被覆盖
+- **批量检查**：`GET /word-favorites/check?words=hello,world` 返回 `{favorited: {hello: id1, world: id2}}` 用于弹窗 ⭐ 状态同步
+- **持久化**：前端 `useWordFavoritesStore`（Zustand + persist），最多缓存 200 条，失败时回滚
+
+#### 3. 收藏页布局
+
+- **顶部 tab**：`Segmented` 二选一，URL `?tab=words` 可直链
+- **句子 tab**：拉最近 50 个媒体的 `SentenceProgress` → 过滤 `favorited=true` → 关联字幕拿到完整文本 → 按 `updated_at` 倒序
+- **单词 tab**：`word_favorites` 全列表 + 模糊搜索（不区分大小写）+ 单条笔记编辑 + 删除
+- **查词弹窗**：内置 ECDICT 命中优先展示 + 7 个网页词典切换按钮；URL `?word=xxx` 自动打开该单词查词弹窗
+- **响应式**：手机端单列 / 桌面端两列 / 触控目标 ≥44px
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/internal/models/models.go` | 新增 `WordFavorite` 模型 + `TableName()` |
+| `backend/internal/database/database.go` | `AutoMigrate` 注册 `&models.WordFavorite{}` |
+| `backend/internal/handlers/web_dict.go` | **新建** `LookupWebDict`（后端 fetch + 清洗）|
+| `backend/internal/handlers/word_favorite.go` | **新建** 5 个 handler：`Create/List/Check/UpdateNote/Delete` |
+| `backend/internal/router/router.go` | 注册 `/dictionary/web/lookup` + `/word-favorites` 5 条 |
+| `frontend/src/types/index.ts` | 新增 `WebDictLookupResponse` / `WordFavorite` / `WordFavoriteListResponse` |
+| `frontend/src/api/index.ts` | 新增 `webDictApi` / `wordFavoriteApi` |
+| `frontend/src/store/wordFavorites.ts` | **新建** Zustand store（persist 持久化） |
+| `frontend/src/pages/SentenceDetail.tsx` | 网页词典改弹窗渲染 + 弹窗标题栏 ⭐ 收藏 + 「在收藏页查看此单词」 |
+| `frontend/src/pages/Favorites.tsx` | **新建** 收藏页（句子/单词 tab + 查词弹窗 + 笔记编辑） |
+| `frontend/src/layouts/MainLayout.tsx` | 侧边栏新增「⭐ 收藏」菜单入口 |
+| `frontend/src/router/index.tsx` | 新增 `/favorites` 路由 |
+| `docs/ChangeLog.md` | 新增 v1.3.0 章节 |
+| `docs/PLAN.md` | 当前文件（活跃里程碑段） |
+| `docs/TASKS.md` | 新增 v1.3.0 任务清单 |
+| `README.md` | API 概览新增 v1.3.0 行为说明 + 收藏页段落 |
+
+### 三、验证清单
+
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（subtitle 8 + dictcsv 5 + 字典解析 8 ≈ 21+ 个）
+- [x] `pnpm build` exit code 0（tsc -b 严格类型检查通过，1571 modules transformed）
+- [x] PWA precache 27 entries（1773.83 KiB）
+- [x] 文档同步：ChangeLog.md v1.3.0 章节 / PLAN.md v1.3.0 活跃里程碑 / TASKS.md v1.3.0 段 / README.md v1.3.0 行为说明
+
+### 四、收尾说明
+
+- **网页词典** 部分词典（Cambridge / Oxford）有反爬机制，后端 fetch 可能拿到 403；弹窗检测到 `blocked=true` 时会显示「在新窗口打开」链接，不让用户卡住
+- **单词收藏** 联合唯一索引 `(user_id, word)` 保证幂等；后端不做大小写归一化，由前端在 POST 前 `word.trim().toLowerCase()` 保证一致
+- **收藏页性能** 句子 tab 当前是「最近 50 个媒体」N+1 拉取，初期足够；后续可加后端 `GET /word-favorites/sentences` 聚合接口优化
+- 已知遗留：Favorites 页没有专门的「导出 Anki 牌组」按钮（用户后续可提需求）
+
+---
+
+## 旧版：v1.2.0 Echo Loop 复读模式 + 句子原文按词查词 + 词典智能回退 + 移除学习计划（2026-07-06 完成）
 
 本轮完成四件事：
 

@@ -7,6 +7,88 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v1.3.0] - 2026-07-06
+
+### Added
+
+#### 网页词典弹窗内查词 + 单词收藏体系（v1.3.0）
+
+解决「网页词典（Cambridge / Oxford / 有道...）只能 window.open 跳新标签页、查过的单词散落各处没法集中复习」的两个核心痛点：
+1. 把 7 个网页词典接入查词弹窗（后端 fetch + 清洗 HTML + 弹窗内渲染），不离开当前页面也能看完整释义；
+2. 新增「单词收藏」数据模型 + 侧边栏「⭐ 收藏」页（句子/单词两个 tab），集中复习用。
+
+##### 后端：网页词典抓取 + 单词收藏
+
+- **`WordFavorite` 模型**（[backend/internal/models/models.go](backend/internal/models/models.go)）
+  - 字段：`id / user_id / word / source / note / hit_count / created_at / updated_at`
+  - 联合唯一索引 `(user_id, word)` —— 同用户同单词只一条记录
+  - `source` 记录首次收藏来源（`ai / local / builtin / youdao / cambridge / oxford / longman / merriamWebster / collins / wiktionary`），重复收藏不覆盖
+  - `hit_count` 查词命中次数
+  - `note` 用户可编辑笔记
+- **数据库迁移**（[backend/internal/database/database.go](backend/internal/database/database.go)）：`AutoMigrate` 列表加入 `&models.WordFavorite{}`
+- **网页词典抓取 Handler**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go)）
+  - 路由：`GET /api/v1/dictionary/web/lookup?source=youdao&word=hello`
+  - 实现：用 `net/http` 抓目标 URL（6s 超时、1MiB 响应上限、模拟 Chrome UA 避免简单 UA 过滤）
+  - 清洗：`golang.org/x/net/html` AST 遍历 + `microcosm-cc/bluemonday` 白名单
+  - 去噪：移除 `<script> / <style> / <noscript> / <iframe> / <svg> / <header> / <nav> / <footer> / <aside> / <form>` 及 class/id 命中 `nav|menu|sidebar|footer|header|ad-|ads|advert|banner|cookie|consent|popup|modal|toolbar|breadcrumb|promo|share|social|comment|related|recommend|survey` 的元素
+  - 重写：相对链接改写为绝对 + `<a>` 强制 `target=_blank rel=noopener noreferrer`
+  - 失败兜底：`blocked=true` + `error` 字段返回「HTTP 403：部分词典对抓取有限制，可点击下方「在新窗口打开」手动查看」
+- **单词收藏 Handler**（[backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go)）
+  - `POST /api/v1/word-favorites` 收藏一个单词（幂等：同 user 重复收藏同 word 视为「再次收藏」并把 `hit_count++`）
+  - `GET /api/v1/word-favorites?q=&page=&size=` 列表（默认 `size=50`，上限 200）
+  - `GET /api/v1/word-favorites/check?words=hello,world` 批量检查（弹窗内 ⭐ 按钮状态同步）
+  - `PATCH /api/v1/word-favorites/:id` 更新笔记
+  - `DELETE /api/v1/word-favorites/:id` 删除
+- **路由注册**（[backend/internal/router/router.go](backend/internal/router/router.go)）：
+  ```go
+  // 网页词典抓取（v1.3.0）：后端 fetch + 清洗 HTML，让前端在弹窗中渲染
+  dict.GET("/web/lookup", handlers.LookupWebDict())
+
+  // 单词收藏（v1.3.0）：用户在查词弹窗中可收藏单词；侧边栏「收藏」页统一展示
+  authed.POST("/word-favorites", handlers.CreateWordFavorite())
+  authed.GET("/word-favorites", handlers.ListWordFavorites())
+  authed.GET("/word-favorites/check", handlers.CheckWordFavorites())
+  authed.PATCH("/word-favorites/:id", handlers.UpdateWordFavoriteNote())
+  authed.DELETE("/word-favorites/:id", handlers.DeleteWordFavorite())
+  ```
+
+##### 前端：弹窗化网页词典 + 收藏页
+
+- **类型与 API 客户端**（[frontend/src/types/index.ts](frontend/src/types/index.ts) / [frontend/src/api/index.ts](frontend/src/api/index.ts)）
+  - 新增 `WebDictLookupResponse` / `WordFavorite` / `WordFavoriteListResponse`
+  - 新增 `webDictApi.lookup(source, word)` / `wordFavoriteApi.{list, create, updateNote, remove, check}`
+- **收藏 store**（[frontend/src/store/wordFavorites.ts](frontend/src/store/wordFavorites.ts)）：Zustand + persist 持久化
+  - `items` 最多 200 条
+  - `addFavorite / removeFavorite` 乐观更新
+  - `favorite / unfavorite` API 调用，失败回滚
+  - `findByWord` O(1) 查找
+- **句子详情页查词弹窗**（[frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx)）
+  - **v1.3.0 起网页词典改为后端 fetch + 弹窗内渲染**（不再 `window.open`）
+  - 弹窗标题栏新增 ⭐ 收藏按钮：未收藏时空心星（`StarOutlined`），已收藏时实心星（`StarFilled` 黄色），点击切换
+  - 弹窗底部新增 📚「在收藏页查看此单词」按钮（`OpenInFavoritesButton`），跳 `/favorites?word=xxx&tab=words` 收藏页会读取 URL 自动打开查词弹窗
+  - `WordLookupState` 新增 `webData / webSource` 字段（替代旧 `webUrl`）
+  - 弹窗底部 WebDictButtons 改为「切换源」按钮（高亮当前源），不再 `window.open`
+- **收藏页**（[frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx)）
+  - 顶部「📜 句子」 / 「🔤 单词」两个 tab
+  - 句子 tab：拉最近 50 个媒体的 `SentenceProgress`，过滤 `favorited=true` 的句子，按 `updated_at` 倒序展示（带媒体名 + 跳转链接）
+  - 单词 tab：拉 `word_favorites` 列表，搜索 + 单条笔记编辑 + 删除
+  - 查词弹窗：内置 ECDICT 命中优先展示，下方提供 7 个网页词典切换按钮（命中后端 fetch + 在弹窗内渲染清洗后的 HTML）
+  - URL 携带 `?word=xxx&tab=words` 时自动打开该单词的查词弹窗（来自句子详情页跳转）
+  - 响应式：手机端单列 / 桌面端两列
+- **侧边栏菜单**（[frontend/src/layouts/MainLayout.tsx](frontend/src/layouts/MainLayout.tsx)）：新增 `{ key: '/favorites', icon: <StarFilled />, label: '收藏', color: '#faad14', emoji: '⭐' }` 入口（介于「标签」和「上传」之间）
+- **路由**（[frontend/src/router/index.tsx](frontend/src/router/index.tsx)）：新增 `/favorites` → `<Favorites />`
+
+### Changed
+
+- 句子详情页：网页词典从 `window.open` 跳新标签页改为「后端 fetch + 弹窗内渲染」+ 弹窗内可切换源
+- 弹窗底部「网页词典」按钮组从「在新标签页打开」改为「在弹窗内切换源」
+- `SentenceProgress` 类型增加 `favorited: boolean` 字段（与后端 `SentenceProgress.Favorited` 对齐）
+
+### Fixed
+
+- 修复 `SentenceProgress.favorited` 类型缺失导致的 TS strict 错误
+- 修复 `useWordFavoritesStore.unfavorite` 未使用 `word` 参数导致的 lint 警告
+
 ## [v1.2.0] - 2026-07-06
 
 ### Added

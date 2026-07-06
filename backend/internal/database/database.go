@@ -61,6 +61,8 @@ func Init(cfg *config.Config) error {
 		&models.LearningProgress{},
 		&models.SubStageCompletion{},
 		&models.DifficultSentence{},
+		// 单词收藏（v1.3.0）
+		&models.WordFavorite{},
 	); err != nil {
 		return fmt.Errorf("数据库迁移失败: %w", err)
 	}

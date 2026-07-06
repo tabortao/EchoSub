@@ -1,3 +1,123 @@
+# TASKS.md — v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）
+
+配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）（2026-07-06）
+
+### 后端 — 网页词典抓取
+
+- [x] **T1** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) 新建 `LookupWebDict` handler
+  - 路由 `GET /api/v1/dictionary/web/lookup?source=youdao&word=hello`
+  - 用 `net/http` 6s 超时 + 1MiB 响应上限 + 模拟 Chrome UA
+  - 用 `golang.org/x/net/html` AST 遍历 + `microcosm-cc/bluemonday` 白名单清洗
+  - 去噪：删除 `<script> / <style> / <noscript> / <iframe> / <svg> / <header> / <nav> / <footer> / <aside> / <form>` 及 class/id 命中关键词的元素
+  - 链接重写：相对链接 → 绝对链接；`<a>` 强制 `target=_blank rel=noopener noreferrer`
+  - 失败兜底：响应 `blocked=true` + `error` 字段，弹窗提示「在新窗口打开」
+
+### 后端 — 单词收藏
+
+- [x] **T2** [backend/internal/models/models.go](backend/internal/models/models.go) 新增 `WordFavorite` 模型
+  - 字段：`id / user_id / word / source / note / hit_count / created_at / updated_at`
+  - 联合唯一索引 `(user_id, word)`，同用户同单词只一条
+  - `TableName()` 显式指定 `word_favorites`
+- [x] **T3** [backend/internal/database/database.go](backend/internal/database/database.go) `AutoMigrate` 注册 `&models.WordFavorite{}`
+- [x] **T4** [backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) 新建 5 个 handler
+  - `CreateWordFavorite` — `POST /word-favorites`，幂等（重复收藏 `hit_count++`）
+  - `ListWordFavorites` — `GET /word-favorites?q=&page=&size=`，默认 `size=50` 上限 200
+  - `CheckWordFavorites` — `GET /word-favorites/check?words=hello,world`，返回 `{favorited: {word: id}}`
+  - `UpdateWordFavoriteNote` — `PATCH /word-favorites/:id`，只更新笔记
+  - `DeleteWordFavorite` — `DELETE /word-favorites/:id`
+- [x] **T5** [backend/internal/router/router.go](backend/internal/router/router.go) 注册
+  - `dict.GET("/web/lookup", handlers.LookupWebDict())`
+  - `authed.POST/GET/PATCH/DELETE /word-favorites/...`
+
+### 前端 — 类型与 API
+
+- [x] **T6** [frontend/src/types/index.ts](frontend/src/types/index.ts) 新增 3 个 TS 类型
+  - `WebDictLookupResponse { source, source_name, word, url, final_url, html, blocked, error }`
+  - `WordFavorite { id, word, source, note, hit_count, created_at, updated_at }`
+  - `WordFavoriteListResponse { items, total, page, size }`
+- [x] **T7** [frontend/src/api/index.ts](frontend/src/api/index.ts) 新增 2 个 API 模块
+  - `webDictApi.lookup(source, word)`
+  - `wordFavoriteApi.{list, create, updateNote, remove, check}`
+
+### 前端 — 收藏 store
+
+- [x] **T8** [frontend/src/store/wordFavorites.ts](frontend/src/store/wordFavorites.ts) **新建** Zustand store
+  - `items: WordFavorite[]` 最多 200 条
+  - `refresh` 拉取列表
+  - `addFavorite` / `removeFavorite` 乐观更新
+  - `favorite` / `unfavorite` 异步 API，失败回滚
+  - `findByWord(word)` O(1) 查找
+  - persist 持久化到 localStorage，version=1
+
+### 前端 — 句子详情页弹窗化
+
+- [x] **T9** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 网页词典改弹窗渲染
+  - `WordLookupState` 新增 `webData / webSource` 字段（替代旧 `webUrl`）
+  - `handleWordClick` 中 `isWebDictionary(defaultSourceId)` 走 `webDictApi.lookup` 而非 `window.open`
+  - 弹窗底部「网页词典」按钮组改为「切换源」按钮（高亮当前源）
+  - 弹窗内 `handleSwitchWebSource(source)` 重新 fetch
+- [x] **T10** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 弹窗标题栏 ⭐ 收藏
+  - 未收藏：`<StarOutlined />`，已收藏：`<StarFilled />` 黄色
+  - `handleToggleFavorite` 调用 `useWordFavoritesStore.favorite / unfavorite`
+  - 收藏成功 `message.success` 提示
+- [x] **T11** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 「在收藏页查看此单词」按钮
+  - 跳 `/favorites?word=xxx&tab=words`
+  - 收藏页读取 URL 自动打开查词弹窗
+
+### 前端 — 收藏页
+
+- [x] **T12** [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) **新建** 收藏页
+  - 顶部 `Segmented` 二选一 tab：📜 句子 / 🔤 单词
+  - tab 同步到 URL `?tab=words`
+- [x] **T13** [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) 句子 tab
+  - 拉最近 50 个媒体的 `SentenceProgress` → 过滤 `favorited=true`
+  - 关联字幕拿到完整句子文本
+  - 按 `updated_at DESC` 排序
+  - 单卡片显示：⭐ + 媒体名 + 句号 + 朗读按钮 + 跳转链接
+- [x] **T14** [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) 单词 tab
+  - `useWordFavoritesStore` 拉全列表
+  - 模糊搜索（不区分大小写）
+  - 单条笔记编辑弹窗（`Modal` + `Input.TextArea`）
+  - 删除（带 Popconfirm 确认）
+  - 单卡片显示：⭐ + 单词 + 笔记预览 + 朗读 + 查词 + 笔记 + 删除
+- [x] **T15** [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) 查词弹窗（v1.3.0）
+  - 标题栏：📖 + 单词
+  - 内置 ECDICT 命中优先展示
+  - 7 个网页词典切换按钮组（高亮当前源）
+  - 渲染清洗后的 HTML（`dangerouslySetInnerHTML`）
+  - 失败 / blocked 提示 + 「在新窗口打开」链接
+  - 响应式：手机端 `width=95vw` / 桌面端 760px
+- [x] **T16** [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) URL `?word=xxx` 自动打开查词弹窗
+  - 句子详情页跳来时携带 word 参数
+  - 监听 `searchParams` 变化同步 `highlightWord`
+  - 打开后清除 URL 参数（避免重复打开）
+
+### 前端 — 路由 + 侧边栏
+
+- [x] **T17** [frontend/src/router/index.tsx](frontend/src/router/index.tsx) 新增 `/favorites` 路由 → `<Favorites />`
+- [x] **T18** [frontend/src/layouts/MainLayout.tsx](frontend/src/layouts/MainLayout.tsx) 侧边栏新增「⭐ 收藏」菜单入口
+  - 位置：介于「标签」和「上传」之间
+  - icon `<StarFilled />`，color `#faad14`
+
+### 验证
+
+- [x] **T19** `go build ./...` exit code 0
+- [x] **T20** `go vet ./...` exit code 0
+- [x] **T21** `go test ./...` 全部 PASS（subtitle 8 + dictcsv 5 + 字典解析 8 ≈ 21+ 个，cached）
+- [x] **T22** `pnpm build` exit code 0（tsc -b 严格类型检查通过，1571 modules transformed）
+- [x] **T23** PWA precache 27 entries（1773.83 KiB）
+- [x] **T24** 文档同步：ChangeLog.md v1.3.0 章节 / PLAN.md v1.3.0 活跃里程碑 / TASKS.md v1.3.0 段 / README.md v1.3.0 段落
+
+### 收尾
+
+- 已知遗留：部分词典（Cambridge / Oxford）有反爬机制，后端 fetch 拿不到时弹窗需手动跳新窗口
+- 已知遗留：Favorites 句子 tab 当前是「最近 50 个媒体」N+1 拉取，初期足够；后续可加后端 `GET /word-favorites/sentences` 聚合接口优化
+- 已知遗留：未提供「导出 Anki 牌组」功能（按需后续版本）
+
+---
+
 # TASKS.md — v1.2.0 Echo Loop 复读模式 + 句子原文按词查词 + 词典智能回退 + 移除学习计划
 
 配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。

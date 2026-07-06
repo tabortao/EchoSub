@@ -160,7 +160,17 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			dict.GET("/builtin/status", builtinH.Status)
 			dict.GET("/builtin/lookup", builtinH.Lookup)
 			dict.POST("/builtin/reload", builtinH.Reload)
+
+			// 网页词典抓取（v1.3.0）：后端 fetch + 清洗 HTML，让前端在弹窗中渲染
+			dict.GET("/web/lookup", handlers.LookupWebDict())
 		}
+
+		// 单词收藏（v1.3.0）：用户在查词弹窗中可收藏单词；侧边栏「收藏」页统一展示
+		authed.POST("/word-favorites", handlers.CreateWordFavorite())
+		authed.GET("/word-favorites", handlers.ListWordFavorites())
+		authed.GET("/word-favorites/check", handlers.CheckWordFavorites())
+		authed.PATCH("/word-favorites/:id", handlers.UpdateWordFavoriteNote())
+		authed.DELETE("/word-favorites/:id", handlers.DeleteWordFavorite())
 
 		// 多阶段学习复习体系（v1.0.0）
 		//

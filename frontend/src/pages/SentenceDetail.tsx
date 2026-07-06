@@ -1,4 +1,4 @@
-/** 句子详情页（v0.9.0 起，v1.1.0 重构查词逻辑）
+/** 句子详情页（v0.9.0 起，v1.1.0 重构查词逻辑，v1.3.0 重构网页词典 + 加 ⭐ 收藏）
  *
  * 设计：
  * - 顶部展示原文 + 媒体名 + 时间戳
@@ -8,8 +8,10 @@
  *     - 'ai'       → 仅调 AI 词典
  *     - 'local'    → 仅查本地词典
  *     - 'builtin'  → 仅查内置 ECDict
- *     - 'youdao' / 'cambridge' / ... → 直接在新标签页打开网页
- *   - 弹窗底部始终保留一组「其他词典」快捷入口（包含所有可用源 + 网页词典）
+ *     - 'youdao' / 'cambridge' / ... → v1.3.0 起改为「后端 fetch + 弹窗内渲染清洗后的 HTML」，
+ *       不再 window.open 跳新标签页
+ *   - 弹窗标题栏右上 ⭐：收藏当前单词（已在 store 则显示实心星，点击取消）
+ *   - 弹窗底部始终保留「其他词典」快捷切换入口
  *
  * 入口：
  * - 路由 /play/:id/sentence/:idx（从 MediaPlayer 句子点击进入）
@@ -23,16 +25,18 @@ import {
   ArrowLeftOutlined, SoundOutlined,
   BulbOutlined, ReloadOutlined, BookOutlined,
   CheckCircleFilled, ClockCircleOutlined,
-  BookFilled, RobotFilled, DatabaseOutlined,
+  BookFilled, RobotFilled, DatabaseOutlined, StarFilled, StarOutlined, LinkOutlined,
 } from '@ant-design/icons'
-import { aiApi, builtinDictApi, localDictApi, mediaApi } from '@/api'
+import { aiApi, builtinDictApi, localDictApi, mediaApi, webDictApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { useDictionaryStore } from '@/store/dictionary'
+import { useWordFavoritesStore } from '@/store/wordFavorites'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
-import { kWebDictConfigs, getWebDictConfig, lookupWebDictionary } from '@/store/webDictionaryConfig'
+import { kWebDictConfigs, getWebDictConfig } from '@/store/webDictionaryConfig'
 import type {
   AIStatus, DictionaryResponse, Sentence, SentenceExplainResponse,
   BuiltinDictLookupResponse, LocalDictLookupEntry, LocalDictLookupResponse, DictionarySourceId,
+  WebDictLookupResponse,
 } from '@/types'
 
 const { Text, Title, Paragraph } = Typography
@@ -95,9 +99,10 @@ export function splitSentenceTokens(text: string): SentenceToken[] {
   return tokens
 }
 
-/** v1.1.0 单词弹窗状态：严格按「单一来源」加载
+/** v1.3.0 单词弹窗状态：单源加载 + 网页词典走后端 fetch
  * - kind 标识当前来源：'ai' | 'local' | 'builtin' | 'web'
  * - 每种来源只对应一种数据
+ * - web 来源：webData 为后端清洗后的 HTML 响应；webSource 记录当前选中的源 id
  */
 type WordLookupState = {
   word: string
@@ -106,7 +111,8 @@ type WordLookupState = {
   aiEntry: DictionaryResponse | null
   localData: LocalDictLookupResponse | null
   builtinData: BuiltinDictLookupResponse | null
-  webUrl: string
+  webData: WebDictLookupResponse | null
+  webSource: string | null
   error: string | null
 }
 
@@ -117,7 +123,8 @@ const EMPTY_LOOKUP: WordLookupState = {
   aiEntry: null,
   localData: null,
   builtinData: null,
-  webUrl: '',
+  webData: null,
+  webSource: null,
   error: null,
 }
 
@@ -209,30 +216,41 @@ export default function SentenceDetailPage() {
   }
   useEffect(() => { if (sentence) loadExplain() }, [sentence?.index, sentence?.text]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 3. 单词查词（v1.1.0 严格按设置源分派 + v1.2.0 AI 未启用/失败时回退到内置词典）
+  // 3. 单词查词（v1.1.0 严格按设置源分派 + v1.2.0 AI 未启用/失败时回退到内置词典 + v1.3.0 网页词典走弹窗）
   //
-  // 策略：完全依照 useDictionaryStore.defaultSourceId 派发，不再做"本地优先 → AI 兑底"混合。
+  // 策略：完全依照 useDictionaryStore.defaultSourceId 派发
   //   - 'ai' / 'local' / 'builtin' → 弹窗展示单源结果
-  //   - 'youdao' / 'cambridge' / ... → 直接 window.open 打开网页，不弹弹窗
-  //   - 弹窗底部始终保留一组「其他词典」快捷入口（含全部源 + 7 个网页词典）
+  //   - 'youdao' / 'cambridge' / ... → v1.3.0 起改为「后端 fetch + 弹窗内渲染清洗后的 HTML」，
+  //     不再 window.open 跳新标签页
+  //   - 弹窗底部始终保留「其他词典」快捷切换入口（含 AI / 本地 / 内置 + 7 个网页词典）
   //
   // v1.2.0 新增：
   //   - AI 未启用时（aiStatus.enabled === false）默认回退到内置 ECDICT 查词
   //   - 用户主动把默认源设成 AI 但本次请求 AI 失败时，自动回退到内置词典
-  //   - 避免出现「未配置 AI 翻译但单词查词完全打不开」的体验断层
+  // v1.3.0 新增：
+  //   - 网页词典弹窗内可切换源（重新调用 webDictApi.lookup）
+  //   - 弹窗标题栏 ⭐ 收藏按钮（调用 useWordFavoritesStore.favorite / unfavorite）
   const handleWordClick = async (word: string) => {
     if (!sentence) return
 
-    // 1) 网页词典：直接打开新标签页（不弹弹窗）
+    // 1) 网页词典：v1.3.0 改为后端 fetch + 弹窗内渲染（不再 window.open）
     if (isWebDictionary(defaultSourceId)) {
-      const cfg = getWebDictConfig(defaultSourceId)
-      if (cfg) {
-        const url = lookupWebDictionary(cfg, word)
-        if (url) {
-          window.open(url, '_blank', 'noopener,noreferrer')
-        } else {
-          message.warning('该网页词典暂不可用')
-        }
+      const src = defaultSourceId as string
+      setWordLookup({ ...EMPTY_LOOKUP, word, kind: 'web', webSource: src, loading: true })
+      try {
+        const r = await webDictApi.lookup(src, word)
+        setWordLookup({
+          word, kind: 'web', loading: false,
+          aiEntry: null, localData: null, builtinData: null,
+          webData: r.data.data, webSource: src, error: null,
+        })
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '网页词典抓取失败'
+        setWordLookup({
+          word, kind: 'web', loading: false,
+          aiEntry: null, localData: null, builtinData: null,
+          webData: null, webSource: src, error: msg,
+        })
       }
       return
     }
@@ -259,7 +277,8 @@ export default function SentenceDetailPage() {
         })
         setWordLookup({
           word, kind, loading: false,
-          aiEntry: r.data.data, localData: null, builtinData: null, webUrl: '', error: null,
+          aiEntry: r.data.data, localData: null, builtinData: null,
+          webData: null, webSource: null, error: null,
         })
         return
       } catch (err: unknown) {
@@ -268,7 +287,8 @@ export default function SentenceDetailPage() {
           const fallback = await builtinDictApi.lookup(word)
           setWordLookup({
             word, kind: 'builtin', loading: false,
-            aiEntry: null, localData: null, builtinData: fallback.data.data, webUrl: '',
+            aiEntry: null, localData: null, builtinData: fallback.data.data,
+            webData: null, webSource: null,
             error: null,
           })
           message.info('AI 词典不可用，已自动切换到内置 ECDICT')
@@ -277,22 +297,39 @@ export default function SentenceDetailPage() {
           // 内置也失败 → 暴露 AI 的原始错误
         }
         const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '查词失败'
-        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: msg })
+        setWordLookup({
+          word, kind, loading: false,
+          aiEntry: null, localData: null, builtinData: null,
+          webData: null, webSource: null, error: msg,
+        })
         return
       }
     }
 
     if (kind === 'local') {
       if (localDicts.length === 0) {
-        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: '尚未上传任何本地词典，请先在「设置 → 词典」中上传' })
+        setWordLookup({
+          word, kind, loading: false,
+          aiEntry: null, localData: null, builtinData: null,
+          webData: null, webSource: null,
+          error: '尚未上传任何本地词典，请先在「设置 → 词典」中上传',
+        })
         return
       }
       try {
         const r = await localDictApi.lookup({ word, sentence: sentence.text })
-        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: r.data.data, builtinData: null, webUrl: '', error: null })
+        setWordLookup({
+          word, kind, loading: false,
+          aiEntry: null, localData: r.data.data, builtinData: null,
+          webData: null, webSource: null, error: null,
+        })
       } catch (err: unknown) {
         const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '本地查词失败'
-        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: msg })
+        setWordLookup({
+          word, kind, loading: false,
+          aiEntry: null, localData: null, builtinData: null,
+          webData: null, webSource: null, error: msg,
+        })
       }
       return
     }
@@ -300,35 +337,95 @@ export default function SentenceDetailPage() {
     // builtin
     try {
       const r = await builtinDictApi.lookup(word)
-      setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: r.data.data, webUrl: '', error: null })
+      setWordLookup({
+        word, kind, loading: false,
+        aiEntry: null, localData: null, builtinData: r.data.data,
+        webData: null, webSource: null, error: null,
+      })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '内置词典查词失败'
-      setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: msg })
+      setWordLookup({
+        word, kind, loading: false,
+        aiEntry: null, localData: null, builtinData: null,
+        webData: null, webSource: null, error: msg,
+      })
     }
   }
 
-  // 4. 跳回播放器并跳到该句
-  const handleBackToPlayer = () => {
-    navigate(`/play/${id}?t=${sentence?.start ?? 0}`)
+  // 3.1 弹窗内切换网页词典源（v1.3.0）：保持弹窗打开，刷新 webData
+  const handleSwitchWebSource = async (source: string) => {
+    if (!wordLookup) return
+    const word = wordLookup.word
+    setWordLookup({ ...wordLookup, kind: 'web', webSource: source, webData: null, loading: true, error: null })
+    try {
+      const r = await webDictApi.lookup(source, word)
+      setWordLookup({
+        ...wordLookup, kind: 'web', webSource: source, webData: r.data.data,
+        loading: false, error: null,
+      })
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '网页词典抓取失败'
+      setWordLookup({
+        ...wordLookup, kind: 'web', webSource: source, webData: null,
+        loading: false, error: msg,
+      })
+    }
   }
 
-  // 4.5 在弹窗中切换词典源（v1.1.0）
-  //   弹窗底部按钮组调用：kind 保持 word 不变，只切源
+  // 3.2 弹窗内切换到 AI / 本地 / 内置（v1.1.0 已有；v1.3.0 重写为不污染 defaultSourceId）
+  //   用 nextTick 让弹窗先关再开，避免动画冲突
   const handleSwitchSource = (sourceId: 'ai' | 'local' | 'builtin') => {
     if (!wordLookup) return
     const word = wordLookup.word
+    // 临时覆盖默认源，让 handleWordClick 走对应分支
+    const original = useDictionaryStore.getState().defaultSourceId
+    useDictionaryStore.getState().setDefault(sourceId)
     setWordLookup(null)
-    // 用 nextTick 让弹窗先关再开，避免动画冲突
     setTimeout(() => {
-      // 临时把 store 里的默认源改为 sourceId，触发对应分支
-      const original = useDictionaryStore.getState().defaultSourceId
-      useDictionaryStore.getState().setDefault(sourceId)
       handleWordClick(word)
         .finally(() => {
           // 还原默认源
           useDictionaryStore.getState().setDefault(original)
         })
     }, 100)
+  }
+
+  // 3.3 收藏 / 取消收藏当前单词（v1.3.0）
+  //   - 已收藏：实心星 + 取消（乐观更新 + 失败回滚）
+  //   - 未收藏：空心星 + 收藏
+  const wordFavItems = useWordFavoritesStore((s) => s.items)
+  const favoriteWord = useWordFavoritesStore((s) => s.favorite)
+  const unfavoriteWord = useWordFavoritesStore((s) => s.unfavorite)
+  const handleToggleFavorite = async () => {
+    if (!wordLookup) return
+    const word = wordLookup.word
+    const existing = wordFavItems.find((x) => x.word === word.toLowerCase())
+    if (existing) {
+      const ok = await unfavoriteWord(existing.id, word)
+      if (ok) message.success(`已取消收藏「${word}」`)
+      else message.error('取消收藏失败')
+    } else {
+      const src = wordLookup.kind === 'web'
+        ? (wordLookup.webSource ?? 'web')
+        : wordLookup.kind === 'ai' ? 'ai'
+          : wordLookup.kind === 'local' ? 'local'
+            : wordLookup.kind === 'builtin' ? 'builtin' : 'builtin'
+      const r = await favoriteWord(word, src)
+      if (r) message.success(`已收藏「${word}」`)
+      else message.error('收藏失败')
+    }
+  }
+
+  // 3.4 跳转到「收藏」页定位此单词（v1.3.0）
+  //   Favorites 页支持 ?word=xxx&tab=words 打开后自动查词弹窗
+  const handleOpenInFavorites = () => {
+    if (!wordLookup) return
+    navigate(`/favorites?word=${encodeURIComponent(wordLookup.word)}&tab=words`)
+  }
+
+  // 4. 跳回播放器并跳到该句
+  const handleBackToPlayer = () => {
+    navigate(`/play/${id}?t=${sentence?.start ?? 0}`)
   }
 
   // 5. TTS 朗读单词
@@ -530,11 +627,40 @@ export default function SentenceDetailPage() {
 
       {/* 单条单词词典弹窗 */}
       <Modal
-        title={<Space><BookOutlined /> {wordLookup?.word ?? ''}</Space>}
+        title={
+          <Space>
+            <BookOutlined />
+            <span>{wordLookup?.word ?? ''}</span>
+            {wordLookup && (
+              <Tooltip
+                title={
+                  wordFavItems.some((x) => x.word === wordLookup.word.toLowerCase())
+                    ? '已收藏，点击取消'
+                    : '收藏此单词（可在「收藏」页统一复习）'
+                }
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  shape="circle"
+                  icon={
+                    wordFavItems.some((x) => x.word === wordLookup.word.toLowerCase()) ? (
+                      <StarFilled style={{ color: '#faad14' }} />
+                    ) : (
+                      <StarOutlined />
+                    )
+                  }
+                  onClick={handleToggleFavorite}
+                  aria-label="收藏单词"
+                />
+              </Tooltip>
+            )}
+          </Space>
+        }
         open={!!wordLookup}
         onCancel={() => setWordLookup(null)}
         footer={null}
-        width={isPhone ? '95vw' : 680}
+        width={isPhone ? '95vw' : 720}
         destroyOnHidden
       >
         {wordLookup && (
@@ -542,6 +668,8 @@ export default function SentenceDetailPage() {
             state={wordLookup}
             onSpeak={handleSpeak}
             onSwitchSource={handleSwitchSource}
+            onSwitchWebSource={handleSwitchWebSource}
+            onOpenInFavorites={handleOpenInFavorites}
             isPhone={isPhone}
           />
         )}
@@ -679,22 +807,24 @@ function SentenceExplainView({
 }
 
 /**
- * 单词查词结果视图（v1.1.0：单源视图）
+ * 单词查词结果视图（v1.1.0：单源视图；v1.3.0：加 web 视图）
  *
  * 严格按 useDictionaryStore.defaultSourceId 显示：
  *   - kind='ai'      → 仅渲染 AI 词典
  *   - kind='local'   → 仅渲染本地词典
  *   - kind='builtin' → 仅渲染内置 ECDICT
- *   - kind='web'     → 仅显示已跳转提示
+ *   - kind='web'     → 渲染后端 fetch 后的清洗 HTML
  *
- * 底部始终保留「网页词典」快捷跳转 + 「其他词典」快捷切换入口。
+ * 底部始终保留「网页词典」快捷切换 + 「其他词典」快捷切换入口。
  */
 function WordLookupView({
-  state, onSpeak, onSwitchSource, isPhone,
+  state, onSpeak, onSwitchSource, onSwitchWebSource, onOpenInFavorites, isPhone,
 }: {
   state: WordLookupState
   onSpeak: (text: string) => void
   onSwitchSource: (sourceId: 'ai' | 'local' | 'builtin') => void
+  onSwitchWebSource: (source: string) => void
+  onOpenInFavorites: () => void
   isPhone: boolean
 }) {
   // 加载中
@@ -707,6 +837,12 @@ function WordLookupView({
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <Alert type="error" showIcon message={state.error} />
         <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+        <WebDictButtons
+          word={state.word}
+          currentSource={state.webSource}
+          onSwitch={onSwitchWebSource}
+        />
+        <OpenInFavoritesButton onClick={onOpenInFavorites} />
       </Space>
     )
   }
@@ -718,6 +854,7 @@ function WordLookupView({
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           <Empty description={`未找到 "${state.word}" 的释义`} image={Empty.PRESENTED_IMAGE_SIMPLE} />
           <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+          <OpenInFavoritesButton onClick={onOpenInFavorites} />
         </Space>
       )
     }
@@ -726,10 +863,15 @@ function WordLookupView({
         <DictionaryView entry={state.aiEntry} onSpeak={onSpeak} />
         <Divider style={{ margin: '12px 0 8px' }}>其他词典</Divider>
         <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-          切换到本地词典或内置 ECDict 离线查词；点击网页词典按钮在新标签页打开 "{state.word}" 释义
+          切换到本地词典或内置 ECDict 离线查词；点击网页词典按钮在弹窗内查看 "{state.word}" 释义
         </Text>
         <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
-        <WebDictButtons word={state.word} />
+        <WebDictButtons
+          word={state.word}
+          currentSource={state.webSource}
+          onSwitch={onSwitchWebSource}
+        />
+        <OpenInFavoritesButton onClick={onOpenInFavorites} />
       </div>
     )
   }
@@ -749,6 +891,7 @@ function WordLookupView({
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
           <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+          <OpenInFavoritesButton onClick={onOpenInFavorites} />
         </Space>
       )
     }
@@ -769,7 +912,12 @@ function WordLookupView({
           切换到 AI 词典获取结构化解释，或到内置 ECDict 查更全词库
         </Text>
         <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
-        <WebDictButtons word={state.word} />
+        <WebDictButtons
+          word={state.word}
+          currentSource={state.webSource}
+          onSwitch={onSwitchWebSource}
+        />
+        <OpenInFavoritesButton onClick={onOpenInFavorites} />
       </div>
     )
   }
@@ -789,6 +937,7 @@ function WordLookupView({
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
           <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+          <OpenInFavoritesButton onClick={onOpenInFavorites} />
         </Space>
       )
     }
@@ -809,13 +958,104 @@ function WordLookupView({
           切换到 AI 词典获取结构化解释，或到本地词典查询自建词库
         </Text>
         <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
-        <WebDictButtons word={state.word} />
+        <WebDictButtons
+          word={state.word}
+          currentSource={state.webSource}
+          onSwitch={onSwitchWebSource}
+        />
+        <OpenInFavoritesButton onClick={onOpenInFavorites} />
       </div>
     )
   }
 
-  // 4) web 兜底（一般不会进到这里；handleWordClick 已直接 window.open）
-  return <Empty description="已在新标签页打开网页词典" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+  // 4) 网页词典视图（v1.3.0）：在弹窗中渲染后端 fetch 后的清洗 HTML
+  return (
+    <div>
+      {/* 源切换按钮 */}
+      <Space direction="vertical" size={6} style={{ width: '100%' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          点击下方按钮在弹窗内切换其他网页词典
+        </Text>
+        <WebDictButtons
+          word={state.word}
+          currentSource={state.webSource}
+          onSwitch={onSwitchWebSource}
+        />
+      </Space>
+      <Divider style={{ margin: '12px 0' }} />
+      {state.webData?.blocked ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={`${state.webData.source_name} 抓取受限`}
+          description={
+            <Space direction="vertical" size={6}>
+              <Text type="secondary" style={{ fontSize: 12 }}>{state.webData.error}</Text>
+              <Button
+                size="small"
+                type="link"
+                icon={<LinkOutlined />}
+                href={state.webData.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                在新窗口打开原页面
+              </Button>
+            </Space>
+          }
+        />
+      ) : state.webData?.html ? (
+        <div
+          style={{
+            border: '1px solid var(--color-border-soft)',
+            borderRadius: 12,
+            padding: 12,
+            maxHeight: 480,
+            overflow: 'auto',
+            background: 'var(--color-bg-page, #fafafa)',
+          }}
+        >
+          <div
+            className="web-dict-content"
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: state.webData.html }}
+          />
+          <div style={{ marginTop: 8, textAlign: 'right' }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              来源 <a href={state.webData.url} target="_blank" rel="noreferrer">{state.webData.source_name}</a>
+            </Text>
+          </div>
+        </div>
+      ) : (
+        <Empty description="该网页词典返回空内容" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      )}
+      <Divider style={{ margin: '12px 0 8px' }}>其他词典</Divider>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+        切换到 AI 词典获取结构化解释，或到本地 / 内置词典查离线词库
+      </Text>
+      <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+      <OpenInFavoritesButton onClick={onOpenInFavorites} />
+    </div>
+  )
+}
+
+/** 「在收藏页查看此单词」按钮（v1.3.0）
+ *
+ * 跳到 /favorites?word=xxx&tab=words，收藏页会读取 URL 自动打开查词弹窗。
+ * 单词是否已收藏均显示——未收藏时会先自动收藏到列表中再打开。
+ */
+function OpenInFavoritesButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      block
+      type="dashed"
+      icon={<StarFilled style={{ color: '#faad14' }} />}
+      onClick={onClick}
+      style={{ borderRadius: 10, marginTop: 8, minHeight: 40 }}
+    >
+      📚 在收藏页查看此单词
+    </Button>
+  )
 }
 
 /** 单源切换按钮组：AI / 本地 / 内置（v1.1.0 新增） */
@@ -852,34 +1092,47 @@ function SourceSwitchRow({
   )
 }
 
-/** 网页词典快捷跳转按钮组 */
-function WebDictButtons({ word }: { word: string }) {
+/** 网页词典快捷切换按钮组（v1.3.0 重构）
+ *
+ * 与 v1.0 行为差异：
+ * - 之前：直接 window.open 跳新标签页
+ * - 现在：点击调用 onSwitch(source) 触发父组件 webDictApi.lookup + 在弹窗内渲染
+ *
+ * currentSource 高亮当前选中的源（与弹窗内容对应）
+ */
+function WebDictButtons({
+  word: _word, currentSource, onSwitch,
+}: {
+  word: string
+  currentSource: string | null
+  onSwitch: (source: string) => void
+}) {
   return (
-    <Space wrap size={6} style={{ marginTop: 8 }}>
-      {kWebDictConfigs.map((cfg) => (
-        <Button
-          key={cfg.id}
-          size="small"
-          icon={<span style={{ fontSize: 14 }}>{cfg.icon}</span>}
-          onClick={() => {
-            const url = lookupWebDictionary(cfg, word)
-            if (url) window.open(url, '_blank', 'noopener,noreferrer')
-          }}
-          style={{
-            borderRadius: 10,
-            borderColor: cfg.color,
-            color: cfg.color,
-            fontWeight: 600,
-          }}
-        >
-          {cfg.displayName}
-          {cfg.languageNote && (
-            <Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
-              {cfg.languageNote}
-            </Text>
-          )}
-        </Button>
-      ))}
+    <Space wrap size={6} style={{ marginTop: 4 }}>
+      {kWebDictConfigs.map((cfg) => {
+        const active = currentSource === cfg.id
+        return (
+          <Button
+            key={cfg.id}
+            size="small"
+            type={active ? 'primary' : 'default'}
+            icon={<span style={{ fontSize: 14 }}>{cfg.icon}</span>}
+            onClick={() => onSwitch(cfg.id)}
+            style={{
+              borderRadius: 10,
+              minHeight: 32,
+              ...(active ? {} : { color: cfg.color, borderColor: cfg.color }),
+            }}
+          >
+            {cfg.displayName}
+            {cfg.languageNote && (
+              <Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
+                {cfg.languageNote}
+              </Text>
+            )}
+          </Button>
+        )
+      })}
     </Space>
   )
 }

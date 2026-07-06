@@ -41,6 +41,9 @@ import type {
   BuiltinDictStatus,
   BuiltinDictLookupResponse,
   BuiltinDictReloadResponse,
+  WebDictLookupResponse,
+  WordFavorite,
+  WordFavoriteListResponse,
 } from '@/types'
 
 // ===== 认证 =====
@@ -390,6 +393,59 @@ export const builtinDictApi = {
    * 通常用于版本升级后刷新词库
    */
   reload: () => client.post<ApiResponse<BuiltinDictReloadResponse>>('/dictionary/builtin/reload'),
+}
+
+// ===== 网页词典抓取（v1.3.0 起）=====
+// 让 Cambridge / Oxford / Longman / Wiktionary / 有道 等 7 个网页词典也能在弹窗中渲染结果
+// 后端负责抓 HTML + 清洗（XSS 防护 + 去噪 + 链接绝对化）
+export const webDictApi = {
+  /**
+   * 抓取并清洗目标 URL 的 HTML
+   * @param source 来源 id：youdao / cambridge / oxford / longman / merriamWebster / collins / wiktionary
+   * @param word 待查单词
+   * @returns WebDictLookupResponse（含 html / blocked / error 等）
+   */
+  lookup: (source: string, word: string) =>
+    client.get<ApiResponse<WebDictLookupResponse>>('/dictionary/web/lookup', {
+      params: { source, word },
+    }),
+}
+
+// ===== 单词收藏（v1.3.0 起）=====
+// 弹窗内点击 ⭐ 收藏当前查的单词；侧边栏「收藏」页统一展示
+export const wordFavoriteApi = {
+  /**
+   * 列出当前用户收藏的单词（支持模糊搜索 + 分页）
+   * @param opts.q 模糊匹配词
+   * @param opts.page 页码（从 1 开始）
+   * @param opts.size 每页数量（默认 50，最大 200）
+   */
+  list: (opts: { q?: string; page?: number; size?: number } = {}) =>
+    client.get<ApiResponse<WordFavoriteListResponse>>('/word-favorites', { params: opts }),
+  /**
+   * 收藏一个单词（幂等：同 user+word 重复 POST 视为再次收藏，hit_count++）
+   * @param payload.word 待收藏的单词
+   * @param payload.source 收藏来源（ai / local / builtin / youdao / ...）
+   * @param payload.note 可选笔记
+   */
+  create: (payload: { word: string; source?: string; note?: string }) =>
+    client.post<ApiResponse<WordFavorite>>('/word-favorites', payload),
+  /** 更新某条收藏的笔记 */
+  updateNote: (id: number, note: string) =>
+    client.patch<ApiResponse<WordFavorite>>(`/word-favorites/${id}`, { note }),
+  /** 删除一条收藏 */
+  remove: (id: number) =>
+    client.delete<ApiResponse<{ id: number; deleted: true }>>(`/word-favorites/${id}`),
+  /**
+   * 批量检查一组单词是否被收藏（用于 UI 高亮）
+   * @param words 单词数组（内部用 , 连接）
+   * @returns { favorited: { [word]: id } } 未收藏的单词不在 map 中
+   */
+  check: (words: string[]) =>
+    client.get<ApiResponse<{ favorited: Record<string, number> }>>(
+      '/word-favorites/check',
+      { params: { words: words.join(',') } },
+    ),
 }
 
 // ===== 多阶段学习复习体系（v1.0.0 起）=====

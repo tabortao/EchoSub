@@ -13,6 +13,7 @@ import SentenceDetail from '@/pages/SentenceDetail'
 import Upload from '@/pages/Upload'
 import StudyNotes from '@/pages/StudyNotes'
 import NoteEditorPage from '@/pages/NoteEditor'
+import Favorites from '@/pages/Favorites'
 import { useAuthStore } from '@/store/auth'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,7 @@ const routes: RouteObject[] = [
       { path: 'settings', element: <Settings /> },
       { path: 'settings/dictionary', element: <DictionarySettings /> },
       { path: 'about', element: <About /> },
+      { path: 'favorites', element: <Favorites /> },
       { path: 'play/:id', element: <Player /> },
       { path: 'play/:id/sentence/:idx', element: <SentenceDetail /> },
     ],

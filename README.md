@@ -481,9 +481,9 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 >
 > 字典与句子解释共用同一 AI 配置；词典体系采用可插拔数据源设计（`id='ai'` 与 `id='local'` 均已实装），具体见 [ChangeLog v0.9.0](docs/ChangeLog.md#v090---2026-07-06)、[ChangeLog v0.9.1](docs/ChangeLog.md#v091---2026-07-06) 与 [ChangeLog v0.9.2](docs/ChangeLog.md#v092---2026-07-06)。在播放器中点击字幕右侧「📖」按钮可进入「句子详情页」（路径 `/play/:id/sentence/:idx`），从单词卡片二次点击触发查词弹窗（**本地优先 → AI 兜底**）；如果默认词典源是网页词典（v0.9.2+），则直接在新标签页打开该词典的网页释义。
 
-### 🌐 网页词典（v0.9.2，跳转型数据源）
+### 🌐 网页词典（v0.9.2 跳转型 · v1.3.0 起改为后端抓取 + 弹窗内渲染）
 
-参考 Echo Loop `WebDictConfig` 模式：网页词典**不抓取 / 不解析**任何 HTML 内容，只按词构造 URL 在新标签页打开。**完全前端实现，无后端接口**。当前收录 7 个词典（详见 [ChangeLog v0.9.2](docs/ChangeLog.md#v092---2026-07-06)）：
+参考 Echo Loop `WebDictConfig` 模式：v1.3.0 之前网页词典**只按词构造 URL 在新标签页打开**（完全前端实现，无后端接口）；v1.3.0 起改为**后端 fetch + XSS 清洗 + 弹窗内渲染**，用户停留在当前页面就能看完整释义，弹窗内可一键切换源。当前收录 7 个词典（详见 [ChangeLog v0.9.2](docs/ChangeLog.md#v092---2026-07-06) 与 [ChangeLog v1.3.0](docs/ChangeLog.md#v130---2026-07-06)）：
 
 | id | 名称 | 类型 | URL 模板 |
 |----|------|------|---------|
@@ -495,7 +495,13 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 | `collins` | Collins 📗 | 英英 | `https://www.collinsdictionary.com/dictionary/english/{w}` |
 | `wiktionary` | Wiktionary 🌐 | 多语 | `https://en.m.wiktionary.org/wiki/{w}` |
 
-> 配置：在「设置 → 📖 词典设置」中启用 / 禁用网页词典，或设为默认词典源（设为默认后，单击单词直接打开该词典网页，不再弹弹窗）。单词弹窗底部「网页词典」快捷跳转区可一键跳转任意已启用的网页词典。
+| Method | Path                              | 描述                                  |
+|--------|-----------------------------------|--------------------------------------|
+| GET    | `/dictionary/web/lookup?source=youdao&word=hello` | 网页词典抓取（v1.3.0 起；后端 `net/http` 6s 超时 + 1MiB 响应上限 + 模拟 Chrome UA；`golang.org/x/net/html` AST + `microcosm-cc/bluemonday` 白名单清洗；返回 `{source, source_name, word, url, final_url, html, blocked, error}`。`blocked=true` 表示目标站点对抓取有限制，弹窗提示「在新窗口打开」手动查看）|
+
+> 配置：在「设置 → 📖 词典设置」中启用 / 禁用网页词典，或设为默认词典源。
+>
+> v1.3.0 行为变更：句子详情页查词弹窗默认即支持网页词典；底部「网页词典」按钮组改为「切换源」按钮（高亮当前源），不再 `window.open` 跳新标签页。Cambridge / Oxford 等部分词典有反爬机制，被 `blocked` 时弹窗提供「在新窗口打开」链接，不让用户卡住。
 
 ### 📚 内置词典 ECDICT（v1.1.0，全用户共享的离线英汉词库）
 
@@ -516,6 +522,37 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 > 词形 fallback：`Lemmas(word)` 剥离常见后缀（`ies/ied/ying/ed/ing/es/er/est/ly/s`）返回原形候选列表。
 >
 > 查词路由：默认词典源选择「内置 ECDICT」后，单词查词走 `/api/v1/dictionary/builtin/lookup`，零 token 消耗、完全离线。详见 [ChangeLog v1.1.0](docs/ChangeLog.md#v110---2026-07-06)。
+
+### ⭐ 收藏（v1.3.0 单词收藏 + 收藏页）
+
+解决「网页词典查过的单词散落各处没法集中复习」与「播放器句子详情页的 ⭐ 收藏没地方统一查看」两个长期痛点。v1.3.0 起新增**单词收藏**数据模型 + 5 条 REST API + 侧边栏「⭐ 收藏」页面（路径 `/favorites`，含「📜 句子」/「🔤 单词」两个 tab），句子详情页查词弹窗标题栏 ⭐ 按钮一键收藏当前单词。
+
+| Method | Path                              | 描述                                  |
+|--------|-----------------------------------|--------------------------------------|
+| GET    | `/word-favorites?q=&page=&size=`  | 列出当前用户收藏的单词（默认 `size=50` 上限 200；`q` 不区分大小写模糊匹配 `word`；按 `updated_at DESC` 排序）|
+| POST   | `/word-favorites`                 | 收藏一个单词（请求体 `{word, source?, note?}`；幂等：同 user+word 重复 POST 视为「再次收藏」并把 `hit_count++`；`source` 记录首次来源 `ai / local / builtin / youdao / cambridge / ...`，不覆盖）|
+| GET    | `/word-favorites/check?words=hello,world` | 批量检查（响应 `{favorited: {hello: id1, world: id2}}`，未收藏的单词不在 map 中）|
+| PATCH  | `/word-favorites/:id`             | 更新某条收藏的笔记（请求体 `{note}`，最长 500 字符）|
+| DELETE | `/word-favorites/:id`             | 删除一条收藏（按主键，登录用户仅能删自己的）|
+
+> 数据模型：`word_favorites { id, user_id, word, source, note, hit_count, created_at, updated_at }`，联合唯一索引 `(user_id, word)`。
+>
+> 入口：
+>
+> - **句子详情页查词弹窗**（[frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx)）— 标题栏右上 ⭐ 按钮：未收藏时空心星 `<StarOutlined />`，已收藏时实心星 `<StarFilled />`（黄色 #faad14），点击切换。弹窗底部「📚 在收藏页查看此单词」按钮跳 `/favorites?word=xxx&tab=words` 收藏页会读取 URL 自动打开查词弹窗。
+> - **侧边栏**（[frontend/src/layouts/MainLayout.tsx](frontend/src/layouts/MainLayout.tsx)）— 「⭐ 收藏」菜单入口（介于「标签」和「上传」之间）。
+> - **收藏页**（[frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx)）：
+>   - 顶部 `Segmented` 二选一 tab：`?tab=words` 直链
+>   - **📜 句子 tab**：拉最近 50 个媒体的 `SentenceProgress` → 过滤 `favorited=true` → 关联字幕拿到完整文本 → 按 `updated_at DESC` 排序
+>   - **🔤 单词 tab**：`word_favorites` 全列表 + 模糊搜索 + 单条笔记编辑 + 删除
+>   - **查词弹窗**：内置 ECDICT 命中优先展示 + 7 个网页词典切换按钮（命中后端 fetch + 在弹窗内渲染清洗后的 HTML）
+>   - 响应式：手机端单列 / 桌面端两列
+>
+> 持久化：前端 `useWordFavoritesStore`（Zustand + persist），最多缓存 200 条，失败时回滚乐观更新。
+>
+> 协议：与 v1.1.0 一致，GNU GPL v3。
+>
+> 详见 [ChangeLog v1.3.0](docs/ChangeLog.md#v130---2026-07-06)。
 
 ### 📈 多阶段学习复习（v1.0.0）
 

@@ -12,6 +12,7 @@ import {
   InfoCircleOutlined,
   BgColorsOutlined,
   CheckOutlined,
+  StarFilled,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -43,6 +44,8 @@ interface MenuItemCfg {
 const menuItems: MenuItemCfg[] = [
   { key: '/', icon: <HomeOutlined />, label: '首页', color: '#19c8b9', emoji: '🏠' },
   { key: '/tags', icon: <TagOutlined />, label: '标签', color: '#6fba2c', emoji: '🏷️' },
+  // 「收藏」入口（v1.3.0）：句子 + 单词两个 tab，统一复习
+  { key: '/favorites', icon: <StarFilled />, label: '收藏', color: '#faad14', emoji: '⭐' },
   { key: '/upload', icon: <UploadOutlined />, label: '上传', color: '#b77dee', emoji: '⬆️' },
   // 「学习记录」入口已从侧边栏移除，移至首页右上角图标按钮（v0.7.3）
   { key: '/settings', icon: <SettingOutlined />, label: '设置', color: '#82d5bb', emoji: '⚙️' },

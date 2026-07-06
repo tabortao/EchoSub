@@ -162,6 +162,8 @@ export interface SentenceProgress {
   sentence_index: number
   completed: boolean
   repeat_count: number
+  /** 重难点句子收藏（与 Sentence.favorited 同步；v1.3.0 起在「收藏」页展示） */
+  favorited: boolean
   updated_at: string
 }
 
@@ -584,6 +586,41 @@ export interface BuiltinDictLookupResponse {
 export interface BuiltinDictReloadResponse extends BuiltinDictStatus {
   /** 重导耗时（毫秒） */
   duration_ms: number
+}
+
+// ===== 网页词典抓取（v1.3.0 起）=====
+// 后端用 net/http 抓目标 URL 的 HTML，过滤后返回清洗后的 HTML 字符串
+// 弹窗内通过 dangerouslySetInnerHTML 渲染；a 标签会被强制 target=_blank
+export interface WebDictLookupResponse {
+  source: string
+  source_name: string
+  word: string
+  url: string
+  final_url: string
+  /** 清洗后的 HTML（已去噪 + XSS 防护 + 链接绝对化 + target=_blank） */
+  html: string
+  /** true = 目标网站对抓取有限制（403/反爬），弹窗提示「在新窗口打开」 */
+  blocked: boolean
+  error: string
+}
+
+// ===== 单词收藏（v1.3.0 起）=====
+// 弹窗内点击 ⭐ 收藏当前查的单词；侧边栏「收藏」页统一展示
+export interface WordFavorite {
+  id: number
+  word: string
+  source: string
+  note: string
+  hit_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WordFavoriteListResponse {
+  items: WordFavorite[]
+  total: number
+  page: number
+  size: number
 }
 
 // ============================================================================
