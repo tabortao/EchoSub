@@ -53,12 +53,17 @@ pnpm lint
 
 ### 集成测试（在仓库根目录执行）
 
+**首选：Python 脚本（v1.1.0 起）**。解决 PowerShell 5.1 + 输出重定向 + Start-Job 组合下 Ok/Bad 静默丢失、try/foreach 嵌套解析失败等长期遗留问题。
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\test-api.ps1
+python scripts/test-api.py
 ```
 
-脚本会在 `:18080` 端口启动后端（使用 `test-media/` 目录），运行 11 项端到端 API 检查，然后清理。
-脚本保持纯 ASCII（Windows PowerShell 5.1 无法直接解码 UTF-8 CJK 字符）。
+依赖：Python 3.8+、requests 库、Go（已在 PATH）。脚本会在 `:18080` 端口启动后端（使用 `test-media/` 目录 + 临时 SQLite DB），跑完 **45 项** 端到端 API 检查后清理。
+
+**首次运行**会触发内置 ECDICT 词库导入（约 77 万词条 / ~70s），启动超时设 120s；已存在数据时秒过。
+
+> 旧 PowerShell 脚本 [scripts/test-api.ps1](scripts/test-api.ps1) 已停止维护，仅作参考。
 
 ## 四、开发环境注意事项（Dev Environment Notes）
 

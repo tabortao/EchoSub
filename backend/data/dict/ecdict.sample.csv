@@ -1,0 +1,21 @@
+word,phonetic,pos,exchange,definition,translation
+hello,/həˈloʊ/,interj.,{d:hellos},used as a greeting,"你好；喂"
+world,/wɜːrld/,n.,{p:worlds},the earth,世界
+study,/ˈstʌdi/,v.,{p:studied;d:studied;i:studying},to learn,学习；研究
+study,/ˈstʌdi/,n.,{},the activity of learning,学习；研究
+language,/ˈlæŋɡwɪdʒ/,n.,{p:languages},system of communication,语言
+computer,/kəmˈpjuːtər/,n.,{p:computers},electronic device,计算机；电脑
+book,/bʊk/,n.,{p:books},written work,书；书籍
+read,/riːd/,v.,{p:read;d:read},to look at and comprehend,读；阅读
+listen,/ˈlɪsən/,v.,{p:listened;i:listening},to hear,听；倾听
+speak,/spiːk/,v.,{p:spoke;d:spoken;i:speaking},to talk,说；说话
+write,/raɪt/,v.,{p:wrote;d:written;i:writing},to form letters,写；书写
+learn,/lɜːrn/,v.,{p:learned;i:learning},to gain knowledge,学习；学会
+teach,/tiːtʃ/,v.,{p:taught;i:teaching},to instruct,教；教导
+school,/skuːl/,n.,{p:schools},institution for education,学校
+student,/ˈstuːdənt/,n.,{p:students},a learner,学生
+teacher,/ˈtiːtʃər/,n.,{p:teachers},a person who teaches,老师；教师
+class,/klæs/,n.,{p:classes},a group of students,班级；课
+family,/ˈfæməli/,n.,{p:families},a group of relatives,家庭；家人
+friend,/frend/,n.,{p:friends},a person you like,朋友
+house,/haʊs/,n.,{p:houses},a building to live in,房子；住宅

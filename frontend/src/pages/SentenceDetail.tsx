@@ -1,15 +1,15 @@
-/**
- * 句子详情页（v0.9.0 起）
+/** 句子详情页（v0.9.0 起，v1.1.0 重构查词逻辑）
  *
  * 设计：
  * - 顶部展示原文 + 媒体名 + 时间戳
  * - 「整句翻译 / 语法 / 逐词」三块由后端 /ai/sentence-explain 一次返回
  * - 单词卡片可点击展开「词典详情」弹窗
- *   - v0.9.1：查词逻辑改为「本地优先 → AI 兜底」
- *     - 本地词典命中 + `preferLocalHit=true`：直接展示本地结果
- *     - 本地词典命中 + `preferLocalHit=false`：本地为主 + AI 并列展示
- *     - 本地词典未命中：调用 AI 兜底
- * - 响应式：手机端 1 列、桌面 2 列（翻译 + 解析）
+ *   - v1.1.0 严格按用户「默认词典源」分派（不再"本地优先 → AI 兑底"混合）：
+ *     - 'ai'       → 仅调 AI 词典
+ *     - 'local'    → 仅查本地词典
+ *     - 'builtin'  → 仅查内置 ECDict
+ *     - 'youdao' / 'cambridge' / ... → 直接在新标签页打开网页
+ *   - 弹窗底部始终保留一组「其他词典」快捷入口（包含所有可用源 + 网页词典）
  *
  * 入口：
  * - 路由 /play/:id/sentence/:idx（从 MediaPlayer 句子点击进入）
@@ -23,18 +23,36 @@ import {
   ArrowLeftOutlined, SoundOutlined,
   BulbOutlined, ReloadOutlined, BookOutlined,
   CheckCircleFilled, ClockCircleOutlined,
-  BookFilled, RobotFilled,
+  BookFilled, RobotFilled, DatabaseOutlined,
 } from '@ant-design/icons'
-import { aiApi, localDictApi, mediaApi } from '@/api'
+import { aiApi, builtinDictApi, localDictApi, mediaApi } from '@/api'
 import { useAuthStore } from '@/store/auth'
 import { useDictionaryStore } from '@/store/dictionary'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
+import { kWebDictConfigs, getWebDictConfig, lookupWebDictionary } from '@/store/webDictionaryConfig'
 import type {
   AIStatus, DictionaryResponse, Sentence, SentenceExplainResponse,
-  LocalDictLookupEntry, LocalDictLookupResponse,
+  BuiltinDictLookupResponse, LocalDictLookupEntry, LocalDictLookupResponse, DictionarySourceId,
 } from '@/types'
 
 const { Text, Title, Paragraph } = Typography
+
+/** v1.1.0：判断指定 sourceId 是否是网页词典（有道/Cambridge/...） */
+function isWebDictionary(id: DictionarySourceId | string | undefined | null): boolean {
+  if (!id) return false
+  return kWebDictConfigs.some((c) => c.id === id)
+}
+
+/** v1.1.0：根据 sourceId 拿到显示标签（AI/本地/内置/有道/...） */
+function getSourceLabel(id: DictionarySourceId | string | undefined | null): string {
+  if (!id) return '🤖 AI'
+  if (id === 'ai') return '🤖 AI 词典'
+  if (id === 'local') return '📕 本地词典'
+  if (id === 'builtin') return '📚 内置词典'
+  const cfg = getWebDictConfig(id)
+  if (cfg) return `${cfg.icon} ${cfg.displayName}`
+  return id
+}
 
 /** 把秒数格式化为 HH:MM:SS.mmm */
 function fmtTime(seconds: number): string {
@@ -46,31 +64,60 @@ function fmtTime(seconds: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms, 3)}`
 }
 
-/** 单词弹窗状态（v0.9.1：支持本地 + AI 两种来源） */
+/**
+ * 句子分词（v1.2.0）
+ * - 把字幕原文按"单词 / 分隔符"切分
+ * - 单词 = 连续字母/数字/连字符/撇号（如 don't / well-known）
+ * - 标点 / 空格作为独立分隔符 token 保留渲染
+ * - 不依赖 AI / 后端，纯前端正则，AI explain 失败也不影响查词
+ */
+export interface SentenceToken {
+  text: string
+  kind: 'word' | 'sep'
+}
+
+const WORD_PATTERN = /[A-Za-z][A-Za-z0-9'\-]*/g
+
+export function splitSentenceTokens(text: string): SentenceToken[] {
+  const tokens: SentenceToken[] = []
+  let last = 0
+  for (const m of text.matchAll(WORD_PATTERN)) {
+    const start = m.index ?? 0
+    if (start > last) {
+      tokens.push({ text: text.slice(last, start), kind: 'sep' })
+    }
+    tokens.push({ text: m[0], kind: 'word' })
+    last = start + m[0].length
+  }
+  if (last < text.length) {
+    tokens.push({ text: text.slice(last), kind: 'sep' })
+  }
+  return tokens
+}
+
+/** v1.1.0 单词弹窗状态：严格按「单一来源」加载
+ * - kind 标识当前来源：'ai' | 'local' | 'builtin' | 'web'
+ * - 每种来源只对应一种数据
+ */
 type WordLookupState = {
   word: string
-  loadingLocal: boolean
-  loadingAi: boolean
-  /** 本地命中条目（可能为空数组） */
-  localEntries: LocalDictLookupEntry[]
-  /** 是否已尝试本地查词 */
-  localTried: boolean
-  /** AI 命中（null = 未命中或未尝试） */
+  kind: 'ai' | 'local' | 'builtin' | 'web'
+  loading: boolean
   aiEntry: DictionaryResponse | null
-  /** 是否已尝试 AI */
-  aiTried: boolean
-  /** 整体错误（本地 / AI 都不可用时显示） */
+  localData: LocalDictLookupResponse | null
+  builtinData: BuiltinDictLookupResponse | null
+  webUrl: string
   error: string | null
 }
 
 const EMPTY_LOOKUP: WordLookupState = {
   word: '',
-  loadingLocal: false,
-  loadingAi: false,
-  localEntries: [],
-  localTried: false,
+  kind: 'ai',
+  loading: false,
   aiEntry: null,
-  aiTried: false,
+  localData: null,
+  builtinData: null,
+  webUrl: '',
   error: null,
 }
 
@@ -79,7 +126,7 @@ export default function SentenceDetailPage() {
   const { id, idx } = useParams<{ id: string; idx: string }>()
   const { isPhone } = useDeviceSize()
   const token = useAuthStore((s) => s.token)
-  const { defaultSourceId, localDicts, preferLocalHit, setLocalDicts } = useDictionaryStore()
+  const { defaultSourceId, localDicts, setLocalDicts } = useDictionaryStore()
 
   const [mediaName, setMediaName] = useState<string>('')
   const [sentence, setSentence] = useState<Sentence | null>(null)
@@ -93,9 +140,6 @@ export default function SentenceDetailPage() {
 
   // 单词词典弹窗
   const [wordLookup, setWordLookup] = useState<WordLookupState | null>(null)
-
-  // 是否启用本地查词（依赖：用户上传了至少一本本地词典）
-  const localAvailable = localDicts.length > 0
 
   // 0. 懒加载本地词典列表（v0.9.1）
   //   用户可能直接通过句子点击进入此页而未访问设置页，
@@ -165,88 +209,126 @@ export default function SentenceDetailPage() {
   }
   useEffect(() => { if (sentence) loadExplain() }, [sentence?.index, sentence?.text]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 3. 单词查词（v0.9.1：本地优先 → AI 兜底）
+  // 3. 单词查词（v1.1.0 严格按设置源分派 + v1.2.0 AI 未启用/失败时回退到内置词典）
   //
-  // 策略：
-  //   a) 若本地词典可用，先调 localDictApi.lookup
-  //   b) 本地命中 + preferLocalHit=true：直接展示本地结果，不再调 AI
-  //   c) 本地命中 + preferLocalHit=false：本地为主，并并行调 AI 增强
-  //   d) 本地未命中：调 AI 兜底
-  //   e) 本地不可用：直接调 AI
+  // 策略：完全依照 useDictionaryStore.defaultSourceId 派发，不再做"本地优先 → AI 兑底"混合。
+  //   - 'ai' / 'local' / 'builtin' → 弹窗展示单源结果
+  //   - 'youdao' / 'cambridge' / ... → 直接 window.open 打开网页，不弹弹窗
+  //   - 弹窗底部始终保留一组「其他词典」快捷入口（含全部源 + 7 个网页词典）
+  //
+  // v1.2.0 新增：
+  //   - AI 未启用时（aiStatus.enabled === false）默认回退到内置 ECDICT 查词
+  //   - 用户主动把默认源设成 AI 但本次请求 AI 失败时，自动回退到内置词典
+  //   - 避免出现「未配置 AI 翻译但单词查词完全打不开」的体验断层
   const handleWordClick = async (word: string) => {
     if (!sentence) return
-    const initial: WordLookupState = {
-      ...EMPTY_LOOKUP,
-      word,
-      loadingLocal: localAvailable,
-    }
-    setWordLookup(initial)
 
-    // 1) 先查本地
-    let localRes: LocalDictLookupResponse | null = null
-    if (localAvailable) {
-      try {
-        const r = await localDictApi.lookup({ word, sentence: sentence.text })
-        localRes = r.data.data
-      } catch {
-        // 本地查询失败不阻塞，交给 AI 兜底
-        localRes = null
+    // 1) 网页词典：直接打开新标签页（不弹弹窗）
+    if (isWebDictionary(defaultSourceId)) {
+      const cfg = getWebDictConfig(defaultSourceId)
+      if (cfg) {
+        const url = lookupWebDictionary(cfg, word)
+        if (url) {
+          window.open(url, '_blank', 'noopener,noreferrer')
+        } else {
+          message.warning('该网页词典暂不可用')
+        }
       }
-    }
-    const localHit = !!localRes && localRes.found && localRes.entries.length > 0
-
-    // 2) 决定是否调 AI
-    const needAi = !localHit || !preferLocalHit
-    if (!needAi) {
-      // 命中本地 + preferLocalHit=true：直接展示本地
-      setWordLookup({
-        ...initial,
-        localEntries: localRes?.entries ?? [],
-        localTried: true,
-        loadingLocal: false,
-      })
       return
     }
 
-    // 3) 并行/串行调 AI 兜底（或增强）
-    //    - 本地未命中：AI 是唯一来源
-    //    - 本地命中 + preferLocalHit=false：本地先展示，AI 并行加载
-    setWordLookup((prev) => ({
-      ...(prev ?? initial),
-      localEntries: localRes?.entries ?? [],
-      localTried: localAvailable,
-      loadingLocal: false,
-      loadingAi: true,
-    }))
+    // 2) 单源弹窗
+    let kind: WordLookupState['kind'] =
+      defaultSourceId === 'local' ? 'local'
+        : defaultSourceId === 'builtin' ? 'builtin'
+          : 'ai' // 兜底为 AI
 
-    try {
-      const aiRes = await aiApi.dictionary({
-        word,
-        sentence: sentence.text,
-        target_lang: aiStatus?.target_lang || 'Chinese',
-      })
-      setWordLookup((prev) => ({
-        ...(prev ?? initial),
-        aiEntry: aiRes.data.data,
-        aiTried: true,
-        loadingAi: false,
-      }))
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '查词失败'
-      setWordLookup((prev) => {
-        const next = { ...(prev ?? initial), aiTried: true, loadingAi: false }
-        // 本地也无结果时，error 才有意义
-        if (!next.localEntries || next.localEntries.length === 0) {
-          next.error = msg
+    // v1.2.0：AI 通道不可用时（未配置 / 未启用），自动回退到内置词典查词
+    if (kind === 'ai' && aiStatus && aiStatus.enabled === false) {
+      kind = 'builtin'
+    }
+
+    setWordLookup({ ...EMPTY_LOOKUP, word, kind, loading: true })
+
+    if (kind === 'ai') {
+      try {
+        const r = await aiApi.dictionary({
+          word,
+          sentence: sentence.text,
+          target_lang: aiStatus?.target_lang || 'Chinese',
+        })
+        setWordLookup({
+          word, kind, loading: false,
+          aiEntry: r.data.data, localData: null, builtinData: null, webUrl: '', error: null,
+        })
+        return
+      } catch (err: unknown) {
+        // v1.2.0：AI 查词失败时自动回退到内置词典，避免弹错误
+        try {
+          const fallback = await builtinDictApi.lookup(word)
+          setWordLookup({
+            word, kind: 'builtin', loading: false,
+            aiEntry: null, localData: null, builtinData: fallback.data.data, webUrl: '',
+            error: null,
+          })
+          message.info('AI 词典不可用，已自动切换到内置 ECDICT')
+          return
+        } catch {
+          // 内置也失败 → 暴露 AI 的原始错误
         }
-        return next
-      })
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '查词失败'
+        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: msg })
+        return
+      }
+    }
+
+    if (kind === 'local') {
+      if (localDicts.length === 0) {
+        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: '尚未上传任何本地词典，请先在「设置 → 词典」中上传' })
+        return
+      }
+      try {
+        const r = await localDictApi.lookup({ word, sentence: sentence.text })
+        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: r.data.data, builtinData: null, webUrl: '', error: null })
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '本地查词失败'
+        setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: msg })
+      }
+      return
+    }
+
+    // builtin
+    try {
+      const r = await builtinDictApi.lookup(word)
+      setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: r.data.data, webUrl: '', error: null })
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '内置词典查词失败'
+      setWordLookup({ word, kind, loading: false, aiEntry: null, localData: null, builtinData: null, webUrl: '', error: msg })
     }
   }
 
   // 4. 跳回播放器并跳到该句
   const handleBackToPlayer = () => {
     navigate(`/play/${id}?t=${sentence?.start ?? 0}`)
+  }
+
+  // 4.5 在弹窗中切换词典源（v1.1.0）
+  //   弹窗底部按钮组调用：kind 保持 word 不变，只切源
+  const handleSwitchSource = (sourceId: 'ai' | 'local' | 'builtin') => {
+    if (!wordLookup) return
+    const word = wordLookup.word
+    setWordLookup(null)
+    // 用 nextTick 让弹窗先关再开，避免动画冲突
+    setTimeout(() => {
+      // 临时把 store 里的默认源改为 sourceId，触发对应分支
+      const original = useDictionaryStore.getState().defaultSourceId
+      useDictionaryStore.getState().setDefault(sourceId)
+      handleWordClick(word)
+        .finally(() => {
+          // 还原默认源
+          useDictionaryStore.getState().setDefault(original)
+        })
+    }, 100)
   }
 
   // 5. TTS 朗读单词
@@ -325,22 +407,22 @@ export default function SentenceDetailPage() {
         </Tooltip>
       </div>
 
-      {/* AI 状态提示 */}
+      {/* AI 状态提示（v1.2.0：未启用时仍可继续查词，自动回退到内置词典） */}
       {aiStatus && !aiStatus.enabled && (
         <Alert
-          type="warning"
+          type="info"
           showIcon
           style={{ marginBottom: 16, borderRadius: 12 }}
-          message="AI 未配置"
+          message="AI 翻译未配置"
           description={
             <span>
-              请在「设置 → AI 翻译」中配置 <Text code>ECHOSUB_AI_API_KEY</Text> 后重启后端。配置完成后句子解释 / 查词功能即可使用。
+              句子整段翻译 / 语法讲解需要 <Text code>ECHOSUB_AI_API_KEY</Text>；未配置时不影响单词查词——系统会自动改用「内置 ECDICT」词典（离线、零 token 消耗）。
             </span>
           }
         />
       )}
 
-      {/* 原文卡片 */}
+      {/* 原文卡片（v1.2.0：单词可点击查词） */}
       <Card
         style={{
           marginBottom: 16,
@@ -359,14 +441,52 @@ export default function SentenceDetailPage() {
             style={{
               fontSize: isPhone ? 18 : 22,
               fontWeight: 600,
-              lineHeight: 1.6,
+              lineHeight: 1.8,
               margin: 0,
               color: 'var(--color-text-primary, #1a1a1a)',
             }}
           >
-            {sentence.text}
+            {splitSentenceTokens(sentence.text).map((tok, i) => {
+              if (tok.kind === 'sep') {
+                return <span key={i}>{tok.text}</span>
+              }
+              return (
+                <span
+                  key={i}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`查词 ${tok.text}`}
+                  onClick={() => handleWordClick(tok.text)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleWordClick(tok.text)
+                    }
+                  }}
+                  style={{
+                    cursor: 'pointer',
+                    borderRadius: 4,
+                    padding: '0 2px',
+                    margin: '0 1px',
+                    color: 'var(--ant-color-primary)',
+                    borderBottom: '1px dashed transparent',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--ant-color-primary-bg, rgba(105,192,255,0.12))'
+                    e.currentTarget.style.borderBottomColor = 'var(--ant-color-primary)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.borderBottomColor = 'transparent'
+                  }}
+                >
+                  {tok.text}
+                </span>
+              )
+            })}
           </Paragraph>
-          <Space>
+          <Space wrap>
             <Tooltip title="朗读原句">
               <Button
                 type="text"
@@ -375,8 +495,13 @@ export default function SentenceDetailPage() {
               />
             </Tooltip>
             <Tag color="purple">
-              默认词典：{defaultSourceId === 'ai' ? '🤖 AI' : '📕 本地'}
+              默认词典：{getSourceLabel(defaultSourceId)}
             </Tag>
+            {aiStatus && !aiStatus.enabled && defaultSourceId === 'ai' && (
+              <Tag color="orange">
+                AI 未启用 · 查词自动回退到内置词典
+              </Tag>
+            )}
           </Space>
         </Space>
       </Card>
@@ -416,6 +541,7 @@ export default function SentenceDetailPage() {
           <WordLookupView
             state={wordLookup}
             onSpeak={handleSpeak}
+            onSwitchSource={handleSwitchSource}
             isPhone={isPhone}
           />
         )}
@@ -552,60 +678,270 @@ function SentenceExplainView({
   )
 }
 
-/** 单词查词结果视图（v0.9.1：本地 + AI 双视图） */
+/**
+ * 单词查词结果视图（v1.1.0：单源视图）
+ *
+ * 严格按 useDictionaryStore.defaultSourceId 显示：
+ *   - kind='ai'      → 仅渲染 AI 词典
+ *   - kind='local'   → 仅渲染本地词典
+ *   - kind='builtin' → 仅渲染内置 ECDICT
+ *   - kind='web'     → 仅显示已跳转提示
+ *
+ * 底部始终保留「网页词典」快捷跳转 + 「其他词典」快捷切换入口。
+ */
 function WordLookupView({
-  state, onSpeak, isPhone,
+  state, onSpeak, onSwitchSource, isPhone,
 }: {
   state: WordLookupState
   onSpeak: (text: string) => void
+  onSwitchSource: (sourceId: 'ai' | 'local' | 'builtin') => void
   isPhone: boolean
 }) {
   // 加载中
-  if (state.loadingLocal || state.loadingAi) {
+  if (state.loading) {
+    return <Skeleton active paragraph={{ rows: 4 }} />
+  }
+  // 整体错误
+  if (state.error) {
+    return (
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Alert type="error" showIcon message={state.error} />
+        <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+      </Space>
+    )
+  }
+
+  // 1) AI 词典视图
+  if (state.kind === 'ai') {
+    if (!state.aiEntry) {
+      return (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Empty description={`未找到 "${state.word}" 的释义`} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+        </Space>
+      )
+    }
     return (
       <div>
-        <Skeleton active paragraph={{ rows: 4 }} />
-        {state.loadingAi && state.localEntries.length > 0 && (
-          <Text type="secondary" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
-            <RobotFilled /> AI 增强中…
-          </Text>
-        )}
+        <DictionaryView entry={state.aiEntry} onSpeak={onSpeak} />
+        <Divider style={{ margin: '12px 0 8px' }}>其他词典</Divider>
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+          切换到本地词典或内置 ECDict 离线查词；点击网页词典按钮在新标签页打开 "{state.word}" 释义
+        </Text>
+        <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+        <WebDictButtons word={state.word} />
       </div>
     )
   }
-  // 整体错误：本地 + AI 都没结果
-  if (state.error && state.localEntries.length === 0 && !state.aiEntry) {
-    return <Alert type="error" showIcon message={state.error} />
-  }
-  // 都没命中
-  if (state.localEntries.length === 0 && !state.aiEntry) {
-    return <Empty description={`未找到 "${state.word}" 的释义`} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+
+  // 2) 本地词典视图
+  if (state.kind === 'local') {
+    const entries = state.localData?.entries ?? []
+    if (entries.length === 0) {
+      return (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Empty
+            description={
+              state.localData
+                ? `本地词典未收录「${state.word}」`
+                : '本地词典暂无数据'
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+          <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+        </Space>
+      )
+    }
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <BookFilled style={{ color: 'var(--ant-color-primary)' }} />
+          <Text strong style={{ fontSize: 14 }}>本地词典命中</Text>
+          <Tag color="green">{entries.length} 条</Tag>
+        </div>
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {entries.map((e, i) => (
+            <LocalDictEntryCard key={`${e.dict_id}-${i}`} entry={e} onSpeak={onSpeak} isPhone={isPhone} />
+          ))}
+        </Space>
+        <Divider style={{ margin: '12px 0 8px' }}>其他词典</Divider>
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+          切换到 AI 词典获取结构化解释，或到内置 ECDict 查更全词库
+        </Text>
+        <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+        <WebDictButtons word={state.word} />
+      </div>
+    )
   }
 
+  // 3) 内置 ECDICT 视图
+  if (state.kind === 'builtin') {
+    const entries = state.builtinData?.entries ?? []
+    if (entries.length === 0) {
+      return (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Empty
+            description={
+              state.builtinData
+                ? `内置词典未收录「${state.word}」`
+                : '内置词典未导入'
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+          <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+        </Space>
+      )
+    }
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <DatabaseOutlined style={{ color: 'var(--ant-color-primary)' }} />
+          <Text strong style={{ fontSize: 14 }}>内置 ECDICT</Text>
+          <Tag color="green">{entries.length} 条</Tag>
+        </div>
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          {entries.map((e, i) => (
+            <BuiltinDictEntryCard key={`${e.word}-${e.pos}-${i}`} entry={e} onSpeak={onSpeak} isPhone={isPhone} />
+          ))}
+        </Space>
+        <Divider style={{ margin: '12px 0 8px' }}>其他词典</Divider>
+        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+          切换到 AI 词典获取结构化解释，或到本地词典查询自建词库
+        </Text>
+        <SourceSwitchRow currentKind={state.kind} onSwitch={onSwitchSource} />
+        <WebDictButtons word={state.word} />
+      </div>
+    )
+  }
+
+  // 4) web 兜底（一般不会进到这里；handleWordClick 已直接 window.open）
+  return <Empty description="已在新标签页打开网页词典" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+}
+
+/** 单源切换按钮组：AI / 本地 / 内置（v1.1.0 新增） */
+function SourceSwitchRow({
+  currentKind, onSwitch,
+}: {
+  currentKind: WordLookupState['kind']
+  onSwitch: (sourceId: 'ai' | 'local' | 'builtin') => void
+}) {
+  const items: Array<{ id: 'ai' | 'local' | 'builtin'; icon: React.ReactNode; label: string; color: string }> = [
+    { id: 'ai',      icon: <RobotFilled />,       label: 'AI',  color: 'var(--ant-color-primary)' },
+    { id: 'local',   icon: <BookFilled />,        label: '本地', color: '#722ed1' },
+    { id: 'builtin', icon: <DatabaseOutlined />,  label: '内置', color: '#13c2c2' },
+  ]
   return (
-    <div>
-      {/* 本地命中（可能多条） */}
-      {state.localEntries.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <BookFilled style={{ color: 'var(--ant-color-primary)' }} />
-            <Text strong style={{ fontSize: 14 }}>本地词典命中</Text>
-            <Tag color="green">{state.localEntries.length} 条</Tag>
-          </div>
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            {state.localEntries.map((e, i) => (
-              <LocalDictEntryCard key={`${e.dict_id}-${i}`} entry={e} onSpeak={onSpeak} isPhone={isPhone} />
-            ))}
-          </Space>
+    <Space wrap size={6}>
+      {items.map((it) => (
+        <Button
+          key={it.id}
+          size="small"
+          icon={it.icon}
+          type={currentKind === it.id ? 'primary' : 'default'}
+          onClick={() => onSwitch(it.id)}
+          style={{
+            borderRadius: 10,
+            minHeight: 32,
+            ...(currentKind === it.id ? {} : { color: it.color, borderColor: it.color }),
+          }}
+        >
+          {it.label}
+        </Button>
+      ))}
+    </Space>
+  )
+}
+
+/** 网页词典快捷跳转按钮组 */
+function WebDictButtons({ word }: { word: string }) {
+  return (
+    <Space wrap size={6} style={{ marginTop: 8 }}>
+      {kWebDictConfigs.map((cfg) => (
+        <Button
+          key={cfg.id}
+          size="small"
+          icon={<span style={{ fontSize: 14 }}>{cfg.icon}</span>}
+          onClick={() => {
+            const url = lookupWebDictionary(cfg, word)
+            if (url) window.open(url, '_blank', 'noopener,noreferrer')
+          }}
+          style={{
+            borderRadius: 10,
+            borderColor: cfg.color,
+            color: cfg.color,
+            fontWeight: 600,
+          }}
+        >
+          {cfg.displayName}
+          {cfg.languageNote && (
+            <Text type="secondary" style={{ fontSize: 10, marginLeft: 4 }}>
+              {cfg.languageNote}
+            </Text>
+          )}
+        </Button>
+      ))}
+    </Space>
+  )
+}
+
+/** 内置 ECDICT 单条命中（v1.1.0） */
+function BuiltinDictEntryCard({
+  entry, onSpeak, isPhone,
+}: {
+  entry: BuiltinDictLookupResponse['entries'][number]
+  onSpeak: (text: string) => void
+  isPhone: boolean
+}) {
+  const isExact = entry.matched_by === 'exact'
+  const lemmaMatch = !isExact && entry.matched_by.startsWith('lemma:')
+    ? entry.matched_by.slice(6)
+    : null
+  return (
+    <div
+      style={{
+        background: 'var(--color-bg-page, #fafafa)',
+        borderRadius: 12,
+        padding: isPhone ? '10px 12px' : '12px 14px',
+        border: '1px solid var(--color-border-soft, rgba(0,0,0,0.06))',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Text strong style={{ fontSize: 16, color: 'var(--ant-color-primary)' }}>{entry.word}</Text>
+        <Tooltip title="朗读">
+          <Button
+            type="text"
+            size="small"
+            icon={<SoundOutlined />}
+            onClick={() => onSpeak(entry.word)}
+          />
+        </Tooltip>
+        {lemmaMatch && (
+          <Text type="secondary" style={{ fontSize: 12 }}>原词 {lemmaMatch}</Text>
+        )}
+        {entry.pos && <Tag color="blue" style={{ fontSize: 11 }}>{entry.pos}</Tag>}
+        <Tag color={isExact ? 'green' : 'orange'} style={{ fontSize: 11 }}>
+          {isExact ? '精确' : `原形 ${lemmaMatch ?? entry.matched_by}`}
+        </Tag>
+        <div style={{ flex: 1 }} />
+        <Text type="secondary" style={{ fontSize: 11 }}>📚 ECDICT</Text>
+      </div>
+      {entry.phonetic && (
+        <div style={{ marginTop: 4 }}>
+          <Text code style={{ fontSize: 12 }}>{entry.phonetic}</Text>
         </div>
       )}
-
-      {/* AI 结果（兜底或增强） */}
-      {state.aiEntry && (
-        <div>
-          {state.localEntries.length > 0 && <Divider style={{ margin: '8px 0 12px' }}>AI 增强</Divider>}
-          <DictionaryView entry={state.aiEntry} onSpeak={onSpeak} />
-        </div>
+      {entry.translation && (
+        <Paragraph style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.6 }}>
+          {entry.translation}
+        </Paragraph>
+      )}
+      {entry.definition && (
+        <Paragraph
+          type="secondary"
+          style={{ margin: '4px 0 0', fontSize: 12, lineHeight: 1.55 }}
+        >
+          {entry.definition}
+        </Paragraph>
       )}
     </div>
   )

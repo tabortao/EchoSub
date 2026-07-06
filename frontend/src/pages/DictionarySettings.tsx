@@ -1,11 +1,14 @@
 /**
- * 词典设置页（v0.9.0 起，v0.9.1 加入本地词典管理）
+ * 词典设置页（v0.9.0 起，v0.9.1 加入本地词典管理，v0.9.2 加入网页词典）
  *
  * 设计：
  * - 顶部「默认词典源」单选列表：仅显示已启用源（disabledIds 排除的源不出现）
+ *   - 网页词典（含有道 / Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary）也作为可选默认源
+ *   - 选网页词典时，点击单词会直接打开新标签页（不消耗 token / 不弹弹窗）
  * - 底部「词典源」启/禁列表
- *     - AI 词典：当前唯一可用源，不可禁用（canBeDisabled=false，灰态 + 🔒）
+ *     - AI 词典：当前唯一可结构化返回的本地源，不可禁用（canBeDisabled=false，灰态 + 🔒）
  *     - 本地词典：v0.9.1 起支持用户上传 CSV
+ *     - 网页词典：v0.9.2 起一组可禁用的跳转型源（参考 Echo Loop `WebDictConfig`）
  * - v0.9.1：新增「本地词典管理」卡 — 上传 / 列表 / 删除 / 偏好开关
  *
  * 与 Echo-Loop 对齐：禁用当前默认源时自动回退到 AI；
@@ -21,14 +24,15 @@ import {
   ApiOutlined, BookOutlined, ReloadOutlined,
   InboxOutlined, DeleteOutlined,
   FileTextOutlined, DatabaseOutlined, BulbOutlined,
-  SearchOutlined,
+  SearchOutlined, GlobalOutlined, ThunderboltOutlined, DownloadOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import { aiApi, localDictApi } from '@/api'
+import { aiApi, builtinDictApi, localDictApi } from '@/api'
 import { useDictionaryStore } from '@/store/dictionary'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
+import { kWebDictConfigs } from '@/store/webDictionaryConfig'
 import type {
-  AIStatus, DictionarySourceMeta, LocalDictionary, LocalDictStatus,
+  AIStatus, BuiltinDictStatus, DictionarySourceMeta, LocalDictionary, LocalDictStatus,
 } from '@/types'
 
 const { Text, Title } = Typography
@@ -69,6 +73,18 @@ export default function DictionarySettingsPage() {
   const [uploadProgress, setUploadProgress] = useState<number>(0)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
+  // 内置词典 ECDICT 相关 state（v1.1.0）
+  const [builtinStatus, setBuiltinStatus] = useState<BuiltinDictStatus | null>(null)
+  const [loadingBuiltin, setLoadingBuiltin] = useState(false)
+  const [reloadingBuiltin, setReloadingBuiltin] = useState(false)
+  const [builtinSearch, setBuiltinSearch] = useState('')
+  const [builtinSearchResult, setBuiltinSearchResult] = useState<{
+    word: string
+    found: boolean
+    entries: Array<{ word: string; phonetic: string; pos: string; definition: string; translation: string; matched_by: string }>
+  } | null>(null)
+  const [builtinSearching, setBuiltinSearching] = useState(false)
+
   // 拉取 AI 状态 + 本地词典列表
   useEffect(() => {
     let cancelled = false
@@ -77,12 +93,14 @@ export default function DictionarySettingsPage() {
       aiApi.status().catch(() => null),
       localDictApi.list().catch(() => null),
       localDictApi.status().catch(() => null),
+      builtinDictApi.status().catch(() => null),
     ])
-      .then(([aiRes, listRes, statusRes]) => {
+      .then(([aiRes, listRes, statusRes, builtinRes]) => {
         if (cancelled) return
         if (aiRes) setStatus(aiRes.data.data)
         if (listRes) setLocalDicts(listRes.data.data.dictionaries ?? [])
         if (statusRes) setLocalStatus(statusRes.data.data)
+        if (builtinRes) setBuiltinStatus(builtinRes.data.data)
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -102,6 +120,52 @@ export default function DictionarySettingsPage() {
       message.error('刷新本地词典失败')
     } finally {
       setLoadingLocal(false)
+    }
+  }
+
+  // 刷新内置词典状态（v1.1.0）
+  const refreshBuiltin = async () => {
+    setLoadingBuiltin(true)
+    try {
+      const res = await builtinDictApi.status()
+      setBuiltinStatus(res.data.data)
+    } catch {
+      message.error('刷新内置词典状态失败')
+    } finally {
+      setLoadingBuiltin(false)
+    }
+  }
+
+  // 重新导入内置词典（v1.1.0）
+  const handleReloadBuiltin = async () => {
+    setReloadingBuiltin(true)
+    try {
+      const res = await builtinDictApi.reload()
+      setBuiltinStatus(res.data.data)
+      const dur = (res.data.data as { duration_ms?: number }).duration_ms ?? 0
+      message.success(`重导完成：${res.data.data.entry_count.toLocaleString()} 条 (${(dur / 1000).toFixed(1)}s)`)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '重导失败'
+      message.error(msg)
+    } finally {
+      setReloadingBuiltin(false)
+    }
+  }
+
+  // 内置词典快速试查（v1.1.0）
+  const handleBuiltinSearch = async () => {
+    const w = builtinSearch.trim()
+    if (!w) return
+    setBuiltinSearching(true)
+    setBuiltinSearchResult(null)
+    try {
+      const res = await builtinDictApi.lookup(w)
+      setBuiltinSearchResult(res.data.data)
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '查询失败'
+      message.error(msg)
+    } finally {
+      setBuiltinSearching(false)
     }
   }
 
@@ -195,6 +259,8 @@ export default function DictionarySettingsPage() {
   // 计算每个源的实时状态文案
   const localEntryCount = localStatus?.entry_count ?? 0
   const localDictCount = localStatus?.dict_count ?? 0
+  const builtinAvailable = builtinStatus?.available ?? false
+  const builtinEntryCount = builtinStatus?.entry_count ?? 0
   const sources: DictionarySourceMeta[] = [
     {
       id: 'ai',
@@ -202,7 +268,7 @@ export default function DictionarySettingsPage() {
       emoji: '🤖',
       description: '调用 OpenAI 兼容接口生成结构化词条（音标、词义、例句、词族、词源）。无需下载词库，按需查询。',
       requiresNetwork: true,
-      canBeDisabled: false, // AI 词典是当前唯一源，必须始终可用
+      canBeDisabled: false, // AI 词典是当前唯一可结构化返回的源，必须始终可用
       statusText: status?.enabled ? '已启用' : '未配置',
       statusKind: status?.enabled ? 'success' : 'warning',
     },
@@ -216,6 +282,32 @@ export default function DictionarySettingsPage() {
       statusText: localDictCount > 0 ? `已启用 · ${localDictCount} 本 · ${localEntryCount.toLocaleString()} 词` : '未上传',
       statusKind: localDictCount > 0 ? 'success' : 'default',
     },
+    // v1.1.0：内置词典 ECDICT（与 LocalDict 类似但无需上传，整库一份）
+    {
+      id: 'builtin',
+      label: '内置词典',
+      emoji: '📚',
+      description: '内置 ECDICT 英汉词典（GPLv3，~77 万词条）。无需上传，零 token 消耗，离线查词。',
+      requiresNetwork: false,
+      canBeDisabled: false,
+      statusText: builtinAvailable
+        ? `已启用 · ${builtinEntryCount.toLocaleString()} 词`
+        : (builtinStatus ? '未导入' : '检测中…'),
+      statusKind: builtinAvailable ? 'success' : (builtinStatus ? 'warning' : 'default'),
+    },
+    // v0.9.2：网页词典组（参考 Echo Loop `kWebDictConfigs`）
+    ...kWebDictConfigs.map<DictionarySourceMeta>((cfg) => ({
+      id: cfg.id as DictionarySourceMeta['id'],
+      label: cfg.displayName,
+      emoji: cfg.icon,
+      color: cfg.color,
+      description: `点击单词直接打开 ${cfg.displayName} 网页释义，${cfg.languageNote ?? '无 token 消耗'}。`,
+      requiresNetwork: true,
+      canBeDisabled: true, // 可被用户禁用
+      statusText: '网页词典',
+      statusKind: 'default',
+      isWeb: true,
+    })),
   ]
 
   // 默认源候选项：仅显示已启用源
@@ -275,7 +367,7 @@ export default function DictionarySettingsPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 18 }}>🎯</span>
             <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>默认词典源</span>
-            <Text type="secondary" style={{ fontSize: 12 }}>打开查词 / 句子详情时优先使用</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>点击单词查词时优先使用；选网页词典时直接打开新标签页</Text>
           </div>
           <Radio.Group
             value={defaultSourceId}
@@ -287,7 +379,10 @@ export default function DictionarySettingsPage() {
                 <Radio
                   key={s.id}
                   value={s.id}
-                  disabled={s.id === 'local' && localDictCount === 0}
+                  disabled={
+                    (s.id === 'local' && localDictCount === 0) ||
+                    (s.id === 'builtin' && !builtinAvailable)
+                  }
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -336,7 +431,13 @@ export default function DictionarySettingsPage() {
             dataSource={sources}
             renderItem={(s) => {
               const disabled = disabledIds.includes(s.id)
-              const Icon = s.id === 'ai' ? ApiOutlined : BookOutlined
+              // v0.9.2：按 source 类型选标题图标
+              const Icon = s.isWeb
+                ? GlobalOutlined
+                : s.id === 'ai'
+                  ? ApiOutlined
+                  : BookOutlined
+              const iconColor = s.color ?? 'var(--ant-color-primary)'
               return (
                 <List.Item
                   style={{
@@ -360,13 +461,11 @@ export default function DictionarySettingsPage() {
                 >
                   <List.Item.Meta
                     avatar={
-                      <span style={{ fontSize: 24 }}>
-                        {s.emoji}
-                      </span>
+                      <span style={{ fontSize: 24 }}>{s.emoji}</span>
                     }
                     title={
                       <Space>
-                        <Icon style={{ color: 'var(--ant-color-primary)' }} />
+                        <Icon style={{ color: iconColor }} />
                         <span style={{ fontWeight: 600 }}>{s.label}</span>
                         <Tag color={s.statusKind === 'success' ? 'green' : s.statusKind === 'warning' ? 'orange' : 'default'}>
                           {s.requiresNetwork ? '🌐 联网' : '📦 离线'} · {s.statusText}
@@ -629,6 +728,180 @@ export default function DictionarySettingsPage() {
         </Space>
       </Card>
 
+      {/* 内置词典 ECDICT（v1.1.0）*/}
+      <Card
+        style={{
+          marginBottom: 16,
+          borderRadius: 20,
+          border: 'none',
+          background: 'var(--color-bg-elevated, #fff)',
+          boxShadow: 'var(--color-shadow-card, 0 2px 12px rgba(0,0,0,0.04))',
+        }}
+        styles={{ body: { padding: isPhone ? '14px 16px' : '18px 24px' } }}
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 18 }}>📚</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--color-text-primary, #1a1a1a)' }}>内置词典</span>
+            <Text type="secondary" style={{ fontSize: 12 }}>内置 ECDICT 英汉词典，~77 万词条，离线查词</Text>
+            <div style={{ flex: 1 }} />
+            <Tooltip title="刷新内置词典状态">
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={refreshBuiltin}
+                loading={loadingBuiltin}
+              />
+            </Tooltip>
+          </div>
+
+          {/* 状态条 */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            padding: isPhone ? '10px 12px' : '12px 16px',
+            background: builtinAvailable ? 'rgba(82, 196, 26, 0.08)' : 'rgba(245, 34, 45, 0.06)',
+            border: builtinAvailable ? '1px solid rgba(82, 196, 26, 0.3)' : '1px solid rgba(245, 34, 45, 0.2)',
+            borderRadius: 12,
+          }}>
+            {builtinAvailable ? (
+              <CheckCircleFilled style={{ color: '#52c41a', fontSize: 20 }} />
+            ) : (
+              <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 20 }} />
+            )}
+            <span style={{ fontWeight: 700, color: 'var(--color-text-primary)', fontSize: isPhone ? 14 : 15 }}>
+              {builtinAvailable ? '内置词典已就绪' : '内置词典未导入'}
+            </span>
+            {builtinAvailable && (
+              <Tag color="blue" style={{ margin: 0 }}>{builtinEntryCount.toLocaleString()} 词条</Tag>
+            )}
+            {builtinStatus?.source && (
+              <Tag style={{ margin: 0 }}>{builtinStatus.source}</Tag>
+            )}
+          </div>
+
+          {/* 未导入时的引导 */}
+          {!builtinAvailable && builtinStatus && (
+            <Alert
+              type="info"
+              showIcon
+              icon={<DownloadOutlined />}
+              message="未检测到 ECDICT 词库"
+              description={
+                <div style={{ fontSize: 13, lineHeight: 1.7, marginTop: 4 }}>
+                  <div>首次部署时需要下载 ECDICT CSV 词库到 <Text code>backend/data/dict/ecdict.csv</Text>。</div>
+                  <div style={{ marginTop: 6 }}>
+                    在项目根目录执行：
+                    <pre style={{
+                      background: 'rgba(0,0,0,0.04)', padding: '8px 12px', borderRadius: 8,
+                      fontSize: 12, marginTop: 6, marginBottom: 0, overflow: 'auto',
+                    }}>
+{`powershell -ExecutionPolicy Bypass -File scripts\\download-ecdict.ps1`}
+                    </pre>
+                  </div>
+                  <div style={{ marginTop: 6, color: 'var(--color-text-tertiary)' }}>
+                    协议：GPLv3 · 来源：<Text code>github.com/skywind3000/ECDICT</Text>
+                  </div>
+                </div>
+              }
+              style={{ borderRadius: 12 }}
+            />
+          )}
+
+          {/* 统计 + 重导 */}
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <Statistic
+              title="已导入词条"
+              value={builtinEntryCount}
+              suffix="词"
+              prefix={<DatabaseOutlined style={{ color: 'var(--ant-color-primary)' }} />}
+            />
+            <Statistic
+              title="协议"
+              value="GPLv3"
+              valueStyle={{ fontSize: 14 }}
+              prefix={<FileTextOutlined style={{ color: 'var(--ant-color-primary)' }} />}
+            />
+            <div style={{ flex: 1 }} />
+            <Popconfirm
+              title="重新导入内置词典？"
+              description="将清空 built_in_dict 表后从 CSV 重建。词库越大耗时越长（~77 万词条约 30-60 秒）。"
+              onConfirm={handleReloadBuiltin}
+              okText="重导"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+              disabled={!builtinStatus?.csv_exists}
+            >
+              <Button
+                icon={<ThunderboltOutlined />}
+                loading={reloadingBuiltin}
+                disabled={!builtinStatus?.csv_exists}
+                size={isPhone ? 'middle' : 'large'}
+                style={{ borderRadius: 10, minHeight: 44 }}
+              >
+                🔄 重新导入
+              </Button>
+            </Popconfirm>
+          </div>
+
+          {/* 快速试查 */}
+          <div style={{ borderTop: '1px dashed var(--color-border-soft, rgba(0,0,0,0.06))', paddingTop: 12 }}>
+            <Space style={{ width: '100%' }} direction="vertical" size={8}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                <SearchOutlined /> 快速试查内置词典
+              </Text>
+              <Space.Compact style={{ width: '100%' }}>
+                <Input
+                  placeholder="输入英文单词，如 study / studying"
+                  value={builtinSearch}
+                  onChange={(e) => setBuiltinSearch(e.target.value)}
+                  onPressEnter={handleBuiltinSearch}
+                  allowClear
+                  size="middle"
+                  disabled={!builtinAvailable}
+                />
+                <Button
+                  type="primary"
+                  onClick={handleBuiltinSearch}
+                  loading={builtinSearching}
+                  icon={<SearchOutlined />}
+                  disabled={!builtinAvailable}
+                >
+                  查词
+                </Button>
+              </Space.Compact>
+              {builtinSearchResult && (
+                builtinSearchResult.found ? (
+                  <List
+                    size="small"
+                    dataSource={builtinSearchResult.entries}
+                    renderItem={(e) => (
+                      <List.Item style={{ padding: '8px 0' }}>
+                        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                          <Space wrap>
+                            <Text strong>{e.word}</Text>
+                            {e.phonetic && <Text type="secondary">{e.phonetic}</Text>}
+                            {e.pos && <Tag color="blue">{e.pos}</Tag>}
+                            <Tag color={e.matched_by === 'exact' ? 'green' : 'orange'}>
+                              {e.matched_by === 'exact' ? '精确' : e.matched_by}
+                            </Tag>
+                          </Space>
+                          {e.translation && <Text>{e.translation}</Text>}
+                          {e.definition && (
+                            <Text type="secondary" style={{ fontSize: 12 }}>{e.definition}</Text>
+                          )}
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                ) : (
+                  <Alert type="info" showIcon message={`未收录「${builtinSearchResult.word}」`} />
+                )
+              )}
+            </Space>
+          </div>
+        </Space>
+      </Card>
+
       {/* 提示 */}
       <Card
         style={{
@@ -646,11 +919,15 @@ export default function DictionarySettingsPage() {
           <Text type="secondary" style={{ fontSize: 13, lineHeight: 1.7 }}>
             • 在播放器中点击任意一条字幕，可进入「句子详情」查看 AI 翻译、逐词拆解与语法解析。
             <br />
-            • 句子详情页查询会使用此处选择的「默认词典源」逐词查询；本地命中后默认不再调 AI（可关闭）。
+            • 句子详情页查询会使用此处选择的「默认词典源」逐词查询；选网页词典时点击单词直接打开对应网页。
+            <br />
+            • <b>内置词典</b>（v1.1.0 起）：默认附带 ECDICT 词库（GPLv3，~77 万词条），无需上传、零 token 消耗；首次部署时执行 <Text code>scripts\download-ecdict.ps1</Text> 下载。
+            <br />
+            • 「本地词典」组（v0.9.1 起）：用户自行上传 CSV 词库（支持 ECDICT 转换、Anki 导出等格式）。
+            <br />
+            • 「网页词典」组（v0.9.2 起）：点击单词直接打开对应词典网页（<Text code>有道 / Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary</Text>），无 token 消耗。
             <br />
             • 词典源设置保存在浏览器 localStorage（key: <Text code>echosub:dictionary-settings</Text>），切换设备需要重新设置。
-            <br />
-            • 本地词典格式：UTF-8 CSV，列名兼容 <Text code>word/term/lemma/headword</Text> + <Text code>phonetic/ipa</Text> + <Text code>translation/definition/meaning</Text>，可下载 ECDICT 转换工具导出。
           </Text>
         </Space>
       </Card>

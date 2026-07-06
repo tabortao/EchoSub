@@ -37,6 +37,8 @@ interface MenuItemCfg {
 
 // 侧边栏取消「专辑」入口，专辑改为首页按行展示（emby 风格）
 // v0.7.0 AC 风：使用 13 色 NookPhone 调色板
+// v1.1.0：移除「学习计划」入口；v1.2.0 起进一步移除多阶段学习模式相关代码，
+//        播放器内置的 Echo Loop 复读模式即唯一学习交互
 // 颜色是「分类色」—— 区分不同菜单功能，不随主题切换而变化
 const menuItems: MenuItemCfg[] = [
   { key: '/', icon: <HomeOutlined />, label: '首页', color: '#19c8b9', emoji: '🏠' },

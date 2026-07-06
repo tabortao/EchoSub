@@ -8,12 +8,17 @@ backend/tmp/
 *.dylib
 *.test
 *.out
-backend/data/
-backend/*.db
-backend/*.sqlite
-backend/*.sqlite3
+backend/data/avatars/
+backend/data/note-images/
+backend/data/*.db
+backend/data/*.db-shm
+backend/data/*.db-wal
+backend/data/dev.db*
+backend/data/echosub.db*
 backend/config.yaml
 docs/Reference/
+# 内置词典 dict 目录需保留 README + sample + 下载脚本，ecdict.csv 太大不进 git
+backend/data/dict/ecdict.csv
 
 # Frontend
 frontend/node_modules/

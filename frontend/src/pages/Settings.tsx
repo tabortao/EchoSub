@@ -13,6 +13,7 @@ import { useSettingsStore } from '@/store/settings'
 import { useAuthStore } from '@/store/auth'
 import { useDictionaryStore } from '@/store/dictionary'
 import { aiApi, authApi } from '@/api'
+import { kWebDictConfigs } from '@/store/webDictionaryConfig'
 import { THEMES, type ThemeKey } from '@/theme/themes'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
 import type { AIStatus, AITestResponse, ColorMode, Settings, User } from '@/types'
@@ -926,6 +927,16 @@ function DictionaryCard() {
     aiApi.status().then((r) => setStatus(r.data.data)).catch(() => { /* 静默 */ })
   }, [])
 
+  // 把 DictionarySourceId 翻译成显示标签（与 SentenceDetail/DictionarySettings 共用同一口径）
+  const defaultLabel = (() => {
+    if (defaultSourceId === 'ai') return '🤖 AI 词典'
+    if (defaultSourceId === 'local') return '📕 本地词典'
+    if (defaultSourceId === 'builtin') return '📚 内置词典'
+    const cfg = kWebDictConfigs.find((c) => c.id === defaultSourceId)
+    if (cfg) return `${cfg.icon} ${cfg.displayName}`
+    return defaultSourceId
+  })()
+
   return (
     <Card
       style={{
@@ -962,7 +973,7 @@ function DictionaryCard() {
             {status?.enabled ? 'AI 已就绪' : 'AI 未配置'}
           </Tag>
           <Tag color="blue">
-            默认：{defaultSourceId === 'ai' ? 'AI 词典' : '本地词典'}
+            默认：{defaultLabel}
           </Tag>
         </Space>
         <span style={{ fontSize: 20, color: 'var(--color-text-tertiary, #8c8c8c)' }}>›</span>

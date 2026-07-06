@@ -10,7 +10,7 @@
 
 <p>
   <a href="https://github.com/tabortao/EchoSub/releases"><img src="https://img.shields.io/github/v/release/tabortao/EchoSub?style=flat-square&color=6366f1" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Private-lightgrey?style=flat-square" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue?style=flat-square" alt="License: GPLv3"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-success?style=flat-square" alt="Platform">
   <a href="docs/ChangeLog.md"><img src="https://img.shields.io/badge/changelog-keep%20a%20changelog-6366f1?style=flat-square" alt="Changelog"></a>
   <img src="https://img.shields.io/badge/backend-Go%201.26-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
@@ -66,10 +66,14 @@
 
 EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵场景设计。只需将视频 / 音频 + 字幕文件放入被监听的文件夹（NAS / 本地均可），EchoSub 会自动发现、Emby 风格解析元数据并按专辑 / 季分组，提供：
 
-- 🎬 **逐句复读播放器**：每句重复 M 次 → 暂停 K 秒 → 下一句；整体循环 N 次；速度 0.1 步进调节。
+- 🎬 **逐句复读播放器**：每句重复 M 次 → 暂停 K 秒 → 下一句；整体循环 N 次；速度 0.1 步进调节。v1.2.0 起默认开启复读模式 + 顶部 Echo Loop 状态条实时显示复读进度。
 - ✍️ **字幕逐句编辑 + AI 双语翻译**（v0.8.0 起）：播放器内可在线编辑每条字幕并通过 OpenAI 兼容接口批量翻译，v0.8.1 默认生成「原文 + 译文」双语字幕（中文 → 中英 / 英文 → 中英）。
-- 🤖 **AI 字典 + 句子解释**（v0.9.0 起）：设置中可配置词典源；点击每条字幕进入「句子详情页」查看整句翻译 / 逐词拆解 / 语法解析；逐词点击触发 AI 查词弹窗（音标 / 词义 / 词族 / 词源 / 学习提示）。
-- 📕 **本地词典**（v0.9.1 起）：用户上传自己的 CSV 词库即可离线查词，零 token 消耗；查词支持精确匹配 + 简单词形 fallback（`studies → study`），句子详情页默认「本地优先 → AI 兜底」。
+- 🤖 **AI 字典 + 句子解释**（v0.9.0 起）：设置中可配置词典源；点击每条字幕进入「句子详情页」查看整句翻译 / 逐词拆解 / 语法解析。v1.2.0 起原文按词可独立点击查词（**不依赖 AI explain**），AI 未启用时自动回退到内置 ECDICT 词典。
+- 📕 **本地词典**（v0.9.1 起）：用户上传自己的 CSV 词库即可离线查词，零 token 消耗；查词支持精确匹配 + 简单词形 fallback（`studies → study`），单本最大 50 MiB。
+- 📚 **内置词典 ECDICT**（v1.1.0 起）：~77 万词条、零 token 消耗、整库一份的英汉离线词典；首次启动自动导入。
+- ⚡ **v1.2.0 词典智能回退**：默认源是 AI 但未启用 / 查词失败时，自动切换到内置 ECDICT 词典；UI 提示「AI 未启用 · 查词自动回退到内置词典」让用户对自动行为有可见性。
+- 🌐 **网页词典**（v0.9.2 起）：含 **有道词典** / Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary 7 个选项，点击单词直接打开新标签页查网页释义，零 token 消耗。
+- 📱 **息屏播放**（v0.9.2 起）：手机锁屏 / 切后台后音频继续播放；锁屏卡片显示媒体标题 / 专辑 / 封面，支持系统级播放控制（Media Session + Wake Lock API）。
 - 📚 **Markdown 学习页**：每个专辑可创建多份学习笔记，支持多图上传 + 全屏查看 + TTS 朗读。
 - 🏷️ **多态标签系统**（v0.5.0 起）：专辑 / 季 / 学习页 / 媒体四类实体可统一打标签与按标签筛选。
 - 🎨 **Emby 风格扫描**：自动识别 `folder.jpg` / `banner.jpg` / `tvshow.nfo` 等元数据。
@@ -110,7 +114,7 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 - **可插拔数据源设计**：参考 Echo Loop `DictionarySource` 抽象，每种词典源（AI / 本地 / 未来的 StarDict / MDX）都是独立源；通过设置页启用 / 禁用 / 设为默认。
 - **AI 词典**（v0.9.0）：调用 OpenAI 兼容模型，按「词典编纂者」prompt 生成结构化词条（音标 / 词义 / 例句 / 词族 / 词源 / 学习提示）；支持传入 `sentence` 进行上下文消歧。
 - **本地词典**（v0.9.1）：用户上传自己的 CSV 词库（`word,phonetic,translation`，表头列名兼容多种英文别名），单本最大 50 MiB；查词走 SQL（精确 + 简单词形 fallback），零 token 消耗。
-- **句子详情页**：点击每条字幕进入 `/play/:id/sentence/:idx`，AI 一次返回「整句翻译 / 逐词拆解 / 语法解析 / 学习提示」；单词卡片可二次点击触发查词弹窗（本地优先 → AI 兜底）。
+- **句子详情页**（v1.1.0 起，v1.2.0 重构查词交互）：点击每条字幕进入 `/play/:id/sentence/:idx`，AI 一次返回「整句翻译 / 逐词拆解 / 语法解析 / 学习提示」。v1.2.0 起**原文按词可独立点击查词**（不依赖 AI explain）；默认源是 AI 但未启用 / 失败时自动回退到内置 ECDICT 词典。
 - **偏好持久化**：默认词典源 / 禁用源 / 是否本地命中时仍调 AI（`preferLocalHit`）通过 zustand + localStorage 持久化，跨会话保留。
 
 ### 🏷️ 标签管理（v0.5.0 多态）
@@ -288,14 +292,20 @@ go test ./... -v
 
 ### API 集成测试（端到端）
 
-一个自包含的 PowerShell 脚本，会启动后端（使用内存测试数据库）并完整走通 认证 → 扫描 → 媒体 → 字幕 → 记录 → 进度 流程。
+**首选：Python 脚本（v1.1.0 起）**。自包含、无外部依赖，跨平台稳定，输出不被 PowerShell 5.1 吞掉。
 
 ```powershell
-# 在仓库根目录执行
-.\scripts\test-api.ps1
+# 在仓库根目录执行（依赖 Python 3.8+ 与 requests 库）
+python scripts/test-api.py
 ```
 
-也可以手动逐步执行 —— 详见 [scripts/test-api.ps1](scripts/test-api.ps1)。
+启动后端（使用临时测试数据库）并完整走通 **45 项** 端到端检查：注册 → 登录 → 扫描 → 媒体/专辑 → 字幕解析（含 BOM 回归）→ 播放记录 → 句进度 → 设置 → AI 状态/翻译/字典/句子解释 → 本地词典（上传/查词/级联删除）→ 学习进度（首次+7 轮复习体系，含 advance/skip/pause/resume/难句标记/复习队列/统计）→ 内置 ECDICT 词典（状态/查词/重载）。
+
+**首次运行**会触发内置 ECDICT 词库导入（约 77 万词条 / ~70s）；已存在数据时秒过。
+
+源码与说明见 [scripts/test-api.py](scripts/test-api.py)。
+
+> 旧版 PowerShell 脚本 [scripts/test-api.ps1](scripts/test-api.ps1) 已停止维护，仅作参考。
 
 ### 前端构建验证
 
@@ -469,7 +479,61 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 
 > 配置：无需额外配置；上传后立即可用。CSV 格式 `word,phonetic,translation`（表头列名兼容 `word/term/lemma/headword` + `phonetic/ipa/pronunciation` + `translation/definition/meaning/gloss`），UTF-8 编码，无表头时按位置取 word / phonetic / translation。
 >
-> 字典与句子解释共用同一 AI 配置；词典体系采用可插拔数据源设计（`id='ai'` 与 `id='local'` 均已实装），具体见 [ChangeLog v0.9.0](docs/ChangeLog.md#v090---2026-07-06) 与 [ChangeLog v0.9.1](docs/ChangeLog.md#v091---2026-07-06)。在播放器中点击字幕右侧「📖」按钮可进入「句子详情页」（路径 `/play/:id/sentence/:idx`），从单词卡片二次点击触发查词弹窗（**本地优先 → AI 兜底**）。
+> 字典与句子解释共用同一 AI 配置；词典体系采用可插拔数据源设计（`id='ai'` 与 `id='local'` 均已实装），具体见 [ChangeLog v0.9.0](docs/ChangeLog.md#v090---2026-07-06)、[ChangeLog v0.9.1](docs/ChangeLog.md#v091---2026-07-06) 与 [ChangeLog v0.9.2](docs/ChangeLog.md#v092---2026-07-06)。在播放器中点击字幕右侧「📖」按钮可进入「句子详情页」（路径 `/play/:id/sentence/:idx`），从单词卡片二次点击触发查词弹窗（**本地优先 → AI 兜底**）；如果默认词典源是网页词典（v0.9.2+），则直接在新标签页打开该词典的网页释义。
+
+### 🌐 网页词典（v0.9.2，跳转型数据源）
+
+参考 Echo Loop `WebDictConfig` 模式：网页词典**不抓取 / 不解析**任何 HTML 内容，只按词构造 URL 在新标签页打开。**完全前端实现，无后端接口**。当前收录 7 个词典（详见 [ChangeLog v0.9.2](docs/ChangeLog.md#v092---2026-07-06)）：
+
+| id | 名称 | 类型 | URL 模板 |
+|----|------|------|---------|
+| `youdao` | 有道词典 📕 | 中英 / 英英 | `https://m.youdao.com/dict?le=eng&q={w}` |
+| `cambridge` | Cambridge 🎓 | 英中 / 英英 | `https://dictionary.cambridge.org/dictionary/english-chinese-simplified/{w}` |
+| `oxford` | Oxford 📘 | 英英 | `https://www.oxfordlearnersdictionaries.com/definition/english/{w}` |
+| `longman` | Longman 📚 | 英英 | `https://www.ldoceonline.com/dictionary/{w}` |
+| `merriamWebster` | Merriam-Webster 📖 | 英英 | `https://www.merriam-webster.com/dictionary/{w}` |
+| `collins` | Collins 📗 | 英英 | `https://www.collinsdictionary.com/dictionary/english/{w}` |
+| `wiktionary` | Wiktionary 🌐 | 多语 | `https://en.m.wiktionary.org/wiki/{w}` |
+
+> 配置：在「设置 → 📖 词典设置」中启用 / 禁用网页词典，或设为默认词典源（设为默认后，单击单词直接打开该词典网页，不再弹弹窗）。单词弹窗底部「网页词典」快捷跳转区可一键跳转任意已启用的网页词典。
+
+### 📚 内置词典 ECDICT（v1.1.0，全用户共享的离线英汉词库）
+
+参考 Echo Loop 的「下载离线词典库」模式，集成 [skywind3000/ECDICT](https://github.com/skywind3000/ECDICT)（English-Chinese Dictionary）作为内置词典源。词库约 77 万词条、~62.9 MB、零 token 消耗、整库一份。**v1.1.0 起本项目整体分发协议变更为 GNU GPL v3**（沿用 ECDICT 的协议要求）。
+
+| Method | Path                              | 描述                                  |
+|--------|-----------------------------------|--------------------------------------|
+| GET    | `/dictionary/builtin/status`      | 内置词典状态（`available` / `entry_count` / `csv_path` / `csv_exists` / `source`）|
+| GET    | `/dictionary/builtin/lookup`      | 查词（`?word=xxx`，精确匹配优先，未命中时按常见后缀回退到原形再查，返回 `{word, found, entries[]}`，每条带 `matched_by: "exact" \| "lemma:<原形>"`）|
+| POST   | `/dictionary/builtin/reload`      | 重新导入（清空表 → 从 CSV 全量重建，用于版本升级 / CSV 替换后）|
+
+> 数据源：`backend/data/dict/ecdict.csv`（已随仓库 git 提交，避免首次部署无网络时无法查词）。
+>
+> 启动行为：后端启动时后台 goroutine 自动导入（CSV 不存在 / 表已存在则跳过），不阻塞启动。
+>
+> 路径解析顺序：环境变量 `ECHOSUB_BUILTIN_DICT_CSV` → `backend/data/dict/ecdict.csv` → `data/dict/ecdict.csv` → `<exe>/data/dict/ecdict.csv`。
+>
+> 词形 fallback：`Lemmas(word)` 剥离常见后缀（`ies/ied/ying/ed/ing/es/er/est/ly/s`）返回原形候选列表。
+>
+> 查词路由：默认词典源选择「内置 ECDICT」后，单词查词走 `/api/v1/dictionary/builtin/lookup`，零 token 消耗、完全离线。详见 [ChangeLog v1.1.0](docs/ChangeLog.md#v110---2026-07-06)。
+
+### 📈 多阶段学习复习（v1.0.0）
+
+参考 Echo Loop 的「首次学习 → 首轮复习 → ... → 第七轮复习」模型，每位用户每个媒体独立追踪进度；按艾宾浩斯曲线（6h / 1d / 2d / 4d / 7d / 14d / 28d）安排复习间隔。学习阶段 `first_learn` 含 4 个子步骤（`intensive_listen` / `shadowing` / `blind_listen` / `retell`），每轮复习 `review_1..review_7` 含 2 个子步骤（`review_difficult` / `review_blind`）。播放器中 `LearningModeBanner` 组件根据当前子步骤自动调整行为（切复读/遮挡/跳难句等），详见 [ChangeLog v1.0.0](docs/ChangeLog.md#v100---2026-07-06)。
+
+| Method | Path                                              | 描述                                              |
+|--------|---------------------------------------------------|--------------------------------------------------|
+| GET    | `/media/:id/learning-progress`                    | 获取学习进度（首次访问自动创建默认记录）           |
+| POST   | `/media/:id/learning-progress/advance`           | 完成当前子步骤并推进（body 可选 `study_duration_ms`）|
+| POST   | `/media/:id/learning-progress/skip`              | 跳过当前子步骤（不计入学习时长，入口子步骤不可跳） |
+| POST   | `/media/:id/learning-progress/pause`             | 暂停学习（`is_paused=true` 后 advance/skip 被拒） |
+| POST   | `/media/:id/learning-progress/resume`            | 恢复学习                                          |
+| GET    | `/media/:id/difficult-sentences`                 | 列出当前用户某媒体的全部难句标记                   |
+| POST   | `/media/:id/difficult-sentences`                 | 标记/取消难句（body `{sentence_index, marked}`）   |
+| GET    | `/learning/review-queue`                          | 全局复习队列（含 `is_overdue` / `is_ready` 派生字段）|
+| GET    | `/learning/stats`                                 | 学习统计（`first_learning` / `reviewing_by_stage` / `completed` / `paused` / `total`）|
+
+> 数据模型：`learning_progresses`（user×media 唯一）/ `sub_stage_completions`（user×media×stage×sub 唯一）/ `difficult_sentences`（user×media×sentence_index 唯一）。进度响应中含 `stage_label` / `stage_emoji` / `sub_stage_label` / `stage_plan` / `next_review_at` / `interval_hours` / `is_review_ready` / `is_completed` / `total_sub_stages` / `completed_sub_stages` 等派生字段，前端可直接渲染。
 
 > 配置：通过 `ECHOSUB_AI_BASE_URL` / `ECHOSUB_AI_API_KEY` / `ECHOSUB_AI_MODEL` 等环境变量注入后端，密钥不出前端、不进数据库。设置页「🤖 AI 翻译」卡片提供「⚡ 测试连通性」按钮，命中后即在卡片内显示绿色「连通正常」+ 耗时 +「Hello → 你好」样例。详见 [ChangeLog v0.8.0](docs/ChangeLog.md#v080---2026-07-06) 与 [ChangeLog v0.8.1](docs/ChangeLog.md#v081---2026-07-06)。
 
@@ -602,7 +666,7 @@ volumes:
 
 - 每个自然日的所有变更合并为 **一个** 版本号（如 `v0.7.0`），详见 [docs/ChangeLog.md](docs/ChangeLog.md)。
 - 版本遵循 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范，仅使用 `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` 六类。
-- 当前活跃版本：**v0.9.1**（本地词典 + AI 词典体系，参考 Echo Loop `DictionarySource` 抽象）。
+- 当前活跃版本：**v0.9.2**（网页词典 + 息屏播放 + 音频专辑优化，参考 Echo Loop `WebDictConfig` + Media Session / Wake Lock API）。
 
 ## 🏝️ 动森风格设计语言（v0.7.0）
 

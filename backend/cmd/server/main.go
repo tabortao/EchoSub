@@ -10,6 +10,7 @@ import (
 
 	"github.com/yaole/EchoSub/backend/internal/config"
 	"github.com/yaole/EchoSub/backend/internal/database"
+	"github.com/yaole/EchoSub/backend/internal/handlers"
 	"github.com/yaole/EchoSub/backend/internal/router"
 	"github.com/yaole/EchoSub/backend/internal/scanner"
 )
@@ -25,6 +26,9 @@ func main() {
 	if err := database.Init(cfg); err != nil {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
+
+	// 内置词典 ECDICT（v1.1.0）：启动时异步导入（CSV 存在 + 表为空时）
+	handlers.EnsureImported()
 
 	// 媒体扫描器
 	sc := scanner.New(cfg)

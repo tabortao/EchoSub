@@ -154,6 +154,30 @@ func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 			dict.POST("/local/upload", dictH.UploadLocalDict)
 			dict.POST("/local/lookup", dictH.LookupLocalDict)
 			dict.DELETE("/local/:id", dictH.DeleteLocalDict)
+
+			// 内置词典 ECDICT（v1.1.0）：后端启动时从 CSV 自动导入
+			builtinH := handlers.NewBuiltinDictHandler(cfg)
+			dict.GET("/builtin/status", builtinH.Status)
+			dict.GET("/builtin/lookup", builtinH.Lookup)
+			dict.POST("/builtin/reload", builtinH.Reload)
 		}
+
+		// 多阶段学习复习体系（v1.0.0）
+		//
+		// 路由说明：
+		//   /media/:id/learning-progress/*   单个媒体的学习进度
+		//   /media/:id/difficult-sentences   单个媒体的难句标记
+		//   /learning/review-queue           待复习列表
+		//   /learning/stats                  学习统计
+		learningH := handlers.NewLearningHandler()
+		authed.GET("/media/:id/learning-progress", learningH.GetLearningProgress)
+		authed.POST("/media/:id/learning-progress/advance", learningH.AdvanceLearningProgress)
+		authed.POST("/media/:id/learning-progress/skip", learningH.SkipLearningProgress)
+		authed.POST("/media/:id/learning-progress/pause", learningH.PauseLearningProgress)
+		authed.POST("/media/:id/learning-progress/resume", learningH.ResumeLearningProgress)
+		authed.GET("/media/:id/difficult-sentences", learningH.ListDifficultSentences)
+		authed.POST("/media/:id/difficult-sentences", learningH.MarkDifficultSentence)
+		authed.GET("/learning/review-queue", learningH.ListReviewQueue)
+		authed.GET("/learning/stats", learningH.GetLearningStats)
 	}
 }

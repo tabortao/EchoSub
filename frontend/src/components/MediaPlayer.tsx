@@ -16,7 +16,7 @@ import {
   PlusOutlined,
   FileTextOutlined,
   EditOutlined,
-  BookOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import { mediaApi, recordApi } from '@/api'
 import { useSettingsStore } from '@/store/settings'
@@ -26,6 +26,7 @@ import { formatDuration } from '@/utils'
 import MarkdownEditor from '@/components/MarkdownEditor'
 import SubtitleEditor from '@/components/SubtitleEditor'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
+import { useMediaSession, MEDIA_ELEMENT_MARK_ATTR } from '@/hooks/useMediaSession'
 
 const { Text } = Typography
 
@@ -41,6 +42,18 @@ interface MediaPlayerProps {
   initialPosition: number
   sentences: Sentence[]
   playCount: number
+  /**
+   * 媒体名（v0.9.2 起：用于 Media Session 锁屏卡片标题）。
+   * 未传时回退到 `medias/${id}` 占位。
+   */
+  mediaName?: string
+  /** 所属专辑（含子专辑），用于 Media Session album 字段，可选 */
+  mediaAlbum?: string
+  /**
+   * 媒体封面相对路径（v0.9.2 起：用于 Media Session 锁屏封面）。
+   * 由调用方负责拼接 base URL（如 token 鉴权需要）。
+   */
+  mediaCoverUrl?: string | null
 }
 
 type PlayMode = 'normal' | 'repeat'
@@ -55,7 +68,7 @@ const RATE_MIN = 0.5
 const RATE_MAX = 2.0
 const RATE_STEP = 0.1
 
-export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPosition, sentences, playCount }: MediaPlayerProps) {
+export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPosition, sentences, playCount, mediaName, mediaAlbum, mediaCoverUrl }: MediaPlayerProps) {
   const navigate = useNavigate()
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
   const videoContainerRef = useRef<HTMLDivElement>(null)
@@ -70,11 +83,16 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   useEffect(() => { setLocalSentences(sentences) }, [sentences])
 
   // UI 状态
+  // v1.2.0：默认开启逐句复读（Echo Loop 模式）。这是 Echo Loop 参考实现的核心行为：
+  //   - 每句重复 N 次（sentence_repeat）
+  //   - 句末停顿 K 秒（pause_seconds）
+  //   - 整体循环 M 次（loop_count）
+  // 用户可手动关闭「逐句复读」开关回到普通播放模式。
   const [playing, setPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1)
-  const [mode, setMode] = useState<PlayMode>('normal')
+  const [mode, setMode] = useState<PlayMode>('repeat')
   const [loopCount, setLoopCount] = useState(loop_count || 3)
   const [sentenceRepeat, setSentenceRepeat] = useState(sentence_repeat || 3)
   const [pauseSeconds, setPauseSeconds] = useState(pause_seconds ?? 1.5)
@@ -407,6 +425,45 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
     setVolume(value)
   }
 
+  // Media Session + Wake Lock 集成（v0.9.2 起）
+  // - 锁屏 / 通知中心显示媒体元数据（标题 / 专辑 / 封面）
+  // - 系统控制中心 / 蓝牙耳机按键 → 触发 onPlay / onPause / onSeek
+  // - 播放时申请 Wake Lock，暂停 / 卸载时释放；切回前台自动续期
+  useMediaSession({
+    metadata: {
+      title: mediaName ?? `Media #${mediaId}`,
+      artist: mediaAlbum ?? 'EchoSub',
+      album: mediaAlbum ?? 'EchoSub',
+      artwork: mediaCoverUrl
+        ? [
+            { src: mediaCoverUrl, sizes: '96x96', type: 'image/jpeg' },
+            { src: mediaCoverUrl, sizes: '192x192', type: 'image/jpeg' },
+            { src: mediaCoverUrl, sizes: '512x512', type: 'image/jpeg' },
+          ]
+        : [],
+    },
+    playbackState: playing ? 'playing' : 'paused',
+    position: {
+      duration: duration || 0,
+      currentTime: currentTime || 0,
+      playbackRate,
+    },
+    handlers: {
+      onPlay: () => {
+        const el = mediaRef.current
+        if (el && el.paused) el.play().then(() => setPlaying(true)).catch(() => {})
+      },
+      onPause: () => {
+        const el = mediaRef.current
+        if (el && !el.paused) {
+          el.pause()
+          setPlaying(false)
+        }
+      },
+      onSeek: (to) => onSeek(to),
+    },
+  })
+
   // 播放速度（0.1 间隔加减，范围 0.5-2.0）
   const onRateChange = (rate: number) => {
     const clamped = Math.min(RATE_MAX, Math.max(RATE_MIN, rate))
@@ -443,24 +500,30 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
     }
   }
 
-  // 点击句子跳转 + 遮挡模式下 toggle 揭示
+  // 点击句子：默认进入句子学习界面（v1.2.0 用户诉求）
+  //   - 遮挡模式下：切换该句的揭示状态（保持原行为，便于盲听中快速核对）
+  //   - 普通模式：跳转到「句子详情」页面（SentenceDetail），可逐词查词 / 整句解释
+  //   - 用户可点击「回到播放」按钮回到播放器并定位到该句时间戳
   const handleSentenceClick = (idx: number) => {
+    const s = localSentences[idx]
+    if (!s) return
     if (maskMode) {
       setRevealed((prev) => {
         const next = new Set(prev)
-        const sentIdx = localSentences[idx].index
-        if (next.has(sentIdx)) {
-          next.delete(sentIdx)
+        if (next.has(s.index)) {
+          next.delete(s.index)
         } else {
-          next.add(sentIdx)
+          next.add(s.index)
         }
         return next
       })
+      return
     }
-    jumpToSentence(idx)
+    // 普通模式：进入句子学习界面
+    navigate(`/play/${mediaId}/sentence/${s.index}`)
   }
 
-  // 跳转到指定句子
+  // 跳转到指定句子（不在字幕行直接使用；保留给收藏播放等场景）
   const jumpToSentence = (idx: number) => {
     const el = mediaRef.current
     if (!el || !localSentences[idx]) return
@@ -565,8 +628,53 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
 
   return (
     <div>
-      {/* 视频/音频 tab 切换：仅在存在配对时展示（AC 风 pill 圆角） */}
-      {pairedMedia && pairedMedia.type !== mediaType && (
+      {/* Echo Loop 模式状态条（v1.2.0）：
+         - 默认开启逐句复读，顶部持续显示当前模式 + 循环遍数徽标
+         - 参考 Echo Loop `loopWhole` + `loopSentence` 双循环设计 */}
+      <div
+        style={{
+          marginBottom: 12,
+          padding: isPhone ? '8px 12px' : '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          background: mode === 'repeat' ? 'rgba(105, 192, 255, 0.08)' : 'var(--ac-bg-content, rgb(247, 243, 223))',
+          border: mode === 'repeat' ? '1.5px solid rgba(105, 192, 255, 0.35)' : '1.5px solid var(--color-border-soft)',
+          borderRadius: 'var(--radius-pill)',
+        }}
+      >
+        <span style={{ fontSize: isPhone ? 16 : 18 }}>{mode === 'repeat' ? '🔁' : '▶'}</span>
+        <Text strong style={{ fontSize: isPhone ? 13 : 14, color: 'var(--ac-text-header, #794f27)' }}>
+          {mode === 'repeat' ? 'Echo Loop 复读中' : '普通播放'}
+        </Text>
+        {mode === 'repeat' && hasSubtitle && (
+          <>
+            <Tag color="cyan" style={{ margin: 0 }}>
+              每句 × {sentenceRepeat} 遍
+            </Tag>
+            <Tag color="blue" style={{ margin: 0 }}>
+              句末停 {pauseSeconds}s
+            </Tag>
+            <Tag color="geekblue" style={{ margin: 0 }}>
+              整体循环 {loopCount} 次
+            </Tag>
+            {currentSentenceIdx >= 0 && (
+              <Tag color="processing" style={{ margin: 0 }}>
+                第 {currentSentenceIdx + 1}/{localSentences.length} 句 · 重复 {repeatCount}/{sentenceRepeat}
+              </Tag>
+            )}
+          </>
+        )}
+        {!hasSubtitle && mode === 'repeat' && (
+          <Tag color="warning" style={{ margin: 0 }}>无字幕，复读模式不可用</Tag>
+        )}
+      </div>
+
+      {/* 媒体类型标签 / 视频↔音频 tab 切换（v0.9.2）
+         - 有配对：渲染 CheckableTag 双 tab 切换
+         - 无配对：仅渲染一个静态媒体类型标签（音频专辑只显示「🎵 音频」，不会误显示「🎬 视频」） */}
+      {pairedMedia && pairedMedia.type !== mediaType ? (
         <div style={{
           marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
           padding: 4, background: 'var(--ac-bg-content, rgb(247, 243, 223))',
@@ -584,7 +692,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               fontWeight: 600,
             }}
           >
-            🎬 视频
+            {mediaType === 'video' ? '🎬 视频' : '🎵 音频'}
           </Tag.CheckableTag>
           <Tag.CheckableTag
             checked={activeType === pairedMedia.type}
@@ -598,11 +706,30 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               fontWeight: 600,
             }}
           >
-            🎵 音频
+            {pairedMedia.type === 'video' ? '🎬 视频' : '🎵 音频'}
           </Tag.CheckableTag>
           <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>
             （同专辑同基名配对：{mediaType === 'video' ? pairedMedia.name : '视频'}）
           </Text>
+        </div>
+      ) : (
+        // 无配对：仅显示一个静态媒体类型标签（v0.9.2：避免音频专辑误显示「视频」）
+        <div style={{
+          marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        }}>
+          <span
+            aria-label={mediaType === 'video' ? '视频' : '音频'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '4px 12px', fontSize: 12, fontWeight: 600,
+              color: 'var(--ac-text-primary, #725d42)',
+              background: 'var(--ac-bg-content, rgb(247, 243, 223))',
+              border: '1.5px solid var(--color-border-soft)',
+              borderRadius: 'var(--radius-pill)',
+            }}
+          >
+            {mediaType === 'video' ? '🎬 视频' : '🎵 音频'}
+          </span>
         </div>
       )}
 
@@ -626,6 +753,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               ref={mediaRef as React.RefObject<HTMLVideoElement>}
               src={streamUrl}
               style={{ maxHeight: isFullscreen ? '100vh' : 480, width: '100%' }}
+              {...{ [MEDIA_ELEMENT_MARK_ATTR]: 'true' }} // v0.9.2: 标记媒体元素供 useMediaSession 找到
               onTimeUpdate={onTimeUpdate}
               onLoadedMetadata={onLoadedMetadata}
               onEnded={onEnded}
@@ -678,6 +806,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
           <audio
             ref={mediaRef as React.RefObject<HTMLAudioElement>}
             src={streamUrl}
+            {...{ [MEDIA_ELEMENT_MARK_ATTR]: 'true' }} // v0.9.2: 标记媒体元素供 useMediaSession 找到
             onTimeUpdate={onTimeUpdate}
             onLoadedMetadata={onLoadedMetadata}
             onEnded={onEnded}
@@ -697,11 +826,12 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
         tooltip={{ formatter: (v) => formatDuration(v ?? 0) }}
         style={{ marginBottom: 12 }}
       />
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
         <Text type="secondary">{formatDuration(currentTime)} / {formatDuration(duration)}</Text>
+        {/* Echo Loop 模式徽标（v1.2.0：合并到顶部状态条后，此处仅显示整体循环进度） */}
         {mode === 'repeat' && currentSentenceIdx >= 0 && (
-          <Tag color="processing">
-            第 {currentSentenceIdx + 1}/{localSentences.length} 句 · 重复 {repeatCount}/{sentenceRepeat}
+          <Tag color="cyan">
+            🔁 整体第 {Math.min(overallLoopRef.current + 1, loopCount)}/{loopCount} 轮
           </Tag>
         )}
       </div>
@@ -806,8 +936,8 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
         alignItems: 'center',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 36 }}>
-          <Tooltip title="开启后结合字幕逐句重复播放">
-            <span style={{ fontWeight: 500 }}>逐句复读</span>
+          <Tooltip title="Echo Loop：开启后每句重复 N 次 → 停顿 K 秒 → 下一句，整体循环 M 次">
+            <span style={{ fontWeight: 600 }}>🔁 Echo Loop</span>
           </Tooltip>
           <Switch checked={mode === 'repeat'} onChange={onModeChange} disabled={!hasSubtitle} />
           {!hasSubtitle && <Tag>无字幕</Tag>}
@@ -951,15 +1081,12 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                           {/* 始终显示听遍数，让用户能看到每句的学习情况 */}
                           <Tag color={s.repeat_count > 0 ? 'orange' : 'default'} style={{ margin: 0, flexShrink: 0 }}>听 {s.repeat_count} 遍</Tag>
                           {s.completed && <Tag color="success" style={{ margin: 0, flexShrink: 0 }}>已背</Tag>}
-                          <Tooltip title="查看句子详情（AI 翻译/逐词/语法）">
+                          <Tooltip title="跳到这句播放">
                             <Button
                               type="text"
                               size={isPhone ? 'middle' : 'small'}
-                              icon={<BookOutlined />}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                navigate(`/play/${mediaId}/sentence/${s.index}`)
-                              }}
+                              icon={<ThunderboltOutlined />}
+                              onClick={(e) => { e.stopPropagation(); jumpToSentence(i) }}
                               style={{ minWidth: 36, minHeight: 36 }}
                             />
                           </Tooltip>

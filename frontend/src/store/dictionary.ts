@@ -2,12 +2,15 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { LocalDictionary } from '@/types'
 
-/** v0.9.0 字典设置（本地持久化，localStorage） */
+/** v1.1.0 词典源 id 联合类型：ai / local / builtin(内置 ECDict) / 网页词典 */
+export type DictionarySourceId = 'ai' | 'local' | 'builtin' | 'youdao' | 'cambridge' | 'oxford' | 'longman' | 'merriamWebster' | 'collins' | 'wiktionary'
+
+/** v0.9.2 字典设置（本地持久化，localStorage） */
 interface DictionaryState {
   /** 默认词典源 id */
-  defaultSourceId: 'ai' | 'local'
+  defaultSourceId: DictionarySourceId
   /** 被禁用的源 id 集合（仅含 canBeDisabled=true 的源） */
-  disabledIds: Array<'ai' | 'local'>
+  disabledIds: DictionarySourceId[]
 
   /** 已上传的本地词典列表（v0.9.1；启动时由前端从后端拉取填充） */
   localDicts: LocalDictionary[]
@@ -16,8 +19,8 @@ interface DictionaryState {
   /** 查词时是否优先使用本地词典命中（命中即不再请求 AI） */
   preferLocalHit: boolean
 
-  setDefault: (id: 'ai' | 'local') => void
-  setDisabled: (id: 'ai' | 'local', disabled: boolean) => void
+  setDefault: (id: DictionarySourceId) => void
+  setDisabled: (id: DictionarySourceId, disabled: boolean) => void
 
   /** 替换本地词典列表（一般由 `localDictApi.list()` 的结果回填） */
   setLocalDicts: (dicts: LocalDictionary[]) => void
@@ -29,6 +32,9 @@ interface DictionaryState {
 }
 
 const STORAGE_KEY = 'echosub:dictionary-settings'
+
+/** 兜底：被禁用的源被设为默认时，回退到 ai */
+const FALLBACK_SOURCE_ID: DictionarySourceId = 'ai'
 
 export const useDictionaryStore = create<DictionaryState>()(
   persist(
@@ -43,9 +49,9 @@ export const useDictionaryStore = create<DictionaryState>()(
         const cur = new Set(get().disabledIds)
         if (disabled) {
           cur.add(id)
-          // 禁用当前默认源时回退到 AI（兜底）
+          // 禁用当前默认源时回退到 ai（兜底）
           if (get().defaultSourceId === id) {
-            set({ disabledIds: Array.from(cur), defaultSourceId: 'ai' })
+            set({ disabledIds: Array.from(cur), defaultSourceId: FALLBACK_SOURCE_ID })
             return
           }
         } else {
@@ -60,8 +66,8 @@ export const useDictionaryStore = create<DictionaryState>()(
     }),
     {
       name: STORAGE_KEY,
-      version: 2,
-      // v0.9.1：新增 localDicts / preferLocalHit；旧版无此字段，partialize 确保新字段不强制覆盖
+      version: 4,
+      // v1.1.0：扩展 sourceId 联合类型，新增 'builtin'；旧值仍合法，无需迁移
       partialize: (state) => ({
         defaultSourceId: state.defaultSourceId,
         disabledIds: state.disabledIds,

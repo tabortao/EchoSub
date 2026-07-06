@@ -55,6 +55,12 @@ func Init(cfg *config.Config) error {
 		// 本地词典（v0.9.1）
 		&models.LocalDictionary{},
 		&models.DictEntry{},
+		// 内置词典 ECDICT（v1.1.0）
+		&models.BuiltinDict{},
+		// 多阶段学习复习体系（v1.0.0）
+		&models.LearningProgress{},
+		&models.SubStageCompletion{},
+		&models.DifficultSentence{},
 	); err != nil {
 		return fmt.Errorf("数据库迁移失败: %w", err)
 	}

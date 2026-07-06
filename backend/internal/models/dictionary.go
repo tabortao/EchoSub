@@ -48,3 +48,31 @@ type DictEntry struct {
 
 // TableName 显式指定表名
 func (DictEntry) TableName() string { return "dict_entries" }
+
+// BuiltinDict 内置词典词条（v1.1.0 起，集成 ECDICT 词库）
+//
+// 与 LocalDict 的区别：
+//   - 数据来源：后端首次启动时从 backend/data/dict/ecdict.csv 自动导入
+//   - 数据归属：单实例共享（不像 LocalDict 那样按用户隔离），整库一份
+//   - 字段：贴合 ECDICT CSV 格式（word, phonetic, pos, definition, translation, exchange）
+//     - pos 词性（n./v./adj. ...）
+//     - definition 英文释义
+//     - translation 中文翻译（ECDICT 已合并 translation 字段）
+//     - exchange 词形变化（过去式/复数/比较级 JSON，可选）
+//
+// 索引策略：
+//   - (word) 唯一约束保证导入去重
+//   - (pos, word) 复合索引让"按词性筛选"也走索引
+type BuiltinDict struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	Word        string    `gorm:"size:128;uniqueIndex:idx_builtin_word;not null" json:"word"`
+	Phonetic    string    `gorm:"size:128" json:"phonetic"`
+	Pos         string    `gorm:"size:32;index:idx_builtin_pos" json:"pos"`
+	Definition  string    `gorm:"type:text" json:"definition"`
+	Translation string    `gorm:"type:text" json:"translation"`
+	Exchange    string    `gorm:"type:text" json:"exchange"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// TableName 显式指定表名
+func (BuiltinDict) TableName() string { return "built_in_dict" }

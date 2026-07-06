@@ -438,14 +438,29 @@ export interface SentenceExplainResponse {
   notes: string
 }
 
+/** 词典数据源 id 联合类型（v0.9.2 起扩展网页词典：youdao/cambridge/oxford/longman/merriamWebster/collins/wiktionary） */
+export type DictionarySourceId =
+  | 'ai'
+  | 'local'
+  | 'builtin'
+  | 'youdao'
+  | 'cambridge'
+  | 'oxford'
+  | 'longman'
+  | 'merriamWebster'
+  | 'collins'
+  | 'wiktionary'
+
 /** 词典数据源描述（用于词典设置页） */
 export interface DictionarySourceMeta {
   /** 源 id（持久化 key） */
-  id: 'ai' | 'local'
+  id: DictionarySourceId
   /** 显示名 */
   label: string
   /** 图标 emoji */
   emoji: string
+  /** 品牌强调色（设置页卡片头像背景） */
+  color?: string
   /** 描述 */
   description: string
   /** 是否需要联网 */
@@ -456,6 +471,8 @@ export interface DictionarySourceMeta {
   statusText: string
   /** 状态色调 */
   statusKind: 'success' | 'warning' | 'default'
+  /** 是否为网页词典（点击即跳转新标签页，无结构化内容） */
+  isWeb?: boolean
 }
 
 // ============================================================================
@@ -526,4 +543,184 @@ export interface LocalDictLookupResponse {
   word: string
   found: boolean
   entries: LocalDictLookupEntry[]
+}
+
+// ============================================================================
+// v1.1.0 内置词典 ECDICT（GPLv3，~77 万词条；与 LocalDict 独立）
+// ============================================================================
+
+/** 内置词典系统状态 */
+export interface BuiltinDictStatus {
+  /** 是否已成功导入（词条数 > 0） */
+  available: boolean
+  /** 已导入的词条数 */
+  entry_count: number
+  /** CSV 文件绝对路径（用于诊断） */
+  csv_path: string
+  /** CSV 文件是否存在（v1.1.0 起） */
+  csv_exists: boolean
+  /** 词库名称/版本（来自 CSV 文件名 / 头部注释） */
+  source: string
+}
+
+/** 内置词典查词命中条目 */
+export interface BuiltinDictEntry {
+  word: string
+  phonetic: string
+  pos: string
+  definition: string
+  translation: string
+  matched_by: 'exact' | string
+}
+
+/** 内置词典查词响应 */
+export interface BuiltinDictLookupResponse {
+  word: string
+  found: boolean
+  entries: BuiltinDictEntry[]
+}
+
+/** 内置词典重导响应（v1.1.0） */
+export interface BuiltinDictReloadResponse extends BuiltinDictStatus {
+  /** 重导耗时（毫秒） */
+  duration_ms: number
+}
+
+// ============================================================================
+// v1.0.0 多阶段学习复习体系
+// ============================================================================
+
+/** 学习大阶段 id（与后端 learning.Stage* 常量一致） */
+export type LearningStage =
+  | 'first_learn'
+  | 'review_1'
+  | 'review_2'
+  | 'review_3'
+  | 'review_4'
+  | 'review_5'
+  | 'review_6'
+  | 'review_7'
+  | 'completed'
+
+/** 学习子步骤 id（与后端 learning.SubStage* 常量一致） */
+export type LearningSubStage =
+  | 'intensive_listen'   // 逐句精听（首次学习入口）
+  | 'shadowing'          // 难句跟读
+  | 'blind_listen'       // 全文盲听
+  | 'retell'             // 段落复述
+  | 'review_difficult'   // 复习-难句补练
+  | 'review_blind'       // 复习-盲听
+
+/** 学习进度响应（GET /media/:id/learning-progress） */
+export interface LearningProgressResponse {
+  id: number
+  user_id: number
+  media_id: number
+  current_stage: LearningStage
+  current_sub_stage: LearningSubStage | ''
+  first_learn_completed_at: string | null
+  last_stage_completed_at: string | null
+  current_stage_started_at: string | null
+  total_study_duration_ms: number
+  blind_listen_pass_count: number
+  intensive_listen_pass_count: number
+  shadowing_pass_count: number
+  retell_pass_count: number
+  is_paused: boolean
+  created_at: string
+  updated_at: string
+  // 派生字段（后端 buildProgressResponse 注入）
+  stage_label: string
+  stage_emoji: string
+  sub_stage_label: string
+  stage_plan: LearningSubStage[]
+  stage_index: number
+  stage_sub_index: number
+  is_entry_sub_stage: boolean
+  next_review_at: string | null
+  interval_hours: number
+  is_review_ready: boolean
+  is_completed: boolean
+  total_sub_stages: number
+  completed_sub_stages: number
+}
+
+/** 子步骤完成记录 */
+export interface SubStageCompletion {
+  id: number
+  user_id: number
+  media_id: number
+  stage: LearningStage
+  sub_stage: LearningSubStage
+  study_duration_ms: number
+  completed_at: string
+}
+
+/** 难句标记 */
+export interface DifficultSentence {
+  id: number
+  user_id: number
+  media_id: number
+  sentence_index: number
+  marked_at: string
+}
+
+/** 难句列表响应 */
+export interface DifficultSentencesResponse {
+  items: DifficultSentence[]
+  count: number
+}
+
+/** 标记/取消标记难句请求 */
+export interface MarkDifficultRequest {
+  sentence_index: number
+  marked: boolean
+}
+
+/** 复习队列项 */
+export interface ReviewQueueItem {
+  media_id: number
+  media_name: string
+  media_type: 'video' | 'audio'
+  media_album: string | null
+  media_sub_album: string | null
+  media_cover_path: string | null
+  current_stage: LearningStage
+  stage_label: string
+  stage_emoji: string
+  current_sub_stage: LearningSubStage
+  sub_stage_label: string
+  last_completed_at: string | null
+  next_review_at: string
+  is_overdue: boolean
+  is_ready: boolean
+  hours_until_ready: number
+}
+
+/** 复习队列响应 */
+export interface ReviewQueueResponse {
+  items: ReviewQueueItem[]
+  count: number
+}
+
+/** 学习统计响应 */
+export interface LearningStats {
+  first_learning: number
+  reviewing_by_stage: Record<string, number>
+  total_reviewing: number
+  completed: number
+  paused: number
+  total: number
+}
+
+/** 完成本步请求 body */
+export interface AdvanceLearningRequest {
+  /** 本次学习耗时（毫秒），可选 */
+  study_duration_ms?: number
+}
+
+/** 推进响应（含进阶标识） */
+export interface AdvanceLearningResponse {
+  progress: LearningProgressResponse
+  stage_advanced: boolean
 }

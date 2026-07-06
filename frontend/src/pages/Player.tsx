@@ -6,8 +6,20 @@ import { mediaApi } from '@/api'
 import type { MediaFile, Sentence, MediaListItem, MediaListResponse, MediaDetailResponse, PairedMedia } from '@/types'
 import MediaPlayer from '@/components/MediaPlayer'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
+import { useAuthStore } from '@/store/auth'
 
 const { Title, Text } = Typography
+
+/**
+ * 构造媒体封面 URL（v0.9.2：用于 Media Session 锁屏卡片）。
+ * - media.cover_path 为 null/空：返回 null（锁屏卡片不显示封面）
+ * - 否则走 `/api/v1/media/:id/cover?token=` 端点；后端按媒体 id 查找封面
+ *   相对路径，调用方无需关心绝对路径或文件存在性
+ */
+function buildCoverUrl(mediaId: number, hasCover: boolean, token: string): string | null {
+  if (!hasCover) return null
+  return mediaApi.coverUrl(mediaId, token)
+}
 
 /**
  * 播放器页面：加载单个媒体 + 字幕，并提供同专辑内上一个/下一个切换。
@@ -32,6 +44,8 @@ export default function Player() {
   const [pairedMedia, setPairedMedia] = useState<PairedMedia | null>(null)
   const [siblingIds, setSiblingIds] = useState<{ prev?: number; next?: number }>({})
   const { isPhone } = useDeviceSize()
+  // v0.9.2: 读取 token 用于构造媒体封面 URL（Media Session 锁屏卡片）
+  const token = useAuthStore((s) => s.token)
 
   // 解析 ?position=X 覆盖：负数/NaN 当作 0
   const positionOverride = (() => {
@@ -200,6 +214,10 @@ export default function Player() {
         initialPosition={positionOverride ?? record?.last_position ?? 0}
         sentences={sentences}
         playCount={record?.play_count ?? 0}
+        // v0.9.2: 把媒体元数据传给播放器，供 Media Session 锁屏卡片使用
+        mediaName={media.name}
+        mediaAlbum={[media.album, media.sub_album].filter(Boolean).join(' / ') || undefined}
+        mediaCoverUrl={buildCoverUrl(media.id, !!media.cover_path, token ?? '')}
       />
     </div>
   )

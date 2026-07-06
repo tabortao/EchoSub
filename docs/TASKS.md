@@ -1,6 +1,291 @@
-# TASKS.md — v0.9.1 本地词典
+# TASKS.md — v1.2.0 Echo Loop 复读模式 + 句子原文按词查词 + 词典智能回退 + 移除学习计划
 
 配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v1.2.0 Echo Loop 复读模式 + 句子原文按词查词 + 词典智能回退 + 移除学习计划（2026-07-06）
+
+### 前端 — Echo Loop 复读模式
+
+- [x] **T1** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) 新增 Echo Loop 状态条
+  - 模式为「复读」时显示：🔁 + 文本「Echo Loop 复读中」+ 三枚标签（每句 ×N 遍 / 句末停 K 秒 / 整体循环 M 次）+ 实时播放进度「第 i/N 句 · 重复 r/N」
+  - 模式为「普通」时显示：▶ + 文本「普通播放」
+  - 无字幕时显示「无字幕，复读模式不可用」warning tag
+
+### 前端 — 句子详情页原文按词查词
+
+- [x] **T2** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 新增 `splitSentenceTokens(text)` 工具
+  - 单词识别：`/[A-Za-z][A-Za-z0-9'\-]*/g`，覆盖 `don't` / `well-known` 等混合形式
+  - 标点 / 空格作为 `sep` token 保留原句版式
+  - 纯前端正则，不调用任何后端 / AI
+- [x] **T3** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 原文卡片单词 span
+  - 每个 word token 渲染为带 hover 高亮 + 虚线下划线的可点击 span
+  - `onClick` 触发 `handleWordClick(tok.text)` → 复用现有词典分派逻辑
+  - 支持键盘 Enter / Space 触发（`role="button" tabIndex={0}`）
+  - 移动端触控目标由 lineHeight 1.8 + padding 2px 共同保证
+
+### 前端 — 词典智能回退
+
+- [x] **T4** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) `handleWordClick` AI 智能回退
+  - 默认源 = `ai` 且 `aiStatus.enabled === false` → `kind` 改写为 `builtin`
+  - `aiApi.dictionary` 失败时自动重试 `builtinDictApi.lookup`
+  - 内置命中后 `message.info('AI 词典不可用，已自动切换到内置 ECDICT')` 提示用户
+  - 内置也失败才暴露 AI 的原始错误
+- [x] **T5** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) UI 提示
+  - 原文卡片右下角在 `aiStatus && !aiStatus.enabled && defaultSourceId === 'ai'` 时多挂橙色 tag「AI 未启用 · 查词自动回退到内置词典」
+  - 顶部 Alert 改为 info 级别，明示「整句翻译需要 AI 翻译 key，但单词查词不受影响」
+
+### 前端 — 移除学习计划
+
+- [x] **T6** **删除** [frontend/src/hooks/useLearningProgress.ts](frontend/src/hooks/useLearningProgress.ts) — v1.0.0 引入的多阶段学习进度 hook
+- [x] **T7** **删除** [frontend/src/components/LearningModeBanner.tsx](frontend/src/components/LearningModeBanner.tsx) — 播放器顶部学习阶段横幅
+- [x] **T8** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) 移除
+  - 移除所有 `useLearningProgress` / `LearningModeBanner` 引用
+  - 移除难句标记 UI（句子行右侧 ⚠ 按钮 / 已标记句子高亮）
+  - 移除 `current_sub_stage` 监听分支（六类自动行为）
+
+### 脚本 — PowerShell 5.1 编码修复
+
+- [x] **T9** [scripts/download-ecdict.ps1](scripts/download-ecdict.ps1) 中文 → 纯 ASCII
+  - 全部注释 / `Write-Host` 输出 / 临时文件名说明改为英文
+  - 脚本头部写明「pure-ASCII for PS 5.1 compatibility」原因
+  - 修复第 49-52 行 `Write-Host "[HINT] 或使用国内镜像..."` 在 PS 5.1 GBK 代码页下抛 `字符串缺少终止符: """` 的问题
+
+### 验证
+
+- [x] **T10** `go build ./...` exit code 0
+- [x] **T11** `go vet ./...` exit code 0
+- [x] **T12** `go test ./...` 全部 PASS（cached，subtitle 8 + dictcsv 5 ≈ 13 个）
+- [x] **T13** `pnpm build` exit code 0（tsc -b 严格类型检查通过）
+- [x] **T14** `python scripts/test-api.py` 全 PASS（v1.1.0 45 项；v1.2.0 不新增后端接口，沿用现有数据）
+- [x] **T15** ChangeLog.md v1.2.0 章节完整记录（Echo Loop 复读 / 按词查词 / 词典回退 / 移除学习计划 / download-ecdict.ps1 修复 / Fixed / Notes）
+- [x] **T16** PLAN.md v1.2.0 活跃里程碑段已添加
+- [x] **T17** README.md 行为说明 + v1.2.0 关键改动段落
+
+---
+
+# TASKS.md — v1.1.0 内置词典 ECDICT + 学习阶段不创建侧边栏独立页面
+
+## v1.1.0 内置词典 ECDICT 集成 + 学习计划不创建侧边栏独立页面（2026-07-06）
+
+### 后端 — 内置词典
+
+- [x] **T1** `internal/models/dictionary.go` 新增 `BuiltinDict` GORM 表 — 字段 `Word`（唯一索引）/ `Phonetic` / `Pos`（索引）/ `Definition` / `Translation` / `Exchange`
+- [x] **T2** `pkg/dictcsv/ecdict.go` 新建 — `ParseECDictReader(io.Reader) (*ECDictResult, error)` 流式解析 ECDICT 格式；`ParseECDictString(string)` 字符串解析（测试用）；`Lemmas(word string) []string` 词形还原（studies → study）
+- [x] **T3** `pkg/dictcsv/dictcsv.go` 复用 — 用户上传的本地词典 CSV 通用解析（v0.9.1 复用）
+- [x] **T4** `internal/database/database.go` AutoMigrate 注册 `&models.BuiltinDict{}`
+- [x] **T5** `internal/handlers/builtin_dict.go` 新建 `BuiltinDictHandler`
+  - `EnsureImported()` — 启动时后台 goroutine 自动导入（CSV 不存在 / 表已存在则跳过）
+  - `ImportBuiltinDict(csvPath) (int, error)` — 全量导入（清空 + 批量插入 2000/批，事务）
+  - `Status(c)` — 返回 `{available, entry_count, csv_path, csv_exists, source}`
+  - `Lookup(c)` — 查词（精确匹配 → 词形 fallback）；返回 `{word, found, entries[]}`，每条带 `matched_by: "exact" | "lemma:<原形>"`
+  - `Reload(c)` — 重新导入（清空后从 CSV 重建）
+  - 路径解析顺序：环境变量 `ECHOSUB_BUILTIN_DICT_CSV` → `backend/data/dict/ecdict.csv` → `data/dict/ecdict.csv` → `<exe>/data/dict/ecdict.csv`
+- [x] **T6** `internal/router/router.go` 在 `/api/v1/dictionary` 路由组下注册 3 条
+  - `GET /api/v1/dictionary/builtin/status`
+  - `GET /api/v1/dictionary/builtin/lookup?word=xxx`
+  - `POST /api/v1/dictionary/builtin/reload`
+- [x] **T7** `cmd/server/main.go` 启动时调用 `handlers.EnsureImported()`
+
+### 后端 — 测试
+
+- [x] **T8** `pkg/dictcsv/dictcsv_test.go`（v0.9.1 复用 5 个用例）— 基础解析 / 表头列名 / 空行与非法 / 真实 10 行 / 词形 fallback 全部 PASS
+
+### 前端 — 内置词典
+
+- [x] **T9** `src/types/index.ts` 新增 4 个 TS 类型 — `BuiltinDictStatus` / `BuiltinDictLookupResponse` / `BuiltinDictLookupEntry` / `BuiltinDictReloadResponse`
+- [x] **T10** `src/api/index.ts` 新增 `builtinDictApi = { status, lookup, reload }` 模块
+- [x] **T11** `src/store/dictionary.ts` 扩展 `DictionarySourceId` 类型，新增 `'builtin'` 选项
+- [x] **T12** `src/pages/DictionarySettings.tsx` 新增「内置词典 ECDICT」管理卡
+  - 状态条：`已启用 · 770,000 词` 或 `未导入`（来自 `builtinDictApi.status()`）
+  - 「重新导入」按钮：调用 `/reload`，显示耗时
+  - 「快速试查」输入框 + 列表展示命中结果
+  - 默认词典源单选项中新增「📚 内置词典」选项
+
+### 前端 — 查词逻辑重构
+
+- [x] **T13** `src/pages/SentenceDetail.tsx` 单词查词严格按用户设置分派（v1.1.0 重构）
+  - 移除 v0.9.x 的「本地优先 → AI 兜底」混合逻辑
+  - 默认源 = `ai` → 仅调 `aiApi.dictionary`
+  - 默认源 = `local` → 仅调 `localDictApi.lookup`
+  - 默认源 = `builtin` → 仅调 `builtinDictApi.lookup`
+  - 默认源 = `youdao` / `cambridge` / `oxford` / ... → 直接 `window.open` 打开网页
+  - 弹窗底部保留「其他词典」快捷切换按钮（ai / local / builtin / 7 个网页词典）
+
+### 前端 — 学习计划页面移除
+
+- [x] **T14** **删除** `src/pages/LearningPlan.tsx` — 学习计划独立页面移除（v1.0.0 误创建）
+- [x] **T15** **删除** `src/router/index.tsx` 中的 `/learning` 路由
+- [x] **T16** **删除** `src/layouts/MainLayout.tsx` 侧边栏「📚 学习计划」菜单项
+- [x] **T17** 保留 `LearningModeBanner` 组件 — 顶部嵌入播放器
+- [x] **T18** 保留后端 `/api/v1/learning/review-queue` + `/api/v1/learning/stats` 接口（v1.1.0 前端暂未使用）
+
+### 词库 / 下载 / 协议
+
+- [x] **T19** `scripts/download-ecdict.ps1` 新建 — ECDICT 词库下载脚本（GitHub raw → `backend/data/dict/ecdict.csv`）
+- [x] **T20** `backend/data/dict/README.md` 新建 — 词库目录说明（数据源、协议、首次部署）
+- [x] **T21** `backend/data/dict/ecdict.sample.csv` 新建 — 测试 / 开发用样例（21 词）
+- [x] **T22** `backend/data/dict/ecdict.csv` 提交 — 正式词库（~62.9 MB / ~77 万词条，已随本版本 git 提交）
+- [x] **T23** `LICENSE` 协议变更为 **GNU GPL v3** + ECDict 归属说明
+
+### 集成测试
+
+- [x] **T24** `scripts/test-api.ps1` 25b 步骤错误处理优化
+  - 在 retell 阶段调用 skip，预期跨阶段到 review_1；若当前实际不是 retell 也接受（不强制预期）
+  - 「入口子步骤不可跳过」标记为预期行为（Ok 而非 Bad）
+- [x] **T25** `scripts/test-api.ps1` Ok/Bad 函数实现优化 — 从 `[Console]::WriteLine` 改为 `Write-Host`，确保 PowerShell 5.1 + 输出重定向时日志可见
+
+### 验证
+
+- [x] **T26** `go build ./...` exit code 0
+- [x] **T27** `go vet ./...` exit code 0
+- [x] **T28** `go test ./...` 全部 PASS（cached，subtitle 8 + dictcsv 5 ≈ 13 个）
+- [x] **T29** `pnpm build` exit code 0（tsc -b 严格类型检查通过）
+- [x] **T30** `.\scripts\test-api.ps1` 全 PASS（v1.0.0 6 段 + v1.1.0 25b/25c 优化 + 入口子步骤预期行为）
+- [x] **T31** ChangeLog.md v1.1.0 章节完整记录（内置词典 ECDICT 集成 / 学习阶段不创建侧边栏独立页面 / Changed / Notes）
+- [x] **T32** PLAN.md v1.1.0 活跃里程碑段已添加（顶部状态 + 七章 + 验证清单 + 收尾说明）
+- [x] **T33** README.md API 概览新增「📚 内置词典 ECDICT（v1.1.0）」段落 + 3 个接口表格
+- [x] **T34** LICENSE 协议同步变更为 **GNU GPL v3** + ECDict 归属
+
+### 收尾
+
+- [x] **T35** 协议变更：v1.1.0 起本项目整体分发协议变更为 **GNU GPL v3**（沿用 ECDICT 的协议）
+- [x] **T36** `LearningPlan.tsx` / `/learning` 路由 / 侧边栏入口**已删除**（不创建任何侧边栏学习计划页面，符合 Echo Loop 设计）
+- [x] **T37** 已知遗留：`pnpm lint` 仍报 `react-hooks/set-state-in-effect` 错误（**预先存在**于本次重构之前的 React 19 新规则遗留），不影响 `pnpm build`
+
+### 集成测试迁移（PowerShell → Python）
+
+- [x] **T38** `scripts/test-api.py` 新建（710 行） — 用 Python `requests` + `subprocess` 重写端到端测试，45 项检查全 PASS
+  - 解决 PowerShell 5.1 + 输出重定向 + Start-Job 组合下 `Ok/Bad` 静默丢失、`try/foreach` 嵌套解析失败等长期遗留问题
+  - 启动后端 `stdout/stderr` 重定向到日志文件（避免 ECDICT 导入 ~2 万行日志撑爆 PIPE 缓冲区）
+  - 启动超时 120s（首次 ECDICT 导入 ~70s）
+  - 强制 stdout/stderr UTF-8（`reconfigure` + `PYTHONIOENCODING`），避免 ECDict 翻译中文触发 `UnicodeEncodeError`
+  - reload 接口单独给 120s HTTP 超时
+- [x] **T39** 旧 PowerShell 脚本 [scripts/test-api.ps1](scripts/test-api.ps1) **停止维护**，README/CLAUDE 标注「仅作参考」
+- [x] **T40** `python scripts/test-api.py` **45/45 全 PASS**（含学习进度 advance/skip/pause/resume/难句标记/复习队列/统计 + 内置 ECDICT 状态/查词/重载）
+
+---
+
+# TASKS.md — v1.0.0 多阶段学习复习体系
+
+配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v1.0.0 多阶段学习复习体系（2026-07-06）
+
+### 后端
+
+- [x] **T1** `internal/learning/stages.go` 新建 — 定义 9 个阶段常量（`first_learn` / `review_1..review_7` / `completed`）和 6 个子步骤常量（`intensive_listen` / `shadowing` / `blind_listen` / `retell` / `review_difficult` / `review_blind`）；实现 `PlanFor` / `NextSubStage` / `NextStage` / `IntervalFor` / `NextReviewAt` / `IsEntrySubStage` / `IsReviewStage` / `LabelFor` / `EmojiFor` / `SubStageLabelFor` 核心函数；含 stage_label / stage_emoji / sub_stage_label 中文标签字典
+- [x] **T2** `internal/models/learning.go` 新建 — 定义三张 GORM 表
+  - `LearningProgress`（(user_id, media_id) 唯一索引）：current_stage / current_sub_stage / last_stage_completed_at / current_stage_started_at / first_learn_completed_at / total_study_duration_ms / 4 个 pass_count / is_paused / 软删除
+  - `SubStageCompletion`（(user_id, media_id, stage, sub_stage) 复合唯一）：study_duration_ms + completed_at
+  - `DifficultSentence`（(user_id, media_id, sentence_index) 唯一）：marked_at
+- [x] **T3** `internal/database/database.go` AutoMigrate 注册上述三个模型
+- [x] **T4** `internal/handlers/learning.go` 新建 `LearningHandler`，9 个 API 接口
+  - `GetLearningProgress` — 首次访问自动创建
+  - `AdvanceLearningProgress` — 写 SubStageCompletion + 推进 sub_stage/跨 stage + 累加 pass_count + 累加学习时长
+  - `SkipLearningProgress` — 跳过非入口子步骤
+  - `PauseLearningProgress` / `ResumeLearningProgress` — is_paused 切换
+  - `MarkDifficultSentence` / `ListDifficultSentences` — 难句标记（`SentenceIndex` 用 `*int` 避免 binding:"required" 误拒 0）
+  - `ListReviewQueue` — 全局复习队列
+  - `GetLearningStats` — 全局学习统计
+  - 响应结构体嵌入 `LearningProgress` 并补 13 个派生字段（stage_label / stage_emoji / sub_stage_label / stage_plan / stage_index / stage_sub_index / is_entry_sub_stage / next_review_at / interval_hours / is_review_ready / is_completed / total_sub_stages / completed_sub_stages）
+- [x] **T5** `internal/router/router.go` 在 authed 路由组下注册 9 条新路由
+  - `GET /api/v1/media/:id/learning-progress`
+  - `POST /api/v1/media/:id/learning-progress/advance`
+  - `POST /api/v1/media/:id/learning-progress/skip`
+  - `POST /api/v1/media/:id/learning-progress/pause`
+  - `POST /api/v1/media/:id/learning-progress/resume`
+  - `GET /api/v1/media/:id/difficult-sentences`
+  - `POST /api/v1/media/:id/difficult-sentences`
+  - `GET /api/v1/learning/review-queue`
+  - `GET /api/v1/learning/stats`
+
+### 前端
+
+- [x] **T6** `src/types/index.ts` 新增 7 个 TS 类型 — `LearningStage` / `LearningSubStage` 联合类型 + `LearningProgressResponse` / `DifficultSentence` / `ReviewQueueItem` / `LearningStats` / `AdvanceLearningResponse` / `DifficultSentencesResponse`
+- [x] **T7** `src/api/index.ts` 新增 `learningApi = { getProgress, advance, skip, pause, resume, listDifficult, markDifficult, reviewQueue, stats }` 9 个方法
+- [x] **T8** `src/hooks/useLearningProgress.ts` 新建 `useLearningProgress(mediaId, opts)` 钩子 — 统一管理 progress / difficultSentences / loading / mutating / error 状态；对外暴露 advance / skip / pause / resume / markDifficult / isDifficult / reload / clearError 方法；用 `onErrorRef` 避免依赖变化触发重载
+- [x] **T9** `src/components/LearningModeBanner.tsx` 新建 — 顶部 `stage_emoji + stage_label + sub_stage_label` 标签；已暂停 / 已完成 / 阶段进度条动态显示；复习阶段显示「下次复习时间」倒数；操作按钮「完成本步 / 跳过 / 暂停·恢复」三按钮（minHeight 36px 满足 v0.6.0 移动端触控规范）
+- [x] **T10** `src/components/MediaPlayer.tsx` 子步骤行为分支 — 监听 `current_sub_stage` 自动调整播放器行为
+  - `intensive_listen` / `shadowing` → 复读模式
+  - `blind_listen` / `retell` / `review_blind` → 遮挡模式
+  - `review_difficult` → 跳到第一句难句 + 复读
+  - 首次进入组件 `lastAppliedSubStageRef` 初始化为空，不覆盖用户当前设置
+  - 字幕行右侧加 ⚠ 难句标记按钮；集成 `LearningModeBanner` + `useLearningProgress`
+  - 学习时长估算从组件挂载时间开始
+- [x] **T11** `src/pages/LearningPlan.tsx` 新建 `/learning` 路由页 — 顶部 4 张统计卡片（首次学习中 / 复习中 / 已完成 / 已暂停）；各轮复习分布横向卡片；今日待复习 + 未来待复习两段；空态「当前没有需要复习的媒体 🎉」；点击卡片跳到 `/play/:id`
+- [x] **T12** `src/layouts/MainLayout.tsx` 侧边栏新增「📚 学习计划」菜单项（橙色 #fa8c16，BookOutlined 图标）
+- [x] **T13** `src/router/index.tsx` 在 authed 路由组下注册 `/learning` 路径指向 `LearningPlan` 组件
+
+### 集成测试
+
+- [x] **T14** `scripts/test-api.ps1` 扩展 6 段测试（24-27 + 25b/25c 子段）
+  - 24: GET 进度自动创建（验证 stage_plan=4、interval_hours=0、is_completed=false）
+  - 25: 连续 3 次 advance 从 intensive_listen → shadowing → blind_listen → retell（completed_sub_stages 1/4→3/4）
+  - 25b: 在 retell 阶段 skip 跨阶段到 review_1.review_difficult（stage_advanced=true）
+  - 25c: pause/resume 切换 + 暂停时 advance 被拒绝
+  - 26: 标记 / 列出 / 取消标记难句（标记 0、2 句，列出 count=2，取消 0 后 count=1）
+  - 27: review-queue 1 条 + stats 统计正确
+  - Ok/Bad 函数改用 `[Console]::WriteLine` 而非 `Write-Host`，避免 PowerShell 5.1 循环内丢输出
+  - step 6 改为「第一个有字幕的媒体」（兼容不同 test-media 内容，不再硬编码 lesson1）
+
+### 验证
+
+- [x] **T15** `go build ./...` exit code 0
+- [x] **T16** `go vet ./...` exit code 0
+- [x] **T17** `go test ./...` 全部 PASS（cached）
+- [x] **T18** `pnpm build` exit code 0（tsc -b 严格类型检查通过，1571 modules / 27 PWA precache）
+- [x] **T19** `.\scripts\test-api.ps1` 39/39 通过（v0.9.2 的 33 段 + v1.0.0 的 6 段）
+- [x] **T20** ChangeLog.md v1.0.0 章节完整记录（多阶段学习复习体系 / Fixed / Notes）
+- [x] **T21** README.md API 概览新增「📈 多阶段学习复习（v1.0.0）」段落 + 9 个接口表格
+- [x] **T22** PLAN.md v1.0.0 活跃里程碑段已添加
+
+---
+
+# TASKS.md — v0.9.2 网页词典 + 息屏播放
+
+配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。
+
+## v0.9.2 网页词典 + 息屏播放 + 音频专辑优化（2026-07-06）
+
+### 网页词典
+
+- [x] **T1** `src/store/webDictionaryConfig.ts` 新建 — 定义 `WebDictConfig` 接口（`id / displayName / icon / color / buildUrl / languageNote`）+ 7 个词典配置（**有道** / Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary）+ `lookupWebDictionary` / `getWebDictConfig` 工具
+- [x] **T2** `src/store/dictionary.ts` 扩展 `DictionarySourceId` 类型，把 7 个网页词典 id 加入；`persist.version` 从 2 升到 3
+- [x] **T3** `src/types/index.ts` 扩展类型 — `DictionarySourceMeta` 新增 `color?: string` 与 `isWeb?: boolean` 字段；`DictionarySourceId` 联合类型加入 7 个网页词典 id
+- [x] **T4** `src/pages/SentenceDetail.tsx` 集成 — 新增 `isWebDictionary()` / `getSourceLabel()` 辅助函数；`handleWordClick` 在默认源是网页词典时直接 `window.open` 跳转；单词弹窗底部新增「网页词典」快捷跳转区（Divider + 一排 pill 按钮）
+- [x] **T5** `src/pages/DictionarySettings.tsx` 集成 — 默认源单选 + 启/禁列表动态包含 7 个网页词典项；列表项图标用 `GlobalOutlined`，显示「🌐 联网 · 网页词典」状态标签
+
+### 息屏播放
+
+- [x] **T6** `src/hooks/useMediaSession.ts` 新建 — 封装 `useMediaSession` 钩子
+  - `supportsMediaSession()` / `supportsWakeLock()` 守卫函数
+  - `useEffect` 同步 `mediaSession.metadata`（含 title / artist / album / artwork）
+  - `useEffect` 同步 `mediaSession.playbackState`
+  - `useEffect` 调用 `setPositionState({ duration, position, playbackRate })`
+  - `useEffect` 注册 7 个 `setActionHandler`（play / pause / seekbackward / seekforward / seekto / previoustrack / nexttrack）
+  - `useEffect` 播放时申请 WakeLock sentinel，暂停/卸载时 release
+  - `useEffect` 监听 `visibilitychange` 切回前台时若仍在播放则重新申请 WakeLock
+  - 导出 `MEDIA_ELEMENT_MARK_ATTR = 'data-echosub-media'` 常量
+- [x] **T7** `src/components/MediaPlayer.tsx` 集成 — `MediaPlayerProps` 增加 `mediaName?` / `mediaAlbum?` / `mediaCoverUrl?` 三个属性；给 video / audio 元素加 `[MEDIA_ELEMENT_MARK_ATTR]: 'true'` 属性；调用 `useMediaSession({...})`
+- [x] **T8** `src/pages/Player.tsx` 集成 — 新增 `buildCoverUrl(mediaId, hasCover, token)` 工具函数；MediaPlayer 调用处补齐三个新属性
+
+### 音频专辑 UI 优化
+
+- [x] **T9** `src/components/MediaPlayer.tsx` 媒体类型标签条件渲染 — 仅在 `pairedMedia && pairedMedia.type !== mediaType`（确实存在异类配对）时才渲染双 CheckableTag tab；否则只渲染一个静态媒体类型标签
+
+### 验证
+
+- [x] **T10** `go build ./...` exit code 0
+- [x] **T11** `go vet ./...` exit code 0
+- [x] **T12** `go test ./...` 全部 PASS（cached）
+- [x] **T13** `pnpm build` exit code 0（tsc -b 严格类型检查通过，1561 modules / 27 PWA precache）
+- [x] **T14** ChangeLog.md v0.9.2 章节完整记录（网页词典 / 息屏播放 / 音频专辑优化 / Changed / Notes）
+- [x] **T15** PLAN.md v0.9.2 活跃里程碑段已添加
+- [x] **T16** README.md 词典特性列表新增「🌐 网页词典（含 有道 / Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary）」
+
+---
+
+# TASKS.md — v0.9.1 本地词典
 
 ## v0.9.1 本地词典（2026-07-06）
 

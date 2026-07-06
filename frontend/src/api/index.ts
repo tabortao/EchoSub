@@ -33,6 +33,14 @@ import type {
   LocalDictUploadResult,
   LocalDictLookupRequest,
   LocalDictLookupResponse,
+  LearningProgressResponse,
+  AdvanceLearningRequest,
+  AdvanceLearningResponse,
+  DifficultSentencesResponse,
+  MarkDifficultRequest,
+  BuiltinDictStatus,
+  BuiltinDictLookupResponse,
+  BuiltinDictReloadResponse,
 } from '@/types'
 
 // ===== 认证 =====
@@ -365,4 +373,90 @@ export const localDictApi = {
    */
   lookup: (payload: LocalDictLookupRequest) =>
     client.post<ApiResponse<LocalDictLookupResponse>>('/dictionary/local/lookup', payload),
+}
+
+// ===== 内置词典（v1.1.0 起，GPLv3 ECDict 词库）=====
+// 后端首次启动时自动从 backend/data/dict/ecdict.csv 导入到 built_in_dict 表
+// 约 77 万词条，覆盖英汉常用词；与 LocalDict 完全独立，可选作为默认源
+// 类型定义统一在 @/types，本文件仅导出 API 方法
+export const builtinDictApi = {
+  status: () => client.get<ApiResponse<BuiltinDictStatus>>('/dictionary/builtin/status'),
+  lookup: (word: string) =>
+    client.get<ApiResponse<BuiltinDictLookupResponse>>('/dictionary/builtin/lookup', {
+      params: { word },
+    }),
+  /**
+   * 触发重新导入（清空 built_in_dict 表后再次读取 CSV 导入）
+   * 通常用于版本升级后刷新词库
+   */
+  reload: () => client.post<ApiResponse<BuiltinDictReloadResponse>>('/dictionary/builtin/reload'),
+}
+
+// ===== 多阶段学习复习体系（v1.0.0 起）=====
+// 与后端 router.go 中 /media/:id/learning-progress 路由族一一对应
+export const learningApi = {
+  /**
+   * 获取某个媒体的学习进度（首次访问时由后端按需创建一条 default 记录）
+   * @param mediaId 媒体 id
+   * @returns LearningProgressResponse 含 stage_emoji / sub_stage_label / 复习就绪时间等派生字段
+   */
+  getProgress: (mediaId: number) =>
+    client.get<ApiResponse<LearningProgressResponse>>(`/media/${mediaId}/learning-progress`),
+
+  /**
+   * 推进学习进度：完成当前子步骤，写入 SubStageCompletion，并按学习计划切换到下一步/下一阶段
+   * @param mediaId 媒体 id
+   * @param payload.study_duration_ms 本次学习耗时（毫秒），可选
+   * @returns AdvanceLearningResponse，含最新进度和「是否跨阶段」标识
+   */
+  advance: (mediaId: number, payload: AdvanceLearningRequest = {}) =>
+    client.post<ApiResponse<AdvanceLearningResponse>>(
+      `/media/${mediaId}/learning-progress/advance`,
+      payload,
+    ),
+
+  /**
+   * 跳过当前子步骤（不计入学习时长，不影响累计 pass_count）
+   * 用于「今天不想做这一步」的快速流转
+   */
+  skip: (mediaId: number) =>
+    client.post<ApiResponse<AdvanceLearningResponse>>(
+      `/media/${mediaId}/learning-progress/skip`,
+      {},
+    ),
+
+  /** 暂停学习：保持当前 stage/sub_stage，但冻结推进；首页可继续操作其他媒体 */
+  pause: (mediaId: number) =>
+    client.post<ApiResponse<{ progress: LearningProgressResponse }>>(
+      `/media/${mediaId}/learning-progress/pause`,
+      {},
+    ),
+
+  /** 恢复被暂停的学习（仅在 is_paused=true 时生效） */
+  resume: (mediaId: number) =>
+    client.post<ApiResponse<{ progress: LearningProgressResponse }>>(
+      `/media/${mediaId}/learning-progress/resume`,
+      {},
+    ),
+
+  /**
+   * 列出某媒体下当前用户标记的难句（按 sentence_index 升序）
+   * @param mediaId 媒体 id
+   */
+  listDifficult: (mediaId: number) =>
+    client.get<ApiResponse<DifficultSentencesResponse>>(
+      `/media/${mediaId}/difficult-sentences`,
+    ),
+
+  /**
+   * 标记/取消难句（幂等）
+   * @param mediaId 媒体 id
+   * @param payload.sentence_index 句子索引
+   * @param payload.marked true=标记 / false=取消
+   */
+  markDifficult: (mediaId: number, payload: MarkDifficultRequest) =>
+    client.post<ApiResponse<{ marked: boolean; sentence_index: number }>>(
+      `/media/${mediaId}/difficult-sentences`,
+      payload,
+    ),
 }
