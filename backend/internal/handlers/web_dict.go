@@ -1,10 +1,18 @@
-// 网页词典抓取（v1.3.0 起）
+// 网页词典抓取（v1.3.0 起，v1.3.1 重构）
 //
 // 目的：让 Cambridge / Oxford / Longman / Wiktionary / 有道 等 7 个网页词典
 // 也能在弹窗中渲染结果，而不是 window.open 跳新标签页。
 //
 // 路由：
 //   GET /api/v1/dictionary/web/lookup?source=youdao&word=hello
+//
+// v1.3.1 重大改进：
+//   - 支持代理（v1.3.0 在国内网络下大量 timeout / 403，本版本修复）
+//   - 抓取走 utils.NewHTTPClient：自定义 > 环境变量 HTTPS_PROXY/HTTP_PROXY > 直连
+//   - 超时可配（默认 15s，从 6s 提升）
+//   - 失败时 1 次重试（仅对 timeout / 网络错误）
+//   - 内存缓存 60 分钟（同一 source+word 不重复抓取）
+//   - 失败时 blocked=true 让前端展示「在新窗口打开」链接，不让用户卡住
 //
 // 行为：
 //   - 后端用 net/http 抓目标 URL 的 HTML
@@ -18,16 +26,21 @@
 //   - 不同网站页面结构差异大，本实现只做「通用去噪 + 原文渲染」
 //   - 对 Cambridge / Oxford / Wiktionary 等允许抓取的网站效果较好
 //   - 有道 / 朗文等对爬虫有限制，可能拿到 403 或简版页面，弹窗内显示「页面受限，请在新窗口打开」提示
+//   - 强烈建议国内网络环境配置 ECHOSUB_WEBDICT_PROXY=socks5://host:1080 或 http://127.0.0.1:7890
 package handlers
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -35,6 +48,7 @@ import (
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 
+	"github.com/yaole/EchoSub/backend/internal/config"
 	"github.com/yaole/EchoSub/backend/internal/middleware"
 	"github.com/yaole/EchoSub/backend/internal/utils"
 )
@@ -69,24 +83,19 @@ func wiktionaryURL(w string) string {
 }
 
 var kWebDictSources = map[string]webDictSource{
-	"youdao":        {ID: "youdao", DisplayName: "有道词典", BuildURL: youdaoURL},
-	"cambridge":     {ID: "cambridge", DisplayName: "Cambridge", BuildURL: cambridgeURL},
-	"oxford":        {ID: "oxford", DisplayName: "Oxford", BuildURL: oxfordURL},
-	"longman":       {ID: "longman", DisplayName: "Longman", BuildURL: longmanURL},
+	"youdao":         {ID: "youdao", DisplayName: "有道词典", BuildURL: youdaoURL},
+	"cambridge":      {ID: "cambridge", DisplayName: "Cambridge", BuildURL: cambridgeURL},
+	"oxford":         {ID: "oxford", DisplayName: "Oxford", BuildURL: oxfordURL},
+	"longman":        {ID: "longman", DisplayName: "Longman", BuildURL: longmanURL},
 	"merriamWebster": {ID: "merriamWebster", DisplayName: "Merriam-Webster", BuildURL: merriamWebsterURL},
-	"collins":       {ID: "collins", DisplayName: "Collins", BuildURL: collinsURL},
-	"wiktionary":    {ID: "wiktionary", DisplayName: "Wiktionary", BuildURL: wiktionaryURL},
+	"collins":        {ID: "collins", DisplayName: "Collins", BuildURL: collinsURL},
+	"wiktionary":     {ID: "wiktionary", DisplayName: "Wiktionary", BuildURL: wiktionaryURL},
 }
-
-// 网页词典抓取超时（v1.3.0）：每个请求 6 秒足够
-const webDictFetchTimeout = 6 * time.Second
-
-// 网页词典抓取响应大小上限（v1.3.0）：1 MiB
-// 普通单词释义页面 HTML 大小通常 < 200KB；1MiB 足够 + 防恶意词拖慢后端
-const webDictFetchMaxBytes = 1 * 1024 * 1024
 
 // LookupWebDict 抓取并清洗网页词典释义
 // GET /api/v1/dictionary/web/lookup?source=youdao&word=hello
+//
+// v1.3.1 起支持代理（ECHOSUB_WEBDICT_PROXY）+ 重试 + 内存缓存。
 func LookupWebDict() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
@@ -113,10 +122,20 @@ func LookupWebDict() gin.HandlerFunc {
 		}
 		targetURL := src.BuildURL(url.QueryEscape(word))
 
-		// HTTP 抓取
-		htmlRaw, finalURL, err := fetchWebDictHTML(targetURL)
+		// v1.3.1：先查缓存
+		cfg := getWebDictCfg(c)
+		cacheKey := source + "|" + strings.ToLower(word)
+		if cached, ok := webDictCacheGet(cacheKey); ok {
+			cached["url"] = targetURL
+			cached["cached"] = true
+			utils.OK(c, cached)
+			return
+		}
+
+		// HTTP 抓取（含重试）
+		htmlRaw, finalURL, err := fetchWebDictHTML(cfg, targetURL)
 		if err != nil {
-			utils.OK(c, gin.H{
+			result := gin.H{
 				"source":      src.ID,
 				"source_name": src.DisplayName,
 				"word":        word,
@@ -124,14 +143,18 @@ func LookupWebDict() gin.HandlerFunc {
 				"final_url":   finalURL,
 				"html":        "",
 				"blocked":     true,
+				"cached":      false,
 				"error":       err.Error(),
-			})
+			}
+			// v1.3.1：失败结果也缓存 5 分钟，避免一个词重复触发 timeout
+			webDictCachePut(cacheKey, result, 5*time.Minute)
+			utils.OK(c, result)
 			return
 		}
 
 		// 清洗（去噪音 + XSS 防护 + 链接绝对化 + a 标签 target=_blank）
 		cleanHTML, cleanErr := sanitizeWebDictHTML(htmlRaw, finalURL)
-		utils.OK(c, gin.H{
+		result := gin.H{
 			"source":      src.ID,
 			"source_name": src.DisplayName,
 			"word":        word,
@@ -139,37 +162,148 @@ func LookupWebDict() gin.HandlerFunc {
 			"final_url":   finalURL,
 			"html":        cleanHTML,
 			"blocked":     false,
+			"cached":      false,
 			"error":       cleanErr,
-		})
+		}
+		// v1.3.1：成功结果按配置缓存（默认 60 分钟）
+		ttl := time.Duration(cfg.WebDict.CacheMinutes) * time.Minute
+		if ttl > 0 {
+			webDictCachePut(cacheKey, result, ttl)
+		}
+		utils.OK(c, result)
 	}
 }
 
+// getWebDictCfg 从 gin context 取 *config.Config
+// router 启动时通过 handlers.SetGlobalConfig 注入；缺省时退到 Default()（仅用于单元测试）
+func getWebDictCfg(c *gin.Context) *config.Config {
+	if cfg := GetGlobalConfig(); cfg != nil {
+		return cfg
+	}
+	return config.Default()
+}
+
+// ====================== v1.3.1 内存缓存 ======================
+//
+// 缓存粒度：source + word（不区分大小写）
+// 大小上限：512 条（LRU 简化：超过直接清空一半）
+// 失败结果单独 ttl（5 分钟），避免一个 timeout 把整个弹窗卡住
+type webDictCacheEntry struct {
+	data     gin.H
+	expireAt time.Time
+}
+
+var (
+	webDictCacheMu  sync.RWMutex
+	webDictCache    = make(map[string]webDictCacheEntry)
+	webDictCacheMax = 512
+)
+
+// webDictCacheGet 读取缓存（命中且未过期）
+func webDictCacheGet(key string) (gin.H, bool) {
+	webDictCacheMu.RLock()
+	defer webDictCacheMu.RUnlock()
+	e, ok := webDictCache[key]
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(e.expireAt) {
+		return nil, false
+	}
+	return e.data, true
+}
+
+// webDictCachePut 写入缓存（带 ttl）+ LRU 简化版（超容清半）
+func webDictCachePut(key string, data gin.H, ttl time.Duration) {
+	webDictCacheMu.Lock()
+	defer webDictCacheMu.Unlock()
+	webDictCache[key] = webDictCacheEntry{
+		data:     data,
+		expireAt: time.Now().Add(ttl),
+	}
+	// 超容清理：直接清空缓存（词典站点 7 个 × 数十词 = 几百条，超过再清）
+	if len(webDictCache) > webDictCacheMax {
+		// 简单策略：清空一半
+		count := 0
+		for k := range webDictCache {
+			if count > webDictCacheMax/2 {
+				break
+			}
+			delete(webDictCache, k)
+			count++
+		}
+	}
+}
+
+// ====================== v1.3.1 HTTP 抓取（含代理 + 重试）======================
+
 // fetchWebDictHTML 用 net/http 抓取目标 URL 的 HTML
+//
+// v1.3.1 起：
+//   - 走 utils.NewHTTPClient：自定义代理 > HTTPS_PROXY/HTTP_PROXY > 直连
+//   - 超时按 cfg.WebDict.TimeoutSec（默认 15s）
+//   - 失败时按 cfg.WebDict.Retries（默认 1 次）重试，仅对 timeout / 网络错误重试
 //
 // 返回 (rawHTML, finalURL, error)：
 //   - 4xx/5xx → 错误（弹窗提示「页面受限」）
 //   - 重定向最终落地 URL 用于后续相对路径解析
-//   - 响应体上限 1 MiB（多读会被 io.LimitReader 截断）
-func fetchWebDictHTML(targetURL string) (string, string, error) {
-	client := &http.Client{
-		Timeout: webDictFetchTimeout,
-		// 跟随 5 次重定向
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("stop after 5 redirects")
-			}
-			return nil
-		},
+//   - 响应体按 cfg.WebDict.MaxBytes（默认 1 MiB）截断
+func fetchWebDictHTML(cfg *config.Config, targetURL string) (string, string, error) {
+	timeout := time.Duration(cfg.WebDict.TimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 15 * time.Second
 	}
-	req, err := http.NewRequest("GET", targetURL, nil)
+	maxBytes := cfg.WebDict.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = 1 * 1024 * 1024
+	}
+	retries := cfg.WebDict.Retries
+	if retries < 0 {
+		retries = 0
+	}
+	proxy := &utils.ProxyConfig{CustomProxy: cfg.WebDict.Proxy}
+	client := utils.NewHTTPClient(timeout, proxy)
+
+	var lastErr error
+	for attempt := 0; attempt <= retries; attempt++ {
+		if attempt > 0 {
+			// 失败重试前 sleep 一小段时间（指数退避：0.5s / 1s / 2s ...）
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+		}
+		rawHTML, finalURL, err := doFetch(client, targetURL, maxBytes)
+		if err == nil {
+			return rawHTML, finalURL, nil
+		}
+		lastErr = err
+		// 仅对可重试错误重试（timeout / 网络错误）
+		if !isRetryableError(err) {
+			break
+		}
+	}
+	return "", targetURL, lastErr
+}
+
+// doFetch 单次抓取（不重试）
+func doFetch(client *http.Client, targetURL string, maxBytes int64) (string, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), client.Timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		return "", targetURL, fmt.Errorf("构造请求失败: %w", err)
 	}
-	// 模拟真实浏览器 UA，避免被简单 UA 过滤拦截
+	// 模拟真实浏览器请求头
+	// （v1.3.0 仅 UA + Accept + Accept-Language；v1.3.1 补充 Sec-Fetch-* 系列，
+	//   进一步减少被反爬识别的概率）
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "+
 		"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "none")
+	req.Header.Set("Sec-Fetch-User", "?1")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -183,12 +317,66 @@ func fetchWebDictHTML(targetURL string) (string, string, error) {
 				resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 
-	limited := io.LimitReader(resp.Body, webDictFetchMaxBytes)
+	// 处理 gzip/deflate/br 压缩
+	body, err := decodeResponseBody(resp)
+	if err != nil {
+		return "", resp.Request.URL.String(), fmt.Errorf("解压响应失败: %w", err)
+	}
+	limited := io.LimitReader(body, maxBytes)
 	buf := &bytes.Buffer{}
 	if _, err := io.Copy(buf, limited); err != nil {
 		return "", resp.Request.URL.String(), fmt.Errorf("读取响应失败: %w", err)
 	}
 	return buf.String(), resp.Request.URL.String(), nil
+}
+
+// isRetryableError 是否值得重试
+// v1.3.1 起：timeout / EOF / connection reset / DNS / 「no route to host」 重试
+// 4xx/5xx 不重试（重试也没用）
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// context deadline exceeded（超时）
+	if strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "Client.Timeout") {
+		return true
+	}
+	// EOF / connection reset / broken pipe
+	if strings.Contains(msg, "EOF") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "network is unreachable") {
+		return true
+	}
+	// net.OpError（如拨号错误）
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return true
+	}
+	// 我们的 fetchWebDictHTML 包装的 4xx 错误包含「HTTP 4xx」「HTTP 5xx」字样
+	if strings.Contains(msg, "HTTP 4") || strings.Contains(msg, "HTTP 5") {
+		return false
+	}
+	return false
+}
+
+// decodeResponseBody 处理 Content-Encoding（v1.3.1 起新增）
+// 仅支持 gzip/deflate/br，复杂场景退回到原始 body
+func decodeResponseBody(resp *http.Response) (io.Reader, error) {
+	switch strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding"))) {
+	case "gzip":
+		return newGzipReader(resp.Body)
+	case "deflate":
+		return newDeflateReader(resp.Body)
+	case "br":
+		return newBrotliReader(resp.Body)
+	default:
+		return resp.Body, nil
+	}
 }
 
 // 常见噪音 token：导航 / 版权 / 广告 / 反馈按钮 等类名/ID 命中则删除子树

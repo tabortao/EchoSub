@@ -1,8 +1,78 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）已完成 | 日期：2026-07-06
+> 状态：v1.3.1 网页词典 / AI 代理配置 + 部署文档化（CONFIGURATION.md）已完成 | 日期：2026-07-07
 
-## 活跃里程碑：v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）（2026-07-06 完成）
+## 活跃里程碑：v1.3.1 网页词典 / AI 代理配置 + 部署文档化（2026-07-07 完成）
+
+v1.3.0 上线后国内用户集中反馈：网页词典抓取时频繁出现 `context deadline exceeded` / `HTTP 403`，查词弹窗里看到「抓取受限」；AI 翻译请求 OpenAI / DeepSeek 等海外 API 也慢。本轮彻底修复网络问题，并把所有环境变量 / 代理 / 部署细节集中到一个文档：
+
+1. **统一 HTTP 客户端工厂**（[backend/internal/utils/http_client.go](backend/internal/utils/http_client.go)）：新增 `NewHTTPClient(timeout, *ProxyConfig)`，自定义 `*http.Transport.Proxy` 字段（默认零值 transport 不读 `HTTPS_PROXY`，是历史常见坑）；支持 http / https / socks5；连接池 / TLS 握手 / 拨号 全部独立超时。
+2. **AI 翻译走代理**（[backend/internal/handlers/ai.go](backend/internal/handlers/ai.go)）：`callOpenAI` 改用 `utils.NewHTTPClient` 注入 `cfg.AI.Proxy`，OpenAI / DeepSeek / 通义 等海外 API 在国内也能稳定访问。
+3. **网页词典抓取重构**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go)）：默认超时 6s → 15s，失败自动重试 1 次（仅 timeout / 网络错误），内存 LRU 缓存 60 分钟，失败结果也缓存 5 分钟避免重复触发；浏览器风格请求头补全（Sec-Fetch-* / Upgrade-Insecure-Requests），新增 gzip / deflate / brotli 三种 `Content-Encoding` 解压。
+4. **新增 5 个环境变量**（[backend/internal/config/config.go](backend/internal/config/config.go)）：`ECHOSUB_AI_PROXY` / `ECHOSUB_WEBDICT_TIMEOUT` / `ECHOSUB_WEBDICT_RETRIES` / `ECHOSUB_WEBDICT_CACHE_MINUTES` / `ECHOSUB_WEBDICT_PROXY`。
+5. **`docs/CONFIGURATION.md` 部署与代理配置文档**（[docs/CONFIGURATION.md](docs/CONFIGURATION.md)）：把后端所有环境变量、AI 翻译配置、网页词典抓取配置、代理系统设计、Docker / docker-compose / Kubernetes / systemd 部署示例、配置验证清单、故障排查**集中到一个文档**。
+
+### 一、目标与设计原则
+
+#### 1. 代理系统设计
+
+- **优先级**：自定义 `CustomProxy` > `http.ProxyFromEnvironment`（读 `HTTPS_PROXY/HTTP_PROXY/NO_PROXY`） > 直连
+- **协议支持**：`http://` / `https://` / `socks5://`
+- **降级保护**：URL 解析失败 → 自动降级到环境变量；不因一个拼写错误让所有出站请求失败
+- **作用域分离**：`ECHOSUB_AI_PROXY` 仅影响 AI；`ECHOSUB_WEBDICT_PROXY` 仅影响网页词典；互不干扰
+- **`NO_PROXY` 语义**：`ECHOSUB_AI_PROXY` / `ECHOSUB_WEBDICT_PROXY` 是显式配置，不被 `NO_PROXY` 绕过；仅当它们为空时 `NO_PROXY` 才生效
+
+#### 2. 网页词典抓取稳定性
+
+- **超时**：默认 15 秒（v1.3.0 的 6 秒太短，海外站点慢），可按网络情况调到 30+
+- **重试**：仅对 `context deadline exceeded` / `EOF` / `connection reset` / `no such host` / `i/o timeout` / `net.OpError` 重试；4xx/5xx / 业务错误 不重试
+- **退避**：第 2 次重试前 sleep 500ms（指数退避）
+- **缓存**：成功按 `CacheMinutes`（默认 60）缓存；失败结果单独缓存 5 分钟避免重复触发
+- **请求头**：补全 `Sec-Fetch-Dest / Sec-Fetch-Mode / Sec-Fetch-Site / Sec-Fetch-User / Upgrade-Insecure-Requests`，减少被反爬识别的概率
+- **解压**：gzip / deflate / brotli（依赖 `andybalholm/brotli`）
+
+#### 3. 文档体系
+
+- **`docs/CONFIGURATION.md`**：用户最关心的两个问题「AI 怎么走代理？」「Docker 内如何配置代理？」都有专门章节 + 完整 `docker-compose.yml` 示例
+- **Docker 场景覆盖**：海外服务器 / 国内 + Clash 跑在宿主机 / 国内 + 远程代理 / 国内 AI（DeepSeek / 通义）
+- **故障排查清单**：timeout / 403 / 代理不生效 / JWT 默认 secret / 数据库锁
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/internal/utils/http_client.go` | **新建** `NewHTTPClient` + `ProxyConfig` |
+| `backend/internal/handlers/global.go` | 新增 `SetGlobalConfig` / `GetGlobalConfig` + gzip/deflate/brotli 解压工具 |
+| `backend/internal/config/config.go` | 新增 `WebDictConfig` + `AIConfig.Proxy` + 5 个环境变量加载 + 启动日志 |
+| `backend/internal/handlers/ai.go` | `callOpenAI` 改用 `utils.NewHTTPClient` |
+| `backend/internal/handlers/web_dict.go` | 抓取改用 `utils.NewHTTPClient` + 重试 + 缓存 + 解压 + 浏览器请求头 |
+| `backend/internal/router/router.go` | 启动时 `handlers.SetGlobalConfig(cfg)` 注入全局配置 |
+| `backend/go.mod` / `go.sum` | 新增 `github.com/andybalholm/brotli v1.2.2` |
+| `docs/CONFIGURATION.md` | **新建** 后端配置 & 部署指南（12 章节） |
+| `docs/ChangeLog.md` | 新增 v1.3.1 章节 |
+| `docs/PLAN.md` | 当前文件（活跃里程碑段） |
+| `docs/TASKS.md` | 新增 v1.3.1 任务清单 |
+| `README.md` | API 概览 + 「🔧 配置 & 部署」段落（指向 CONFIGURATION.md） |
+
+### 三、验证清单
+
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（cached）
+- [x] `pnpm build` exit code 0
+- [x] 文档同步：ChangeLog.md v1.3.1 章节 / PLAN.md v1.3.1 活跃里程碑 / TASKS.md v1.3.1 段 / README.md v1.3.1 行为说明 / CONFIGURATION.md 已创建
+
+### 四、收尾说明
+
+- **代理协议支持** `socks5://` 需要 Go 1.20+，本项目使用 Go 1.25 / toolchain go1.26.4 完全支持
+- **Docker 宿主机代理**：Windows / macOS 用 `host.docker.internal`；Linux 用 `172.17.0.1` 或宿主机 IP
+- **国内 AI 替代**：OpenAI 走代理仍可能慢，可改用 DeepSeek / 通义千问（OpenAI 兼容协议，国内直连）
+- 已知遗留：有道 / 朗文 等对爬虫严格的站点即便配置代理也可能拿到 403；前端查词弹窗已做「blocked=true + 在新窗口打开」兜底
+- 已知遗留：`WebDictCache` 是进程内内存缓存（重启后清空），不做持久化；如需跨进程共享可升级到 Redis（暂未实现）
+
+---
+
+## 旧版：v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）（2026-07-06 完成）
 
 本轮完成两件事，对应两个长期痛点：
 

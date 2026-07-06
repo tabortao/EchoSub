@@ -1,3 +1,98 @@
+# TASKS.md — v1.3.1 网页词典 / AI 代理配置 + 部署文档化
+
+配套 [PLAN.md](PLAN.md) / [CONFIGURATION.md](CONFIGURATION.md)。每完成一个任务勾选并填时间。
+
+## v1.3.1 网页词典 / AI 代理配置 + 部署文档化（2026-07-07）
+
+### 后端 — 统一 HTTP 客户端工厂
+
+- [x] **T1** [backend/internal/utils/http_client.go](backend/internal/utils/http_client.go) **新建** `NewHTTPClient` + `ProxyConfig`
+  - 自定义 `*http.Transport.Proxy` 字段（默认零值 transport 不读 `HTTPS_PROXY`，是历史常见坑）
+  - 代理优先级：自定义 `CustomProxy` > `http.ProxyFromEnvironment` > 直连
+  - URL 解析失败 → 自动降级到环境变量（降级保护）
+  - 协议支持：`http://` / `https://` / `socks5://`
+  - 连接池：`MaxIdleConns=100 / MaxIdleConnsPerHost=10 / IdleConnTimeout=90s`
+  - 独立超时：拨号 10s / TLS 握手 10s / Expect-Continue 1s / 总超时 = 配置
+  - 跟随 5 次重定向
+  - `socks5://` 需要 Go 1.20+，本项目 go1.26.4 完全支持
+
+### 后端 — AI 翻译走代理
+
+- [x] **T2** [backend/internal/handlers/ai.go](backend/internal/handlers/ai.go) `callOpenAI` 改用 `utils.NewHTTPClient`
+  - 替换原先 `http.Client{Timeout: ...}`（零值 transport 不读 `HTTPS_PROXY`）
+  - 注入 `cfg.AI.Proxy`（来自 `ECHOSUB_AI_PROXY`）
+  - OpenAI / DeepSeek / 通义千问 在国内也能稳定访问
+
+### 后端 — 网页词典抓取重构
+
+- [x] **T3** [backend/internal/handlers/global.go](backend/internal/handlers/global.go) 新增 `SetGlobalConfig` / `GetGlobalConfig`
+  - router 启动时 `handlers.SetGlobalConfig(cfg)` 注入
+  - 让 `LookupWebDict` 这种 `gin.HandlerFunc` 工厂无需依赖参数注入也能拿到 `*config.Config`
+- [x] **T4** [backend/internal/handlers/global.go](backend/internal/handlers/global.go) 新增 gzip / deflate / brotli 解压工具
+  - 依赖 `github.com/andybalholm/brotli v1.2.2`
+  - 用于处理网页词典返回的 `Content-Encoding`
+- [x] **T5** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) 抓取改用 `utils.NewHTTPClient`
+  - 注入 `cfg.WebDict.Proxy`（来自 `ECHOSUB_WEBDICT_PROXY`）
+  - 默认超时 6s → 15s（按 `cfg.WebDict.TimeoutSec`）
+- [x] **T6** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) 失败重试 + 内存缓存
+  - 失败自动重试 1 次（仅 timeout / EOF / connection reset / no such host / i/o timeout / net.OpError）
+  - 4xx/5xx / 业务错误 不重试
+  - 指数退避：第 2 次重试前 sleep 500ms
+  - 成功按 `CacheMinutes`（默认 60）缓存
+  - 失败结果单独缓存 5 分钟避免重复触发
+  - 内存上限 512 条（LRU 简化版：超容清半）
+- [x] **T7** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) 浏览器风格请求头补全
+  - 新增 `Sec-Fetch-Dest / Sec-Fetch-Mode / Sec-Fetch-Site / Sec-Fetch-User / Upgrade-Insecure-Requests`
+  - 减少被反爬识别的概率
+- [x] **T8** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) 失败错误文案更友好
+  - 附带「部分词典对抓取有限制，可点击下方「在新窗口打开」手动查看」提示
+
+### 后端 — 配置扩展
+
+- [x] **T9** [backend/internal/config/config.go](backend/internal/config/config.go) 新增 `WebDictConfig`
+  - 字段：`TimeoutSec / MaxBytes / Retries / CacheMinutes / Proxy`
+  - 默认值：`15 / 1MiB / 1 / 60 / ""`
+- [x] **T10** [backend/internal/config/config.go](backend/internal/config/config.go) `AIConfig.Proxy` 字段
+  - 用途：OpenAI / Anthropic 等海外 API 在国内访问常需代理
+- [x] **T11** [backend/internal/config/config.go](backend/internal/config/config.go) 5 个环境变量加载
+  - `ECHOSUB_AI_PROXY` / `ECHOSUB_WEBDICT_TIMEOUT` / `ECHOSUB_WEBDICT_RETRIES` / `ECHOSUB_WEBDICT_CACHE_MINUTES` / `ECHOSUB_WEBDICT_PROXY`
+- [x] **T12** [backend/internal/config/config.go](backend/internal/config/config.go) 启动日志
+  - 打印代理与超时配置，便于排查
+  - `[INFO] AI 翻译已启用：... / ...`
+  - `[INFO]   AI 代理：...`
+  - `[INFO] 网页词典抓取：超时 15s, 重试 1 次, 缓存 60 分钟（未配置代理）`
+
+### 后端 — 依赖
+
+- [x] **T13** [backend/go.mod](backend/go.mod) / [backend/go.sum](backend/go.sum) 新增 `github.com/andybalholm/brotli v1.2.2`
+  - 用于 br 解压
+  - 间接依赖自动加入
+
+### 文档 — CONFIGURATION.md
+
+- [x] **T14** [docs/CONFIGURATION.md](docs/CONFIGURATION.md) **新建** 后端配置 & 部署指南
+  - 12 章节：配置总览 / 基础配置 / AI 翻译 / 网页词典 / 代理系统设计 / 内置词典 / Docker / K8s / systemd / 验证 / 故障排查 / 变更历史
+  - Docker 4 个常见场景示例（海外 / 国内+Clash / 国内+远程代理 / 国内 AI）
+  - 配置验证清单（启动日志 / API 健康 / AI 连通 / 网页词典抓取）
+  - 故障排查清单（timeout / 403 / 代理不生效 / JWT 默认 secret / 数据库锁）
+  - 关联文档引用 [README.md](../README.md) · [ChangeLog.md](ChangeLog.md) · [PLAN.md](PLAN.md) · [TASKS.md](TASKS.md) · [CLAUDE.md](../CLAUDE.md)
+
+### 验证
+
+- [x] **T15** `go build ./...` exit code 0
+- [x] **T16** `go vet ./...` exit code 0
+- [x] **T17** `go test ./...` 全部 PASS（cached）
+- [x] **T18** `pnpm build` exit code 0
+- [x] **T19** 文档同步：ChangeLog.md v1.3.1 章节 / PLAN.md v1.3.1 活跃里程碑 / TASKS.md v1.3.1 段 / README.md v1.3.1 行为说明 / CONFIGURATION.md 已创建
+
+### 收尾
+
+- 已知遗留：有道 / 朗文 等对爬虫严格的站点即便配置代理也可能拿到 403 / 简版页面；前端查词弹窗已做「blocked=true + 在新窗口打开」兜底
+- 已知遗留：`WebDictCache` 是进程内内存缓存（重启后清空），不做持久化；如需跨进程共享可升级到 Redis（暂未实现）
+- 已知遗留：内存缓存条目上限 512 条（LRU 简化版：超容清半），极端查词场景下需要重启进程
+
+---
+
 # TASKS.md — v1.3.0 网页词典弹窗化 + 单词收藏体系 + 收藏页（句子/单词）
 
 配套 [PLAN.md](PLAN.md)。每完成一个任务勾选并填时间。

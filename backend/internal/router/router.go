@@ -13,6 +13,9 @@ import (
 func Setup(cfg *config.Config, r *gin.Engine, sc *scanner.Scanner) {
 	r.Use(middleware.CORS())
 
+	// v1.3.1：把 config 注入到 handlers 全局，供 LookupWebDict / AI 等无 cfg 参数的 handler 使用
+	handlers.SetGlobalConfig(cfg)
+
 	api := r.Group("/api/v1")
 
 	// 公开路由

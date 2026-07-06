@@ -53,10 +53,11 @@
 - [🧪 测试方法](#-测试方法)
 - [🏗️ 生产构建](#-生产构建)
 - [📚 API 概览](#-api-概览)
-- [� 词典（v0.9.0 起）](#-词典v090-起)
-- [�📊 学习记录页面](#-学习记录页面)
+- [📖 词典（v0.9.0 起）](#-词典v090-起)
+- [📊 学习记录页面](#-学习记录页面)
 - [🏷️ 标签管理（v0.5.0 多态）](#-标签管理v050-多态)
 - [🐳 Docker / NAS 部署](#-docker--nas-部署)
+- [🔧 配置 & 部署（[CONFIGURATION.md](docs/CONFIGURATION.md)）](#-配置--部署configurationmd)
 - [🗂️ 版本管理](#-版本管理)
 - [📄 许可证](#-许可证)
 
@@ -112,9 +113,10 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 ### 📖 词典（v0.9.0 起）
 
 - **可插拔数据源设计**：参考 Echo Loop `DictionarySource` 抽象，每种词典源（AI / 本地 / 未来的 StarDict / MDX）都是独立源；通过设置页启用 / 禁用 / 设为默认。
-- **AI 词典**（v0.9.0）：调用 OpenAI 兼容模型，按「词典编纂者」prompt 生成结构化词条（音标 / 词义 / 例句 / 词族 / 词源 / 学习提示）；支持传入 `sentence` 进行上下文消歧。
+- **AI 词典**（v0.9.0）：调用 OpenAI 兼容模型，按「词典编纂者」prompt 生成结构化词条（音标 / 词义 / 例句 / 词族 / 词源 / 学习提示）；支持传入 `sentence` 进行上下文消歧。**v1.3.1 起**支持 `ECHOSUB_AI_PROXY` 走代理，国内网络也能访问 OpenAI / DeepSeek / 通义千问。
 - **本地词典**（v0.9.1）：用户上传自己的 CSV 词库（`word,phonetic,translation`，表头列名兼容多种英文别名），单本最大 50 MiB；查词走 SQL（精确 + 简单词形 fallback），零 token 消耗。
 - **句子详情页**（v1.1.0 起，v1.2.0 重构查词交互）：点击每条字幕进入 `/play/:id/sentence/:idx`，AI 一次返回「整句翻译 / 逐词拆解 / 语法解析 / 学习提示」。v1.2.0 起**原文按词可独立点击查词**（不依赖 AI explain）；默认源是 AI 但未启用 / 失败时自动回退到内置 ECDICT 词典。
+- **网页词典弹窗化**（v1.3.0 起，v1.3.1 网络优化）：Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary / 有道 7 个网页词典改为「后端 fetch + XSS 清洗 + 弹窗内渲染」，不再 `window.open` 跳新标签页。**v1.3.1 起**支持 `ECHOSUB_WEBDICT_PROXY` 走代理、15s 默认超时、自动重试、内存缓存 60 分钟，**国内网络也能稳定抓取**（详见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)）。
 - **偏好持久化**：默认词典源 / 禁用源 / 是否本地命中时仍调 AI（`preferLocalHit`）通过 zustand + localStorage 持久化，跨会话保留。
 
 ### 🏷️ 标签管理（v0.5.0 多态）
@@ -269,12 +271,41 @@ Vite 开发服务器运行在 `http://localhost:5173`，并将 `/api` 代理到 
 
 ## ⚙️ 配置说明
 
-| 环境变量               | yaml 路径             | 默认值                       | 描述                       |
-|------------------------|------------------------|------------------------------|----------------------------|
-| `ECHOSUB_PORT`         | `server.port`          | `8080`                       | HTTP 端口                  |
-| `ECHOSUB_DB_PATH`      | `database.path`        | `data/echosub.db`            | SQLite 文件路径            |
-| `ECHOSUB_JWT_SECRET`   | `jwt.secret`           | `change-me-in-production`    | JWT 签名密钥               |
-| `ECHOSUB_MEDIA_DIR`    | `media.dir`            | `/media`                     | 媒体根目录                 |
+> **📖 完整配置 & 部署文档**：[docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+>
+> 包含：所有 `ECHOSUB_*` 环境变量、AI 翻译 / 网页词典代理配置、Docker / docker-compose / K8s / systemd 部署示例、配置验证清单、故障排查。
+
+### 常用环境变量速查
+
+| 环境变量 | 默认值 | 描述 |
+|----------|--------|------|
+| `ECHOSUB_PORT` | `8080` | HTTP 端口 |
+| `ECHOSUB_DB_PATH` | `data/echosub.db` | SQLite 文件路径 |
+| `ECHOSUB_JWT_SECRET` | `change-me-in-production` | JWT 签名密钥（**生产必填**） |
+| `ECHOSUB_MEDIA_DIR` | `/media` | 媒体根目录 |
+| `ECHOSUB_AI_BASE_URL` | `https://api.openai.com/v1` | OpenAI 兼容 base url |
+| `ECHOSUB_AI_API_KEY` | （空） | API 密钥（与 base url 同时设置即启用） |
+| `ECHOSUB_AI_MODEL` | `gpt-4o-mini` | 模型名 |
+| **`ECHOSUB_AI_PROXY`** | （空） | **AI 请求代理（v1.3.1）** |
+| **`ECHOSUB_WEBDICT_PROXY`** | （空） | **网页词典抓取代理（v1.3.1）** |
+| `ECHOSUB_WEBDICT_TIMEOUT` | `15` | 抓取超时（秒） |
+| `ECHOSUB_WEBDICT_RETRIES` | `1` | 失败重试次数 |
+| `ECHOSUB_WEBDICT_CACHE_MINUTES` | `60` | 内存缓存时长（分钟） |
+
+### 国内网络场景
+
+```bash
+# 网页词典 + AI 都走本地代理
+export ECHOSUB_WEBDICT_PROXY="http://127.0.0.1:7890"
+export ECHOSUB_AI_PROXY="http://127.0.0.1:7890"
+
+# 或用国内 AI（DeepSeek / 通义千问，OpenAI 兼容协议国内直连）
+export ECHOSUB_AI_BASE_URL="https://api.deepseek.com/v1"
+export ECHOSUB_AI_API_KEY="sk-xxxxxxxx"
+export ECHOSUB_AI_MODEL="deepseek-chat"
+```
+
+Docker / docker-compose / Kubernetes / systemd 部署示例见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
 支持的文件扩展名：视频 `.mp4/.mkv/.mov/.webm/.avi`，音频 `.mp3/.m4a/.aac/.wav/.flac/.ogg`，字幕 `.srt/.vtt`。
 图片（封面 / 横幅 / 学习页）：`.jpg/.jpeg/.png/.webp`。
@@ -626,6 +657,10 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 
 ## 🐳 Docker / NAS 部署说明
 
+> **📖 完整代理 / 部署配置**：[docs/CONFIGURATION.md §七、Docker 部署](docs/CONFIGURATION.md#七docker-部署)
+>
+> 包括：4 个常见场景的 `docker-compose.yml`（海外服务器 / 国内 + Clash / 国内 + 远程代理 / 国内 AI）、Kubernetes / systemd 部署示例、容器内代理地址说明（`host.docker.internal` vs `172.17.0.1`）。
+
 ### 镜像构建
 
 - `Dockerfile` 使用 3 阶段构建：`golang:1.26-alpine`（后端）→ `node:22-alpine`（前端）→ `alpine:3.20`（运行时，含 ffmpeg）。
@@ -703,7 +738,48 @@ volumes:
 
 - 每个自然日的所有变更合并为 **一个** 版本号（如 `v0.7.0`），详见 [docs/ChangeLog.md](docs/ChangeLog.md)。
 - 版本遵循 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范，仅使用 `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` 六类。
-- 当前活跃版本：**v0.9.2**（网页词典 + 息屏播放 + 音频专辑优化，参考 Echo Loop `WebDictConfig` + Media Session / Wake Lock API）。
+- 当前活跃版本：**v1.3.1**（网页词典 / AI 代理配置 + 部署文档化 CONFIGURATION.md，参考 [docs/ChangeLog.md](docs/ChangeLog.md)）。
+
+## 🔧 配置 & 部署（[CONFIGURATION.md](docs/CONFIGURATION.md)）
+
+后端所有环境变量、AI / 网页词典代理配置、Docker / docker-compose / K8s / systemd 部署示例、配置验证清单、故障排查已统一收录到 **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**，避免在多个文档中分散查阅。
+
+**最常用的两个问题速答**：
+
+### Q1：网页词典抓取超时 / 403
+
+国内网络访问 Cambridge / Longman / 有道 等经常 `context deadline exceeded` 或 `HTTP 403`。
+
+```bash
+# 设置代理（Clash / V2RayN 默认端口 7890）
+export ECHOSUB_WEBDICT_PROXY="http://127.0.0.1:7890"
+# 也可调大超时（默认 15s）
+export ECHOSUB_WEBDICT_TIMEOUT=30
+# 也可调大重试（默认 1 次）
+export ECHOSUB_WEBDICT_RETRIES=2
+```
+
+### Q2：AI 翻译调 OpenAI 超时
+
+```bash
+export ECHOSUB_AI_PROXY="http://127.0.0.1:7890"
+```
+
+### Q3：Docker 容器内如何配置代理？
+
+```yaml
+# docker-compose.yml
+services:
+  echosub:
+    environment:
+      # Windows / macOS Docker Desktop：宿主机 = host.docker.internal
+      ECHOSUB_AI_PROXY: "http://host.docker.internal:7890"
+      ECHOSUB_WEBDICT_PROXY: "http://host.docker.internal:7890"
+      # Linux 桥接网络：宿主机 = 172.17.0.1（按实际网关调整）
+      # ECHOSUB_AI_PROXY: "http://172.17.0.1:7890"
+```
+
+完整 4 个常见场景的 `docker-compose.yml`、Kubernetes / systemd 部署示例、配置验证清单、故障排查见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)。
 
 ## 🏝️ 动森风格设计语言（v0.7.0）
 

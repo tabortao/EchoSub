@@ -323,7 +323,8 @@ func (h *AIHandler) callOpenAI(ctx context.Context, texts []string, targetLang, 
 	if timeout <= 0 {
 		timeout = 60
 	}
-	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
+	// v1.3.1 起：使用统一的 HTTP 客户端工厂，支持代理
+	client := utils.NewHTTPClient(time.Duration(timeout)*time.Second, &utils.ProxyConfig{CustomProxy: h.cfg.AI.Proxy})
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("调用 AI 接口失败: %w", err)

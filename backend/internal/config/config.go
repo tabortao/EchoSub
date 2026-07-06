@@ -16,6 +16,7 @@ type Config struct {
 	JWT      JWTConfig
 	Media    MediaConfig
 	AI       AIConfig
+	WebDict  WebDictConfig
 }
 
 // AIConfig AI 翻译配置（v0.8.0）
@@ -28,6 +29,38 @@ type AIConfig struct {
 	Model      string // 模型名，如 gpt-4o-mini / deepseek-chat / qwen-plus
 	TargetLang string // 默认翻译目标语言，如 Chinese
 	TimeoutSec int    // 单次请求超时（秒）
+	// Proxy v1.3.1 起新增：AI 请求专用代理，可选。优先级：
+	//   1) ECHOSUB_AI_PROXY 环境变量
+	//   2) HTTPS_PROXY/HTTP_PROXY/no_proxy 环境变量（http.ProxyFromEnvironment）
+	//   3) 不使用代理（直连）
+	// 用途：OpenAI / Anthropic 等海外 API 在国内访问常需代理；本地 Ollama 不需要
+	Proxy string
+}
+
+// WebDictConfig 网页词典抓取配置（v1.3.1 起）
+//
+// 用于让 7 个网页词典（Cambridge / Oxford / Longman / Wiktionary / 有道 等）
+// 在国内网络环境下也能稳定抓取。关键点：
+//   - 很多站点在中国大陆访问慢 / 超时 → 需要代理
+//   - 有道 / 朗文 等对抓取敏感 → 增加超时 + 单次重试 + 内存缓存（短期）
+//
+// 代理优先级：
+//   1) ECHOSUB_WEBDICT_PROXY 环境变量
+//   2) HTTPS_PROXY/HTTP_PROXY/no_proxy 环境变量（http.ProxyFromEnvironment）
+//   3) 不使用代理（直连）
+type WebDictConfig struct {
+	// TimeoutSec 单次抓取超时（秒），默认 15 秒
+	// 站点响应慢时可调大到 30
+	TimeoutSec int
+	// MaxBytes 单次响应大小上限（字节），默认 1 MiB
+	MaxBytes int64
+	// Retries 失败时重试次数（默认 1 = 共请求 2 次），仅对 timeout/网络错误重试
+	Retries int
+	// CacheMinutes 抓取结果在内存中的缓存时长（分钟），默认 60
+	// 设置为 0 禁用缓存
+	CacheMinutes int
+	// Proxy v1.3.1 起新增：抓取请求专用代理，可选
+	Proxy string
 }
 
 // ServerConfig HTTP 服务配置
@@ -80,6 +113,12 @@ func Default() *Config {
 			Model:      "gpt-4o-mini",
 			TargetLang: "Chinese",
 			TimeoutSec: 60,
+		},
+		WebDict: WebDictConfig{
+			TimeoutSec:   15,
+			MaxBytes:     1 * 1024 * 1024,
+			Retries:      1,
+			CacheMinutes: 60,
 		},
 	}
 }
@@ -179,12 +218,46 @@ func Load() (*Config, error) {
 			cfg.AI.TimeoutSec = i
 		}
 	}
+	// v1.3.1 起新增：AI 代理。空字符串 = 走环境变量 HTTPS_PROXY/HTTP_PROXY（如果有）
+	if v := os.Getenv("ECHOSUB_AI_PROXY"); v != "" {
+		cfg.AI.Proxy = v
+	}
 	// 启用判定：必须 BaseURL + APIKey 都有值才启用
 	cfg.AI.Enabled = cfg.AI.BaseURL != "" && cfg.AI.APIKey != ""
 	if cfg.AI.Enabled {
 		fmt.Printf("[INFO] AI 翻译已启用：%s / %s\n", cfg.AI.BaseURL, cfg.AI.Model)
+		if cfg.AI.Proxy != "" {
+			fmt.Printf("[INFO]   AI 代理：%s\n", cfg.AI.Proxy)
+		}
 	} else {
 		fmt.Println("[INFO] AI 翻译未启用（未配置 ECHOSUB_AI_API_KEY）")
+	}
+
+	// v1.3.1 起新增：网页词典抓取配置
+	if v := os.Getenv("ECHOSUB_WEBDICT_TIMEOUT"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i > 0 {
+			cfg.WebDict.TimeoutSec = i
+		}
+	}
+	if v := os.Getenv("ECHOSUB_WEBDICT_RETRIES"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i >= 0 {
+			cfg.WebDict.Retries = i
+		}
+	}
+	if v := os.Getenv("ECHOSUB_WEBDICT_CACHE_MINUTES"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i >= 0 {
+			cfg.WebDict.CacheMinutes = i
+		}
+	}
+	if v := os.Getenv("ECHOSUB_WEBDICT_PROXY"); v != "" {
+		cfg.WebDict.Proxy = v
+	}
+	if cfg.WebDict.Proxy != "" {
+		fmt.Printf("[INFO] 网页词典代理：%s（超时 %ds, 重试 %d 次, 缓存 %d 分钟）\n",
+			cfg.WebDict.Proxy, cfg.WebDict.TimeoutSec, cfg.WebDict.Retries, cfg.WebDict.CacheMinutes)
+	} else {
+		fmt.Printf("[INFO] 网页词典抓取：超时 %ds, 重试 %d 次, 缓存 %d 分钟（未配置代理）\n",
+			cfg.WebDict.TimeoutSec, cfg.WebDict.Retries, cfg.WebDict.CacheMinutes)
 	}
 
 	// 3. 确保数据目录存在

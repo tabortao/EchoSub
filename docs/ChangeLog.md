@@ -7,6 +7,78 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+## [v1.3.1] - 2026-07-07
+
+### Fixed
+
+#### 网页词典抓取在国内网络下大量失败（v1.3.1）
+
+v1.3.0 上线后国内用户反馈：7 个网页词典（Cambridge / Oxford / Longman / 有道 等）抓取时频繁出现 `context deadline exceeded`（默认 6s 超时）、`HTTP 403`（反爬），查词弹窗里看到「抓取受限」的频率远高于预期。本版本彻底修复：
+
+- **新增 5 个环境变量**（[backend/internal/config/config.go](backend/internal/config/config.go)）
+  - `ECHOSUB_AI_PROXY`：AI 请求代理 URL（http / https / socks5）
+  - `ECHOSUB_WEBDICT_TIMEOUT`：单次抓取超时（秒），默认 15（原 6）
+  - `ECHOSUB_WEBDICT_RETRIES`：失败重试次数，默认 1（共请求 2 次）
+  - `ECHOSUB_WEBDICT_CACHE_MINUTES`：内存缓存时长（分钟），默认 60
+  - `ECHOSUB_WEBDICT_PROXY`：网页词典抓取代理 URL
+- **`WebDictConfig` 与 `AIConfig.Proxy` 字段**（同上）：结构化配置，避免散落字符串
+- **统一 HTTP 客户端工厂**（[backend/internal/utils/http_client.go](backend/internal/utils/http_client.go)）：新增 `NewHTTPClient(timeout, *ProxyConfig)`
+  - 自定义 `*http.Transport`：启用 `Proxy` 字段（默认零值 transport 不读 `HTTPS_PROXY`，是常见坑）
+  - 代理优先级：自定义 `CustomProxy` > `http.ProxyFromEnvironment`（读 `HTTPS_PROXY/HTTP_PROXY/NO_PROXY`） > 直连
+  - 合理超时：拨号 10s / TLS 握手 10s / Expect-Continue 1s / 总超时 = 配置
+  - 连接池：`MaxIdleConns=100 / MaxIdleConnsPerHost=10 / IdleConnTimeout=90s`
+  - 跟随 5 次重定向
+- **`ProxyConfig` 工具**（同上）
+  - `CustomProxy` 非空 → `http.ProxyURL`
+  - `CustomProxy` 为空 → `http.ProxyFromEnvironment`（自动读系统环境变量）
+  - URL 解析失败 → 降级到环境变量，不让一个拼写错误让所有出站请求失败
+- **AI 翻译走代理**（[backend/internal/handlers/ai.go](backend/internal/handlers/ai.go)）：`callOpenAI` 改用 `utils.NewHTTPClient` 替换原先的 `http.Client{Timeout: ...}`，让 OpenAI / DeepSeek / 通义等海外 API 在国内也能稳定访问
+- **网页词典抓取重构**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go)）
+  - `fetchWebDictHTML` 使用 `utils.NewHTTPClient` 注入代理配置
+  - 默认超时 6s → 15s（按 `cfg.WebDict.TimeoutSec` 可调大到 30+）
+  - 失败自动重试 1 次（仅对 `context deadline exceeded` / `EOF` / `connection reset` / `no such host` / `i/o timeout` / `net.OpError` 重试；4xx/5xx 不重试）
+  - 指数退避：第 2 次重试前 sleep 500ms
+  - 内存 LRU 缓存：成功按 `CacheMinutes`（默认 60）缓存，失败结果也缓存 5 分钟避免一个 timeout 把整个弹窗卡住
+  - 浏览器风格请求头补全：新增 `Sec-Fetch-Dest / Sec-Fetch-Mode / Sec-Fetch-Site / Sec-Fetch-User / Upgrade-Insecure-Requests`，减少被反爬识别的概率
+  - 新增 gzip / deflate / brotli 三种 `Content-Encoding` 解压（依赖 `andybalholm/brotli`）
+- **启动日志**（[backend/internal/config/config.go](backend/internal/config/config.go)）：打印代理与超时配置，便于排查
+  ```
+  [INFO] AI 翻译已启用：https://api.openai.com/v1 / gpt-4o-mini
+  [INFO]   AI 代理：http://127.0.0.1:7890
+  [INFO] 网页词典抓取：超时 15s, 重试 1 次, 缓存 60 分钟（未配置代理）
+  [INFO] 网页词典代理：http://127.0.0.1:7890（超时 20s, 重试 2 次, 缓存 60 分钟）
+  ```
+
+### Added
+
+#### `docs/CONFIGURATION.md` 部署与代理配置文档（v1.3.1）
+
+新增 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)，把后端所有环境变量、AI 翻译配置、网页词典抓取配置、代理系统设计、Docker / docker-compose / Kubernetes / systemd 部署示例、配置验证清单、故障排查**集中到一个文档**。用户最关心的两个问题「AI 怎么走代理？」「Docker 内如何配置代理？」都有专门章节 + 完整 `docker-compose.yml` 示例。
+
+文档要点：
+
+- **配置总览表**：按类别列出所有 `ECHOSUB_*` 环境变量 + 默认值
+- **基础配置**：端口 / 数据库 / JWT 密钥 / 媒体目录
+- **AI 翻译配置**：OpenAI / DeepSeek / 通义千问 / Ollama 4 个示例 + 代理配置
+- **网页词典抓取配置**：痛点与解决对照表 + 推荐配置
+- **代理系统设计**：优先级流程图 + 协议支持（http / https / socks5）
+- **Docker 部署**：`docker run` 命令 + 4 个常见场景的 `docker-compose.yml`（海外服务器 / 国内 + Clash / 国内 + 远程代理 / 国内 AI）
+- **Kubernetes / Helm / systemd 部署参考**：满足企业级部署需要
+- **配置验证清单**：启动日志 / API 健康检查 / AI 连通性测试 / 网页词典抓取验证
+- **故障排查**：timeout / 403 / 代理不生效 / JWT 默认 secret / 数据库锁
+- **变更历史**：本文档自身的版本演进
+
+### Changed
+
+- `backend/go.mod` 新增 `github.com/andybalholm/brotli v1.2.2`（br 解压依赖）
+- 网页词典抓取失败错误文案更友好：附带「部分词典对抓取有限制，可点击下方「在新窗口打开」手动查看」提示
+
+### Known 遗留
+
+- 有道 / 朗文 等对爬虫严格的站点即便配置代理也可能拿到 403 / 简版页面；前端查词弹窗已做「blocked=true + 在新窗口打开」兜底，**强烈建议**国内网络使用 `ECHOSUB_WEBDICT_PROXY=socks5://host:1080` 走境外代理
+- `WebDictCache` 是进程内内存缓存（重启后清空），不做持久化；如需跨进程共享，可升级到 Redis（暂未实现）
+- 内存缓存条目上限 512 条（LRU 简化版：超容清半），极端查词场景下需要重启进程
+
 ## [v1.3.0] - 2026-07-06
 
 ### Added
