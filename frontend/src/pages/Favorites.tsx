@@ -21,7 +21,7 @@ import {
 } from '@ant-design/icons'
 import { builtinDictApi, mediaApi, recordApi, webDictApi, wordFavoriteApi } from '@/api'
 import { useWordFavoritesStore } from '@/store/wordFavorites'
-import { kWebDictConfigs, getWebDictConfig, lookupWebDictionary } from '@/store/webDictionaryConfig'
+import { kWebDictConfigs } from '@/store/webDictionaryConfig'
 import { useDeviceSize } from '@/hooks/useDeviceSize'
 import type { BuiltinDictLookupResponse, MediaFile, Sentence, SentenceProgress, WebDictLookupResponse, WordFavorite } from '@/types'
 
@@ -159,17 +159,47 @@ export default function FavoritesPage() {
     return wordFavs.filter((w) => w.word.includes(q))
   }, [wordFavs, wordQ])
 
-  // 打开单词查词弹窗（依次 fallback：builtin → 第一个有缓存的 web 词典）
+  // 打开单词查词弹窗（v1.3.2 增强词义持久化）
+  // 优先顺序：
+  //   1) 收藏列表里该词的 query_result 快照（零网络请求，离线可用）
+  //   2) 内置词典 fallback（兜底）
+  //   3) 用户在弹窗内选网页词典时按需访问网络
   const handleOpenWord = async (word: string) => {
     const w = word.trim().toLowerCase()
     if (!w) return
     setWordModal({ word: w, builtin: null, web: null, webSource: null, loading: true, error: null })
     try {
-      // 1) 内置词典
+      // 1) 查收藏快照（v1.3.2 新增）
+      const fav = wordFavs.find((x) => x.word === w)
+      let cachedSnapshot: WebDictLookupResponse | null = null
+      if (fav && fav.query_result) {
+        try {
+          const parsed = JSON.parse(fav.query_result) as WebDictLookupResponse
+          // 补回 favorite 字段，让弹窗知道这是离线快照
+          parsed.favorite = true
+          parsed.favorite_id = fav.id
+          parsed.favorite_source = fav.source
+          parsed.favorite_note = fav.note
+          parsed.cached = true
+          cachedSnapshot = parsed
+        } catch {
+          // JSON 损坏：当没快照，走 fallback
+        }
+      }
+
+      // 2) 内置词典（fallback 兜底）
       const r = await builtinDictApi.lookup(w).catch(() => null)
       const builtin = r?.data.data ?? null
-      // 2) 网页词典默认不加载（按需用户在弹窗内选）
-      setWordModal({ word: w, builtin, web: null, webSource: null, loading: false, error: null })
+
+      // 3) 决定 webData 初始值：优先快照
+      if (cachedSnapshot) {
+        setWordModal({
+          word: w, builtin, web: cachedSnapshot,
+          webSource: cachedSnapshot.source, loading: false, error: null,
+        })
+      } else {
+        setWordModal({ word: w, builtin, web: null, webSource: null, loading: false, error: null })
+      }
     } catch (err: unknown) {
       setWordModal({
         word: w, builtin: null, web: null, webSource: null, loading: false,
@@ -481,12 +511,10 @@ function sourceLabel(src: string): string {
     local: '本地词典',
     builtin: '内置 ECDICT',
     youdao: '有道',
-    cambridge: 'Cambridge',
     oxford: 'Oxford',
     longman: 'Longman',
-    merriamWebster: 'M-W',
-    collins: 'Collins',
     wiktionary: 'Wiktionary',
+    microsoft: '微软翻译',
   }
   return map[src] ?? src
 }
@@ -594,7 +622,36 @@ function WordLookupModalBody({
             background: 'var(--color-bg-page, #fafafa)',
           }}
         >
-          {modal.web.blocked ? (
+          {/* v1.3.2 起：离线快照 / 内存缓存 徽标 */}
+          {modal.web.favorite && (
+            <div style={{ marginBottom: 8 }}>
+              <Tag color="gold" icon={<StarFilled />}>已收藏词义（离线快照）</Tag>
+              {modal.web.cached && <Tag>内存缓存</Tag>}
+            </div>
+          )}
+          {/* v1.3.4 起：翻译型源（microsoft）用 translation 字段简短展示 */}
+          {modal.web.kind === 'translate' && modal.web.translation ? (
+            <div>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  {modal.web.source_lang && modal.web.target_lang
+                    ? `${modal.web.source_lang} → ${modal.web.target_lang}`
+                    : '翻译'}
+                </Text>
+              </div>
+              <div style={{ fontSize: 18, lineHeight: 1.6 }}>{modal.web.translation}</div>
+              {modal.web.phonetic && (
+                <div style={{ marginTop: 8 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>音标：{modal.web.phonetic}</Text>
+                </div>
+              )}
+              <div style={{ marginTop: 12, textAlign: 'right' }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  来源 <a href={modal.web.url} target="_blank" rel="noreferrer">{modal.web.source_name}</a>
+                </Text>
+              </div>
+            </div>
+          ) : modal.web.blocked ? (
             <Alert
               type="warning"
               showIcon
@@ -606,7 +663,7 @@ function WordLookupModalBody({
                     size="small"
                     type="link"
                     icon={<LinkOutlined />}
-                    href={lookupWebDictionary(getWebDictConfig(modal.web.source)!, modal.word)}
+                    href={modal.web.url}
                     target="_blank"
                   >
                     在新窗口打开原页面

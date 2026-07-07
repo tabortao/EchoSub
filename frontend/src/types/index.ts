@@ -440,18 +440,24 @@ export interface SentenceExplainResponse {
   notes: string
 }
 
-/** 词典数据源 id 联合类型（v0.9.2 起扩展网页词典：youdao/cambridge/oxford/longman/merriamWebster/collins/wiktionary） */
+/** 词典数据源 id 联合类型
+ *  v0.9.2 起扩展网页词典：youdao / oxford / longman / wiktionary
+ *  v1.3.2 起新增翻译型源：baidu / google（v1.3.4 移除，被 microsoft 替代）
+ *  v1.3.4 精简为 5 个源：youdao / oxford / longman / wiktionary / microsoft
+ *    - 移除 cambridge / merriamWebster（v1.3.3 长期 403）
+ *    - 移除 collins（v1.3.4 长期不稳定）
+ *    - 移除 baidu / google 翻译（v1.3.4 fanyi.baidu.com/sug 已风控 + translate.googleapis.com 国内 i/o timeout）
+ *    - 新增 microsoft 微软 Edge 翻译 API（无需 key，国内需代理）
+ */
 export type DictionarySourceId =
   | 'ai'
   | 'local'
   | 'builtin'
   | 'youdao'
-  | 'cambridge'
   | 'oxford'
   | 'longman'
-  | 'merriamWebster'
-  | 'collins'
   | 'wiktionary'
+  | 'microsoft'
 
 /** 词典数据源描述（用于词典设置页） */
 export interface DictionarySourceMeta {
@@ -596,22 +602,53 @@ export interface WebDictLookupResponse {
   source_name: string
   word: string
   url: string
-  final_url: string
+  final_url?: string
   /** 清洗后的 HTML（已去噪 + XSS 防护 + 链接绝对化 + target=_blank） */
   html: string
   /** true = 目标网站对抓取有限制（403/反爬），弹窗提示「在新窗口打开」 */
   blocked: boolean
   error: string
+
+  // ===== v1.3.2 起新增字段 =====
+  /** 源类型：html（抓取 HTML）/ translate（公开翻译 API） */
+  kind?: 'html' | 'translate'
+  /** 翻译型源返回的简短翻译（kind=translate 时优先展示） */
+  translation?: string
+  /** 源语言（en / auto / zh 等） */
+  source_lang?: string
+  /** 目标语言（zh-CN / zh 等） */
+  target_lang?: string
+  /** 音标（部分源可能给） */
+  phonetic?: string
+  /** true = 命中服务端内存缓存（60 分钟内的同 source+word 重复抓取） */
+  cached?: boolean
+  /** true = 命中本地收藏词义快照（v1.3.2 起新增；查同词时不再访问网络） */
+  favorite?: boolean
+  /** 命中收藏快照时的收藏 id（用于 UI 高亮「已收藏」） */
+  favorite_id?: number
+  /** 命中收藏快照时的收藏来源（首次收藏时的 source） */
+  favorite_source?: string
+  /** 命中收藏快照时的收藏笔记 */
+  favorite_note?: string
+  /** true = 收藏过但 query_result 为空（罕见；老数据） */
+  favorite_only?: boolean
 }
 
-// ===== 单词收藏（v1.3.0 起）=====
+// ===== 单词收藏（v1.3.0 起，v1.3.2 增强词义持久化）=====
 // 弹窗内点击 ⭐ 收藏当前查的单词；侧边栏「收藏」页统一展示
+// v1.3.2 起：query_result 字段把查词接口原始响应存为 JSON 字符串，
+// 下次查同词时直接返回，零网络请求。
 export interface WordFavorite {
   id: number
   word: string
   source: string
   note: string
   hit_count: number
+  /** v1.3.2 起新增：查词快照 JSON 字符串
+   *  解码后是 WebDictLookupResponse 的子集（可能不含 final_url 等次要字段）
+   *  收藏页打开查词弹窗时优先用这个字段渲染，避免再次访问网络
+   */
+  query_result?: string
   created_at: string
   updated_at: string
 }

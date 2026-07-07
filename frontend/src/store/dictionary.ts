@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { LocalDictionary } from '@/types'
+import type { DictionarySourceId, LocalDictionary } from '@/types'
 
-/** v1.1.0 词典源 id 联合类型：ai / local / builtin(内置 ECDict) / 网页词典 */
-export type DictionarySourceId = 'ai' | 'local' | 'builtin' | 'youdao' | 'cambridge' | 'oxford' | 'longman' | 'merriamWebster' | 'collins' | 'wiktionary'
+// v1.3.2 起：DictionarySourceId 集中定义在 @/types（与后端 kWebDictSources 一一对应）
+// 这里 re-export 是为了兼容旧 import 路径，避免大范围修改
+export type { DictionarySourceId } from '@/types'
 
 /** v0.9.2 字典设置（本地持久化，localStorage） */
 interface DictionaryState {

@@ -37,9 +37,20 @@ interface WordFavoritesState {
   removeFavorite: (id: number) => void
   /**
    * 收藏一个单词（API 调用）。已存在则只增加 hit_count + 更新 note
+   * @param word 待收藏单词
+   * @param source 可选，收藏来源（ai / local / builtin / youdao / oxford / longman / wiktionary / microsoft）
+   * @param note 可选，笔记
+   * @param queryResult 可选，查词快照（v1.3.2 起新增）
+   *   传 webDictApi.lookup() 返回的 data 即可。后端会把它原样存为 JSON 字符串，
+   *   下次查同词时直接返回，零网络请求。
    * @returns 是否成功
    */
-  favorite: (word: string, source?: string, note?: string) => Promise<WordFavorite | null>
+  favorite: (
+    word: string,
+    source?: string,
+    note?: string,
+    queryResult?: Record<string, unknown>,
+  ) => Promise<WordFavorite | null>
   /** 取消收藏（API 调用） */
   unfavorite: (id: number, word: string) => Promise<boolean>
   /** 按 word 找收藏（O(1)） */
@@ -85,11 +96,11 @@ export const useWordFavoritesStore = create<WordFavoritesState>()(
         set({ items: get().items.filter((x) => x.id !== id) })
       },
 
-      favorite: async (word, source, note) => {
+      favorite: async (word, source, note, queryResult) => {
         const w = word.trim().toLowerCase()
         if (!w) return null
         try {
-          const r = await wordFavoriteApi.create({ word: w, source, note })
+          const r = await wordFavoriteApi.create({ word: w, source, note, query_result: queryResult })
           const item = r.data.data
           get().addFavorite(item)
           return item

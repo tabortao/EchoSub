@@ -1,22 +1,39 @@
 /**
- * 网页词典源配置（v0.9.2 起）
+ * 网页词典源配置（v0.9.2 起，v1.3.2 重构为后端 fetch + 弹窗内渲染，v1.3.3 移除 Cambridge/Merriam-Webster + 调整百度/谷歌，v1.3.4 移除 Collins/百度/谷歌 + 新增微软翻译）
  *
- * 参考 Echo Loop `WebDictConfig` 模式：
- * - 网页词典（Cambridge / Oxford / Longman / Merriam-Webster / Collins /
- *   Vocabulary.com / Wiktionary / 有道）本质相同——不抓取/解析 HTML，只按词构造 URL，
- *   交给浏览器新标签页打开。差异仅在 URL 模板与品牌展示，故抽象为一份 [WebDictConfig]
- *   配置 + 一个通用 [lookupWebDictionary] 工具。
- * - 新增一个网页词典只需在 [kWebDictConfigs] 加一行配置。
+ * 重要变更（v1.3.2）：
+ * - 之前：纯前端配置，按词拼 URL 后 window.open 跳新标签页
+ * - 现在：后端负责抓取 / 翻译 API 调用，前端用 webDictApi.lookup() 拿结构化结果
+ *   弹窗内直接渲染。
+ * - 切换器仅用于「选择不同源 + 触发后端重新查」，不再需要 buildUrl
  *
- * 与本地 / AI 词典的差异：
- * - 本地 / AI 词典返回结构化 `DictionaryResponse`，由前端渲染（弹窗 / 卡片）
- * - 网页词典直接打开浏览器到该 URL，无内容可结构化展示；查词即「跳转」
+ * 源类型（v1.3.2 起新增 kind 字段）：
+ * - "html"     抓取目标 URL 的 HTML → 后端清洗（去噪+XSS）→ 弹窗内渲染
+ *               适用于：youdao / oxford / longman / wiktionary
+ * - "translate" 后端调公开翻译 API（无 key）→ 返回结构化 translation 字段
+ *               适用于：microsoft（Edge 翻译 API，国内需代理）
  *
- * 路由：当前实现不挂后端，纯前端配置
+ * v1.3.3 调整：
+ * - 移除 Cambridge、Merriam-Webster（长期被反爬，可靠性差）
+ * - 百度翻译改用 dict.baidu.com/suggest 端点（避开已废弃的 fanyi.baidu.com/sug）
+ *
+ * v1.3.4 调整（重大）：
+ * - 移除 Collins（v1.3.4，长期不稳定）
+ * - 移除百度翻译（dict.baidu.com/suggest 也被风控）
+ * - 移除谷歌翻译（translate.googleapis.com 国内 i/o timeout）
+ * - 新增「微软翻译」：Edge 翻译 API（先拿 token，再调翻译接口）
+ *   参考实现：docs/Reference/STranslate.Plugin.Translate.GoogleWebsite
+ *
+ * 新增一个网页词典只需在 [kWebDictConfigs] 加一行配置；
+ * 1) 后端 web_dict.go 中注册源（kind / SkipProxy / ForceProxy / FetchTranslate 等）
+ * 2) 在 types/index.ts 的 DictionarySourceId 联合类型加入新 id
  */
+import type { WebDictLookupResponse } from '@/types'
+
+export type WebDictKind = 'html' | 'translate'
 
 export interface WebDictConfig {
-  /** 稳定唯一 id（持久化键/缓存前缀/切换标识，一经发布不可改） */
+  /** 稳定唯一 id（持久化键/缓存前缀/切换标识，与后端 kWebDictSources 一一对应） */
   id: string
   /** 切换器与设置页显示名（品牌名，不本地化） */
   displayName: string
@@ -24,39 +41,25 @@ export interface WebDictConfig {
   icon: string
   /** 品牌强调色（用于设置页卡片头像背景） */
   color: string
-  /** 由「已 URL 编码的查询词」构造完整词条网页地址 */
-  buildUrl: (encodedWord: string) => string
+  /** v1.3.2 起新增：源类型
+   *  - html：抓取 HTML（kind=html）
+   *  - translate：调公开翻译 API（kind=translate）
+   */
+  kind: WebDictKind
   /** 可选：目标语言提示（en / zh / en-zh） */
   languageNote?: string
 }
 
-/** 通用：构造 URL 并在新标签页打开 */
-export function lookupWebDictionary(config: WebDictConfig, word: string): string {
-  // 控制字符防护（避免 word 含换行等导致 URL 异常）
-  const safe = String(word || '').trim()
-  if (!safe) return ''
-  const encoded = encodeURIComponent(safe)
-  return config.buildUrl(encoded)
-}
-
-// URL 模板（顶层函数，便于 const 配置引用）。`w` 为已 URL 编码的查询词。
-const cambridgeUrl = (w: string) =>
-  `https://dictionary.cambridge.org/dictionary/english-chinese-simplified/${w}`
-const oxfordUrl = (w: string) =>
-  `https://www.oxfordlearnersdictionaries.com/definition/english/${w}`
-const longmanUrl = (w: string) => `https://www.ldoceonline.com/dictionary/${w}`
-const merriamWebsterUrl = (w: string) =>
-  `https://www.merriam-webster.com/dictionary/${w}`
-const collinsUrl = (w: string) =>
-  `https://www.collinsdictionary.com/dictionary/english/${w}`
-const wiktionaryUrl = (w: string) => `https://en.m.wiktionary.org/wiki/${w}`
-const youdaoUrl = (w: string) => `https://m.youdao.com/dict?le=eng&q=${w}`
-
 /** 全部网页词典配置（顺序即切换器排列顺序）。
  *
  * 说明：
- * - Vocabulary.com 与 Macmillan 暂未纳入（Macmillan 官网 2023-06-30 永久关停）
- * - 中文友好度优先级：有道 > Cambridge 中英 > 维基词典（英文释义）> 其余英英词典
+ * - v1.3.4 起精简为 5 个源：youdao / oxford / longman / wiktionary / microsoft
+ *   移除：cambridge / merriamWebster（v1.3.3）/ collins（v1.3.4）/ baidu / google（v1.3.4）
+ * - 中文友好度优先级：有道 > 微软翻译 > 维基词典（英文释义）> 其余英英词典
+ * - 翻译型源（microsoft）：Edge 翻译 API，无需 key，国内需配置 ECHOSUB_WEBDICT_PROXY
+ *   - 后端从 edge.microsoft.com/translate/auth 拿短期 JWT token（缓存 8 分钟）
+ *   - 再调 api-edge.cognitive.microsofttranslator.com/translate 翻译
+ *   - 源标记 ForceProxy=true 强制走代理
  */
 export const kWebDictConfigs: WebDictConfig[] = [
   {
@@ -64,23 +67,23 @@ export const kWebDictConfigs: WebDictConfig[] = [
     displayName: '有道词典',
     icon: '📕',
     color: '#EA4B35', // 有道暖红
-    buildUrl: youdaoUrl,
+    kind: 'html',
     languageNote: '中英 / 英英',
   },
   {
-    id: 'cambridge',
-    displayName: 'Cambridge',
-    icon: '🎓',
-    color: '#00BDB6', // 站点导航栏青绿
-    buildUrl: cambridgeUrl,
-    languageNote: '英中 / 英英',
+    id: 'microsoft',
+    displayName: '微软翻译',
+    icon: '🪟',
+    color: '#0078D4', // 微软蓝
+    kind: 'translate',
+    languageNote: '多语',
   },
   {
     id: 'oxford',
     displayName: 'Oxford',
     icon: '📘',
     color: '#002147', // Oxford Blue
-    buildUrl: oxfordUrl,
+    kind: 'html',
     languageNote: '英英',
   },
   {
@@ -88,23 +91,7 @@ export const kWebDictConfigs: WebDictConfig[] = [
     displayName: 'Longman',
     icon: '📚',
     color: '#3B4CB8', // 站点靛蓝
-    buildUrl: longmanUrl,
-    languageNote: '英英',
-  },
-  {
-    id: 'merriamWebster',
-    displayName: 'Merriam-Webster',
-    icon: '📖',
-    color: '#D7191F', // M-W 品牌红
-    buildUrl: merriamWebsterUrl,
-    languageNote: '英英',
-  },
-  {
-    id: 'collins',
-    displayName: 'Collins',
-    icon: '📗',
-    color: '#0073E6', // 站点主色蓝
-    buildUrl: collinsUrl,
+    kind: 'html',
     languageNote: '英英',
   },
   {
@@ -112,7 +99,7 @@ export const kWebDictConfigs: WebDictConfig[] = [
     displayName: 'Wiktionary',
     icon: '🌐',
     color: '#54595D', // Wikimedia 灰
-    buildUrl: wiktionaryUrl,
+    kind: 'html',
     languageNote: '多语',
   },
 ]
@@ -120,4 +107,18 @@ export const kWebDictConfigs: WebDictConfig[] = [
 /** 按 id 查配置，找不到返回 undefined */
 export function getWebDictConfig(id: string): WebDictConfig | undefined {
   return kWebDictConfigs.find((c) => c.id === id)
+}
+
+/** 翻译型源的简短展示（v1.3.2 起新增）
+ *
+ * 把后端返回的 WebDictLookupResponse 渲染为简短文本
+ * 弹窗内 translation 字段非空时使用，避免 dangerouslySetInnerHTML
+ */
+export function renderTranslateSummary(data: WebDictLookupResponse): string {
+  const t = (data.translation || '').trim()
+  if (!t) return ''
+  if (data.source_lang && data.target_lang) {
+    return `${data.source_lang} → ${data.target_lang}：${t}`
+  }
+  return t
 }

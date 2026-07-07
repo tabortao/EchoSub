@@ -150,7 +150,7 @@ type Setting struct {
 // TableName 显式指定表名（避免复数问题）
 func (Tag) TableName() string { return "tags" }
 
-// WordFavorite 用户收藏的单词（v1.3.0 起）
+// WordFavorite 用户收藏的单词（v1.3.0 起，v1.3.2 增强词义持久化）
 //
 // 设计：
 //   - 联合唯一索引 (user_id, word) 保证同一用户同一单词只有一条收藏
@@ -158,15 +158,25 @@ func (Tag) TableName() string { return "tags" }
 //     后续多次收藏同一词不会更新该字段，保留首次来源
 //   - Note 用户可附的笔记（可选）
 //   - HitCount 查词次数（备用统计字段，目前仅维护，不在 API 强约束）
+//   - QueryResult 词义快照（v1.3.2 起新增）
+//     收藏时把查词弹窗的完整响应（html / translation / source_lang 等）原样存为 JSON。
+//     下次查同一词时直接返回该 JSON，零网络请求。
+//     这样：1) 已收藏词永远秒开（不依赖代理 / 不受网站 403 影响）
+//           2) 跨进程、跨重启、跨设备永久有效
+//           3) 配合 Source 字段可定位「首次收藏来自哪个词典」
 type WordFavorite struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	UserID     uint      `gorm:"uniqueIndex:idx_user_word;not null" json:"user_id"`
-	Word       string    `gorm:"size:128;uniqueIndex:idx_user_word;not null" json:"word"`
-	Source     string    `gorm:"size:32" json:"source"`
-	Note       string    `gorm:"type:text" json:"note"`
-	HitCount   int       `json:"hit_count"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	UserID      uint      `gorm:"uniqueIndex:idx_user_word;not null" json:"user_id"`
+	Word        string    `gorm:"size:128;uniqueIndex:idx_user_word;not null" json:"word"`
+	Source      string    `gorm:"size:32" json:"source"`
+	Note        string    `gorm:"type:text" json:"note"`
+	HitCount    int       `json:"hit_count"`
+	// QueryResult 词义快照（JSON 文本，v1.3.2 起新增）
+	// 存的是查词接口（/dictionary/web/lookup）原始响应的 JSON 字符串
+	// 典型结构：{"html": "...", "translation": "...", "source_lang": "en", ...}
+	QueryResult string    `gorm:"type:text" json:"query_result,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // TableName 显式指定表名

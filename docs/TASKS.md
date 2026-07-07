@@ -1,6 +1,143 @@
-# TASKS.md — v1.3.1 网页词典 / AI 代理配置 + 部署文档化
+# TASKS.md — v1.3.5 网页词典 3 个源修复（2026-07-07）
 
 配套 [PLAN.md](PLAN.md) / [CONFIGURATION.md](CONFIGURATION.md)。每完成一个任务勾选并填时间。
+
+## v1.3.5 网页词典 3 个源修复（2026-07-07）
+
+### 后端 — 修复
+
+- [x] **T1** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources["youdao"].SkipProxy: true → false`（让用户代理生效）
+- [x] **T2** [backend/internal/config/config.go](backend/internal/config/config.go) `WebDictConfig.SkipProxyHosts` 默认值移除 `youdao.com`
+- [x] **T3** `microsoft.BuildURL` 中 `from=auto → from=en` + `fetchMicrosoftTranslate` 中 `apiURL from=auto → from=en`（Edge API 不支持 auto）
+- [x] **T4** `handleHTMLScrape` 新增 Oxford 404 剥 s 重试逻辑 + `isHTTPNotFound` 辅助函数（处理 `eggs → egg`）
+
+### 验证
+
+- [x] **T5** `go build ./...` / `go vet ./...` / `go test ./...` / `pnpm build` 全绿；ChangeLog v1.3.5 章节 + PLAN v1.3.5 活跃里程碑同步完成
+
+
+
+## v1.3.4 网页词典最终精简为 5 源 + 微软翻译（2026-07-07）
+
+### 后端 — 移除 / 新增
+
+- [x] **T1** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` 移除 `collins` / `baidu` / `google` 三个 source（Collins 长期反爬；百度翻译换端点后仍风控；谷歌翻译即便 ForceProxy 也 i/o timeout）
+- [x] **T2** 同步移除 `collinsURL` / `baiduURL` / `googleURL` 构造函数 + `fetchBaiduTranslate` / `fetchGoogleTranslate` 函数
+- [x] **T3** 新增 `fetchMicrosoftTranslate` + `fetchMicrosoftAuthToken`：Edge 翻译 API 两步式（先拿 8 分钟有效 JWT token，再调 `api-edge.cognitive.microsofttranslator.com/translate`）
+- [x] **T4** 新增 `microsoft` source：`Kind: kindTranslate`、`ForceProxy: true`、`FetchTranslate: fetchMicrosoftTranslate`
+- [x] **T5** 新增 token 缓存：8 分钟 TTL + 401 自动失效 + sync.RWMutex 保护
+
+### 前端 — 同步
+
+- [x] **T6** [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs` 移除 `collins` / `baidu` / `google`，新增 `microsoft`（🪟 微软蓝 #0078D4）
+- [x] **T7** [frontend/src/types/index.ts](frontend/src/types/index.ts) `DictionarySourceId` 联合类型同步精简（移除 5 个 + 加 1 个）；同步 [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) `sourceLabel`；同步 [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 注释；同步 [frontend/src/store/wordFavorites.ts](frontend/src/store/wordFavorites.ts) 注释；同步 [frontend/src/api/index.ts](frontend/src/api/index.ts) 注释
+
+### 验证
+
+- [x] **T8** `go build ./...` / `go vet ./...` / `go test ./...` / `pnpm build` 全绿；ChangeLog v1.3.4 章节 + PLAN v1.3.4 活跃里程碑同步完成
+
+
+
+## v1.3.3 网页词典精简源 + 修复百度/谷歌（2026-07-07）
+
+### 后端 — 移除 / 修复
+
+- [x] **T1** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` 移除 `cambridge` / `merriamWebster` 两个 source（长期 403，留着误导用户）
+- [x] **T2** 移除 `cambridgeURL` / `merriamWebsterURL` 构造函数（同步清理）
+- [x] **T3** `webDictSource` 结构体新增 `ForceProxy bool` 字段——与现有 `SkipProxy` 互斥：用于「源级强制走代理，忽略 cfg.WebDict.SkipProxyHosts」
+- [x] **T4** `makeProxyForSource` 决策逻辑升级：
+  - `SkipProxy=true` → 返回 nil（直连）
+  - `ForceProxy=true`（新增）→ 只读 `cfg.WebDict.CustomProxy`，忽略 `SkipProxyHosts` / `OnlyProxyHosts`
+  - 默认 → 合并 `cfg.WebDict.SkipProxyHosts` / `OnlyProxyHosts`
+- [x] **T5** `google` 源标记 `ForceProxy: true`——修复 `translate.googleapis.com` 命中默认 `googleapis.com` 黑名单后直连 `i/o timeout` 的 bug
+- [x] **T6** `fetchBaiduTranslate` 换端点：`fanyi.baidu.com/sug`（2024 年起返回 errno=1000）→ `dict.baidu.com/suggest?wd={word}&json=1&type=0`（百度词典公开 suggest，与百度翻译同源数据）
+- [x] **T7** 百度翻译响应解析升级：v1.3.2 只取 `v` 字段 → v1.3.3 额外取 `p`（音标）和 `c`（多重释义数组）拼装 HTML
+
+### 前端
+
+- [x] **T8** [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs` 移除 `cambridge` / `merriamWebster` 两条（与后端一致）
+- [x] **T9** 注释更新为 v1.3.3：源数量 9 → 7；翻译型源说明（baidu 换端点 / google 强制走代理）
+
+### 验证
+
+- [x] **T10** `go build ./...` exit 0
+- [x] **T11** `go vet ./...` exit 0
+- [x] **T12** `go test ./...` 全部 PASS（handlers / learning / utils / dictcsv / subtitle 全部 ok）
+- [x] **T13** `pnpm build` exit 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过）
+
+### 文档
+
+- [x] **T14** [docs/ChangeLog.md](docs/ChangeLog.md) 新增 v1.3.3 章节（Removed / Fixed / Changed / Known 遗留 4 段）
+- [x] **T15** [docs/PLAN.md](docs/PLAN.md) 活跃里程碑切到 v1.3.3
+- [x] **T16** [docs/TASKS.md](docs/TASKS.md) 当前文件（T1~T16 全部勾选）
+
+### 收尾
+
+- **代理配置强烈建议**：谷歌翻译依赖 `ECHOSUB_WEBDICT_PROXY`；国内用户必须配，否则 i/o timeout
+- **7 个网页词典最终顺序**：有道 → 百度翻译 → 谷歌翻译 → Oxford → Longman → Collins → Wiktionary
+
+---
+
+# TASKS.md — v1.3.2 网页词典按域名分流 + 翻译型源（百度/谷歌）+ 词义持久化
+
+配套 [PLAN.md](PLAN.md) / [CONFIGURATION.md](CONFIGURATION.md)。每完成一个任务勾选并填时间。
+
+## v1.3.2 网页词典按域名分流 + 翻译型源 + 词义持久化（2026-07-07）
+
+### 后端 — 按域名分流代理
+
+- [x] **T1** [backend/internal/config/config.go](backend/internal/config/config.go) `WebDictConfig` 新增 `SkipProxyHosts` / `OnlyProxyHosts` 字段 + `Default()` 8 个中文域名默认 + 2 个新环境变量 `ECHOSUB_WEBDICT_SKIP_PROXY` / `ECHOSUB_WEBDICT_ONLY_PROXY`
+- [x] **T2** [backend/internal/utils/http_client.go](backend/internal/utils/http_client.go) `ProxyConfig` 新增 `SkipProxyHosts` / `OnlyProxyHosts` + `shouldProxy` / `hostMatchesAny` 决策函数（host 大小写不敏感，支持 parent domain 匹配）
+- [x] **T3** 启动日志在配置了代理 + 有 SkipProxyHosts 时额外打印「跳过 N 个域名」便于排查
+
+### 后端 — 翻译型源（baidu / google）
+
+- [x] **T4** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` 重构为结构化注册表 `map[string]webDictSource` + 每源 `UserAgent` / `Referer` / `AcceptLanguage` / `SkipProxy`
+- [x] **T5** Merriam-Webster 改用 **Mobile Safari** UA（移动版可抓，desktop 经常 403）；Cambridge / Oxford / Longman / Collins 模拟从 Google 搜索点过来（带 `Referer`）
+- [x] **T6** `fetchBaiduTranslate` 实现：`GET https://fanyi.baidu.com/sug?wd={word}`，取第一条 `v` 字段
+- [x] **T7** `fetchGoogleTranslate` 实现：`GET https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q={word}`，解嵌套数组取 `raw[0][0][0]`
+- [x] **T8** `handleTranslate` / `handleHTMLScrape` 双路径，统一 gin.H 响应（新增 `kind / translation / source_lang / target_lang / phonetic` 字段）
+
+### 后端 — 词义快照
+
+- [x] **T9** [backend/internal/models/models.go](backend/internal/models/models.go) `WordFavorite.QueryResult string \`gorm:"type:text"\`` 字段
+- [x] **T10** [backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) `createWordFavoriteReq.QueryResult map[string]interface{}` + JSON 序列化 + 256KB 上限
+- [x] **T11** `LookupWebDict` 三级缓存策略（进程内缓存 → 收藏快照 → 实际抓取）+ `loadWordFavoriteCache` 公开（命中返回 cached map + favorite_id 等元数据）
+- [x] **T12** 收藏快照命中时响应 payload 包含 `favorite: true / favorite_id / favorite_source / cached: true` 字段
+
+### 前端 — 源切换 + 翻译型渲染
+
+- [x] **T13** [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) **重写**：移除 `buildUrl`（不再 window.open）+ 新增 `kind: 'html' | 'translate'` + 新增 `baidu` / `google`（🐾 百度蓝 / 🌍 谷歌蓝）
+- [x] **T14** [frontend/src/types/index.ts](frontend/src/types/index.ts) `DictionarySourceId` 加 `baidu` / `google`；`WebDictLookupResponse` 加 11 个新字段（kind/translation/source_lang/target_lang/phonetic/cached/favorite/favorite_id/favorite_source/favorite_note/favorite_only）；`WordFavorite` 加 `query_result?`
+- [x] **T15** [frontend/src/api/index.ts](frontend/src/api/index.ts) `wordFavoriteApi.create` payload 接受 `query_result?: Record<string, unknown>`
+- [x] **T16** [frontend/src/store/wordFavorites.ts](frontend/src/store/wordFavorites.ts) `favorite(word, source?, note?, queryResult?)` 第 4 个参数
+- [x] **T17** [frontend/src/store/dictionary.ts](frontend/src/store/dictionary.ts) `DictionarySourceId` 改为 `@/types` re-export
+
+### 前端 — 弹窗渲染
+
+- [x] **T18** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 收藏时把当前 `webData` 整个作为 `query_result` 传给后端；toast「已收藏「xxx」（已保存词义快照，下次离线秒开）」
+- [x] **T19** [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) 弹窗渲染新增「翻译型源」分支（`kind === 'translate' && translation` 时单纯展示翻译 + 源/目标语言徽标 + 音标）；命中收藏快照时顶部显示金黄色 `⭐ 已收藏词义（离线快照）` 徽标 + `内存缓存` 灰色徽标
+- [x] **T20** [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx) 打开单词查词弹窗时优先用 `wordFavorite.query_result` 解析为 `WebDictLookupResponse` 渲染，零网络请求
+
+### 验证
+
+- [x] **T21** `go build ./...` exit code 0
+- [x] **T22** `go vet ./...` exit code 0
+- [x] **T23** `go test ./...` 全部 PASS（config 3 + handlers 8 + learning 10 + utils 7 + dictcsv 16 + subtitle 8 = 52 用例）
+- [x] **T24** `pnpm build` exit code 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过）
+- [x] **T25** 修复编译错误：`backend/internal/handlers/web_dict.go` 失败结果缓存 key 由 `source+"|"+word` 修正为 `src.ID+"|"+word`
+
+### 文档
+
+- [x] **T26** [docs/ChangeLog.md](docs/ChangeLog.md) 新增 v1.3.2 章节
+- [x] **T27** [docs/PLAN.md](docs/PLAN.md) 活跃里程碑切换到 v1.3.2
+- [x] **T28** [docs/TASKS.md](docs/TASKS.md) 当前文件（T1~T28 全部勾选）
+- [x] **T29** [docs/CONFIGURATION.md](docs/CONFIGURATION.md) 新增「按域名分流代理」「翻译型源」「词义快照」三节
+- [x] **T30** [README.md](README.md) API 概览补充 `query_result` 字段说明 + 词典源数量（9 个）
+
+---
+
+## 旧版：v1.3.1 网页词典 / AI 代理配置 + 部署文档化（2026-07-07）
 
 ## v1.3.1 网页词典 / AI 代理配置 + 部署文档化（2026-07-07）
 

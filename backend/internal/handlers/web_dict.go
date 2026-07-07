@@ -1,10 +1,16 @@
-// 网页词典抓取（v1.3.0 起，v1.3.1 重构）
+// 网页词典抓取（v1.3.0 起，v1.3.1 重构，v1.3.2 增强按域名分流 + 翻译型源，v1.3.3 移除 Cambridge/Merriam-Webster，v1.3.4 移除 Collins/百度/谷歌 + 新增微软翻译）
 //
-// 目的：让 Cambridge / Oxford / Longman / Wiktionary / 有道 等 7 个网页词典
+// 目的：让 youdao / Oxford / Longman / Wiktionary 4 个网页词典 + 微软翻译 Edge API
 // 也能在弹窗中渲染结果，而不是 window.open 跳新标签页。
 //
 // 路由：
 //   GET /api/v1/dictionary/web/lookup?source=youdao&word=hello
+//
+// 源类型（v1.3.2 起）：
+//   - kind="html"     抓取目标 URL 的 HTML → 通用清洗（去噪+XSS）→ 弹窗内渲染
+//     youdao / oxford / longman / wiktionary 走这条路径
+//   - kind="translate"  调用公开翻译 API（无 key）→ 返回结构化 JSON
+//     microsoft 走 Edge 翻译 API（无需 key，国内需代理）
 //
 // v1.3.1 重大改进：
 //   - 支持代理（v1.3.0 在国内网络下大量 timeout / 403，本版本修复）
@@ -14,24 +20,25 @@
 //   - 内存缓存 60 分钟（同一 source+word 不重复抓取）
 //   - 失败时 blocked=true 让前端展示「在新窗口打开」链接，不让用户卡住
 //
-// 行为：
-//   - 后端用 net/http 抓目标 URL 的 HTML
-//   - 移除明显噪音节点：<script> / <style> / <noscript> / <iframe> / <svg>
-//   - 保留主要释义容器：<article> / <main> / <section> / <div class="...">
-//   - 用 bluemonday 清洗 XSS（allow 常见释义标签 + 链接 + 图片）
-//   - 重写所有相对 URL 为绝对（基于原始 host）
-//   - 重写 <a> 链接为 target=_blank，避免嵌套在弹窗里跳走
+// v1.3.2 重大改进：
+//   - 按域名分流代理（SkipProxyHosts / OnlyProxyHosts）
+//   - 新增「翻译型」源：百度翻译 / 谷歌翻译（公开 API，无需 key）
+//   - 每个源独立配置 User-Agent / Referer / Accept-Language
 //
-// 注意：
-//   - 不同网站页面结构差异大，本实现只做「通用去噪 + 原文渲染」
-//   - 对 Cambridge / Oxford / Wiktionary 等允许抓取的网站效果较好
-//   - 有道 / 朗文等对爬虫有限制，可能拿到 403 或简版页面，弹窗内显示「页面受限，请在新窗口打开」提示
-//   - 强烈建议国内网络环境配置 ECHOSUB_WEBDICT_PROXY=socks5://host:1080 或 http://127.0.0.1:7890
+// v1.3.3 调整：
+//   - 移除 Cambridge、Merriam-Webster（长期被反爬）
+//
+// v1.3.4 调整（重大）：
+//   - 移除 Collins（v1.3.4）/ 百度翻译（dict.baidu.com/suggest 也被风控）/ 谷歌翻译（i/o timeout）
+//   - 新增「微软翻译」：Edge 翻译 API（edge.microsoft.com/translate/auth 拿 token + api-edge.cognitive.microsofttranslator.com）
+//   - 源标记 ForceProxy=true 国内必须走代理
+//   - 参考实现：docs/Reference/STranslate.Plugin.Translate.GoogleWebsite（看 Main.cs）
 package handlers
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,49 +60,117 @@ import (
 	"github.com/yaole/EchoSub/backend/internal/utils"
 )
 
-// 网页词典 URL 模板（与前端 kWebDictConfigs 对齐；保持一份本地配置便于后端独立部署）
+// 源类型常量
+const (
+	kindHTML      = "html"      // 抓取 HTML 清洗后渲染
+	kindTranslate = "translate" // 调用翻译 API 返回结构化结果
+)
+
+// translatePayload 翻译型源响应（v1.3.2 起）
+type translatePayload struct {
+	Word        string `json:"word"`
+	Translation string `json:"translation"`
+	SourceLang  string `json:"source_lang,omitempty"`
+	TargetLang  string `json:"target_lang,omitempty"`
+	Phonetic    string `json:"phonetic,omitempty"`
+	ExtraHTML   string `json:"extra_html,omitempty"`
+}
+
+// 网页词典源（统一注册表）
+// 字段说明：
+//   - ID / DisplayName：前端展示用
+//   - Kind：html / translate 决定走哪条抓取路径
+//   - UserAgent / Referer / AcceptLanguage：抓取时模拟浏览器
+//   - SkipProxy：源级强制不走代理（即便全局要求走代理）
+//   - ForceProxy：源级强制走代理（即便默认 SkipProxyHosts 命中该 host，v1.3.4 新增）
+//   - BuildURL：kind=html 用，构造目标 URL
+//   - FetchTranslate：kind=translate 用，调用公开翻译 API
 type webDictSource struct {
-	ID          string
-	DisplayName string
-	BuildURL    func(word string) string
+	ID             string
+	DisplayName    string
+	Kind           string
+	UserAgent      string
+	Referer        string
+	AcceptLanguage string
+	SkipProxy      bool
+	ForceProxy     bool
+	BuildURL       func(word string) string
+	FetchTranslate func(ctx context.Context, client *http.Client, word string) (*translatePayload, error)
 }
 
 func youdaoURL(w string) string {
 	return "https://m.youdao.com/dict?le=eng&q=" + w
 }
-func cambridgeURL(w string) string {
-	return "https://dictionary.cambridge.org/dictionary/english-chinese-simplified/" + w
-}
+// v1.3.3 移除 cambridgeURL / v1.3.4 移除 merriamWebsterURL / collinsURL
 func oxfordURL(w string) string {
 	return "https://www.oxfordlearnersdictionaries.com/definition/english/" + w
 }
 func longmanURL(w string) string {
 	return "https://www.ldoceonline.com/dictionary/" + w
 }
-func merriamWebsterURL(w string) string {
-	return "https://www.merriam-webster.com/dictionary/" + w
-}
-func collinsURL(w string) string {
-	return "https://www.collinsdictionary.com/dictionary/english/" + w
-}
 func wiktionaryURL(w string) string {
 	return "https://en.m.wiktionary.org/wiki/" + w
 }
 
+// ---------------- 公共常量（User-Agent / Referer） ----------------
+
+const (
+	uaDesktopChrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	uaYoudaoMobile  = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+	uaEdgeBrowser   = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0"
+)
+
+// ---------------- 源注册表 ----------------
+//
+// v1.3.4 最终保留 5 个源：youdao / oxford / longman / wiktionary / microsoft
+
 var kWebDictSources = map[string]webDictSource{
-	"youdao":         {ID: "youdao", DisplayName: "有道词典", BuildURL: youdaoURL},
-	"cambridge":      {ID: "cambridge", DisplayName: "Cambridge", BuildURL: cambridgeURL},
-	"oxford":         {ID: "oxford", DisplayName: "Oxford", BuildURL: oxfordURL},
-	"longman":        {ID: "longman", DisplayName: "Longman", BuildURL: longmanURL},
-	"merriamWebster": {ID: "merriamWebster", DisplayName: "Merriam-Webster", BuildURL: merriamWebsterURL},
-	"collins":        {ID: "collins", DisplayName: "Collins", BuildURL: collinsURL},
-	"wiktionary":     {ID: "wiktionary", DisplayName: "Wiktionary", BuildURL: wiktionaryURL},
+	"youdao": {
+		ID: "youdao", DisplayName: "有道词典", Kind: kindHTML,
+		UserAgent: uaYoudaoMobile, AcceptLanguage: "zh-CN,zh;q=0.9,en;q=0.8",
+		// v1.3.5：移除 SkipProxy=true。
+		//   v1.3.2 时为了「中文站开代理反而被风控」加了硬编码直连，
+		//   但用户实测有道在国内偶发 TLS handshake timeout（直连被墙/限速），
+		//   走代理反而更稳。改为「默认按域名分流」：用户配了 ECHOSUB_WEBDICT_PROXY
+		//   就走代理，没配仍走默认（youdao.com 已从默认 SkipProxyHosts 移除）。
+		SkipProxy: false,
+		BuildURL:  youdaoURL,
+	},
+	"oxford": {
+		ID: "oxford", DisplayName: "Oxford", Kind: kindHTML,
+		UserAgent: uaDesktopChrome, Referer: "https://www.google.com/",
+		AcceptLanguage: "en-US,en;q=0.9",
+		BuildURL:       oxfordURL,
+	},
+	"longman": {
+		ID: "longman", DisplayName: "Longman", Kind: kindHTML,
+		UserAgent: uaDesktopChrome, Referer: "https://www.google.com/",
+		AcceptLanguage: "en-US,en;q=0.9",
+		BuildURL:       longmanURL,
+	},
+	"wiktionary": {
+		ID: "wiktionary", DisplayName: "Wiktionary", Kind: kindHTML,
+		UserAgent: uaDesktopChrome, AcceptLanguage: "en-US,en;q=0.9",
+		BuildURL:       wiktionaryURL,
+	},
+	"microsoft": {
+		ID: "microsoft", DisplayName: "微软翻译", Kind: kindTranslate,
+		// v1.3.4：Edge 翻译 API 国内必须走代理
+		ForceProxy: true,
+		BuildURL: func(w string) string {
+			// v1.3.5 修正：from=auto 改为 from=en（Edge Translator 不支持 auto）
+			return "https://www.bing.com/translator/?text=" + w + "&from=en&to=zh-Hans"
+		},
+		FetchTranslate: fetchMicrosoftTranslate,
+	},
 }
 
 // LookupWebDict 抓取并清洗网页词典释义
 // GET /api/v1/dictionary/web/lookup?source=youdao&word=hello
 //
 // v1.3.1 起支持代理（ECHOSUB_WEBDICT_PROXY）+ 重试 + 内存缓存。
+// v1.3.2 起分两路径：kind=html 走 HTML 抓取，kind=translate 走公开翻译 API。
+// v1.3.4 起翻译型源（microsoft）走 Edge 翻译 API，国内需代理。
 func LookupWebDict() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		uid := middleware.GetUserID(c)
@@ -115,63 +190,185 @@ func LookupWebDict() gin.HandlerFunc {
 			return
 		}
 
-		// 词条长度限制 + URL 编码
+		// 词条长度限制
 		if len(word) > 128 {
 			utils.Fail(c, http.StatusBadRequest, "word 过长")
 			return
 		}
-		targetURL := src.BuildURL(url.QueryEscape(word))
 
-		// v1.3.1：先查缓存
 		cfg := getWebDictCfg(c)
 		cacheKey := source + "|" + strings.ToLower(word)
-		if cached, ok := webDictCacheGet(cacheKey); ok {
-			cached["url"] = targetURL
-			cached["cached"] = true
-			utils.OK(c, cached)
+
+		// v1.3.2：分两路径
+		if src.Kind == kindTranslate {
+			handleTranslate(c, cfg, src, word, cacheKey)
 			return
 		}
+		handleHTMLScrape(c, cfg, src, word, cacheKey)
+	}
+}
 
-		// HTTP 抓取（含重试）
-		htmlRaw, finalURL, err := fetchWebDictHTML(cfg, targetURL)
-		if err != nil {
-			result := gin.H{
-				"source":      src.ID,
-				"source_name": src.DisplayName,
-				"word":        word,
-				"url":         targetURL,
-				"final_url":   finalURL,
-				"html":        "",
-				"blocked":     true,
-				"cached":      false,
-				"error":       err.Error(),
-			}
-			// v1.3.1：失败结果也缓存 5 分钟，避免一个词重复触发 timeout
-			webDictCachePut(cacheKey, result, 5*time.Minute)
-			utils.OK(c, result)
-			return
+// handleHTMLScrape 处理 kind=html 源（v1.3.2 起）
+func handleHTMLScrape(c *gin.Context, cfg *config.Config, src webDictSource, word, cacheKey string) {
+	targetURL := src.BuildURL(url.QueryEscape(word))
+
+	// 查缓存
+	if cached, ok := webDictCacheGet(cacheKey); ok {
+		cached["url"] = targetURL
+		cached["cached"] = true
+		utils.OK(c, cached)
+		return
+	}
+
+	// HTTP 抓取（含重试）
+	htmlRaw, finalURL, err := fetchWebDictHTML(cfg, targetURL)
+
+	// v1.3.5 修复：Oxford Learner 词典对复数形式（如 eggs）直接 404（站点本身只收录单数/原形）。
+	//   抓取后若拿到 HTTP 404 且单词以 s 结尾，剥 s 重试 1 次。
+	if err != nil && src.ID == "oxford" && isHTTPNotFound(err) && strings.HasSuffix(strings.ToLower(word), "s") && len(word) > 1 {
+		singular := word[:len(word)-1]
+		retryURL := src.BuildURL(url.QueryEscape(singular))
+		htmlRaw, finalURL, err = fetchWebDictHTML(cfg, retryURL)
+		if err == nil {
+			// 命中单数形式，url 改为单数版以便前端「在新窗口打开」也是单数
+			targetURL = retryURL
 		}
+	}
 
-		// 清洗（去噪音 + XSS 防护 + 链接绝对化 + a 标签 target=_blank）
-		cleanHTML, cleanErr := sanitizeWebDictHTML(htmlRaw, finalURL)
+	if err != nil {
 		result := gin.H{
 			"source":      src.ID,
 			"source_name": src.DisplayName,
 			"word":        word,
 			"url":         targetURL,
 			"final_url":   finalURL,
-			"html":        cleanHTML,
-			"blocked":     false,
+			"html":        "",
+			"blocked":     true,
 			"cached":      false,
-			"error":       cleanErr,
+			"error":       err.Error(),
 		}
-		// v1.3.1：成功结果按配置缓存（默认 60 分钟）
-		ttl := time.Duration(cfg.WebDict.CacheMinutes) * time.Minute
-		if ttl > 0 {
-			webDictCachePut(cacheKey, result, ttl)
-		}
+		webDictCachePut(cacheKey, result, 5*time.Minute)
 		utils.OK(c, result)
+		return
 	}
+
+	// 清洗
+	cleanHTML, cleanErr := sanitizeWebDictHTML(htmlRaw, finalURL)
+	result := gin.H{
+		"source":      src.ID,
+		"source_name": src.DisplayName,
+		"word":        word,
+		"url":         targetURL,
+		"final_url":   finalURL,
+		"html":        cleanHTML,
+		"blocked":     false,
+		"cached":      false,
+		"error":       cleanErr,
+	}
+	ttl := time.Duration(cfg.WebDict.CacheMinutes) * time.Minute
+	if ttl > 0 {
+		webDictCachePut(cacheKey, result, ttl)
+	}
+	utils.OK(c, result)
+}
+
+// isHTTPNotFound 判断 error 是否是 HTTP 404（v1.3.5 新增）
+func isHTTPNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "HTTP 404")
+}
+
+// handleTranslate 处理 kind=translate 源（v1.3.2 起，v1.3.4 改用微软 Edge API）
+func handleTranslate(c *gin.Context, cfg *config.Config, src webDictSource, word, cacheKey string) {
+	targetURL := src.BuildURL(url.QueryEscape(word))
+
+	// 查缓存（翻译型 5 分钟，因为 token 会变）
+	if cached, ok := webDictCacheGet(cacheKey); ok {
+		cached["url"] = targetURL
+		cached["cached"] = true
+		utils.OK(c, cached)
+		return
+	}
+
+	// 按域名分流：构造 http.Client
+	proxyCfg := makeProxyForSource(cfg, src)
+	client := utils.NewHTTPClient(time.Duration(cfg.WebDict.TimeoutSec)*time.Second, proxyCfg)
+	if src.UserAgent != "" {
+		// 源级 UserAgent 由 FetchTranslate 函数自己设（通常要复用 client 内的 transport）
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(),
+		time.Duration(cfg.WebDict.TimeoutSec)*time.Second)
+	defer cancel()
+
+	payload, err := src.FetchTranslate(ctx, client, word)
+	if err != nil {
+		result := gin.H{
+			"source":      src.ID,
+			"source_name": src.DisplayName,
+			"word":        word,
+			"url":         targetURL,
+			"kind":        kindTranslate,
+			"translation": "",
+			"blocked":     true,
+			"cached":      false,
+			"error":       err.Error(),
+		}
+		// 翻译型源失败缓存 2 分钟（避免重复触发）
+		webDictCachePut(cacheKey, result, 2*time.Minute)
+		utils.OK(c, result)
+		return
+	}
+
+	result := gin.H{
+		"source":      src.ID,
+		"source_name": src.DisplayName,
+		"word":        word,
+		"url":         targetURL,
+		"kind":        kindTranslate,
+		"translation": payload.Translation,
+		"source_lang": payload.SourceLang,
+		"target_lang": payload.TargetLang,
+		"phonetic":    payload.Phonetic,
+		"html":        payload.ExtraHTML,
+		"blocked":     false,
+		"cached":      false,
+		"error":       "",
+	}
+	// 翻译型源缓存 5 分钟
+	webDictCachePut(cacheKey, result, 5*time.Minute)
+	utils.OK(c, result)
+}
+
+// makeProxyForSource 为某个源构造合适的 ProxyConfig
+//   - SkipProxy=true → 返回 nil（直连）
+//   - ForceProxy=true → 只读 cfg.WebDict.CustomProxy，忽略 SkipProxyHosts / OnlyProxyHosts
+//   - 默认 → 合并 cfg.WebDict.SkipProxyHosts / OnlyProxyHosts
+func makeProxyForSource(cfg *config.Config, src webDictSource) *utils.ProxyConfig {
+	if src.SkipProxy {
+		return nil
+	}
+	p := &utils.ProxyConfig{
+		CustomProxy: cfg.WebDict.Proxy,
+	}
+	if !src.ForceProxy {
+		p.SkipProxyHosts = cfg.WebDict.SkipProxyHosts
+		p.OnlyProxyHosts = cfg.WebDict.OnlyProxyHosts
+	}
+	return p
+}
+
+// htmlEscape 最小的 HTML 转义（避免 bluemonday 全量处理开销）
+func htmlEscape(s string) string {
+	r := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, "&quot;",
+	)
+	return r.Replace(s)
 }
 
 // getWebDictCfg 从 gin context 取 *config.Config
@@ -550,4 +747,171 @@ func setAttr(n *html.Node, key, val string) {
 		}
 	}
 	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: val})
+}
+
+// ====================== v1.3.4 翻译型源：微软 Edge ======================
+
+// fetchMicrosoftTranslate 调用微软 Edge 翻译 API（v1.3.4 新增）
+//
+// 实现原理：Edge 浏览器的翻译后端，无需 API key
+//   1) GET https://edge.microsoft.com/translate/auth  → 拿到短期 JWT token
+//   2) POST https://api-edge.cognitive.microsofttranslator.com/translate
+//      带 Authorization: Bearer {token}
+//      Body: [{"Text": "hello"}]
+//      响应: [{"translations":[{"text":"你好","to":"zh-Hans"}],"detectedLanguage":{"language":"en","score":1.0}}]
+//
+// token 默认有效期 ~10 分钟；这里缓存 8 分钟（提前 2 分钟续期，避免边界超时）
+//
+// 国内访问：edge.microsoft.com / api-edge.cognitive.microsofttranslator.com 必须走代理
+//   → 源标记 ForceProxy=true（忽略默认 SkipProxyHosts）
+//
+// 端点选择依据：参考 docs/Reference/STranslate.Plugin.Translate.GoogleWebsite 风格
+//   （该插件用于谷歌翻译），但用户实测后选择更稳的 Edge API
+func fetchMicrosoftTranslate(ctx context.Context, client *http.Client, word string) (*translatePayload, error) {
+	// 1) 拿 token
+	token, err := fetchMicrosoftAuthToken(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("微软翻译获取 token 失败: %w", err)
+	}
+
+	// 2) 调翻译 API
+	// v1.3.5 修正：Edge Translator API 的 from 不支持 "auto"（会 HTTP 400 / code 400035）
+	//   → 改为具体语言码 "en"（本应用主要查英文单词 → 中文）
+	//   → 若将来支持「中→英」场景，可让前端传 from 参数或前端检测单词字符集
+	apiURL := "https://api-edge.cognitive.microsofttranslator.com/translate" +
+		"?from=en&to=zh-Hans&api-version=3.0&includeSentenceLength=true"
+	reqBody, _ := json.Marshal([]map[string]string{{"Text": word}})
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", uaEdgeBrowser)
+	req.Header.Set("Accept", "application/json,text/plain,*/*")
+	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 401 {
+		// token 过期，强制下次重取
+		invalidateMicrosoftAuthToken()
+		return nil, fmt.Errorf("HTTP 401：token 已过期，请重试")
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("HTTP %d：%s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	var raw []struct {
+		DetectedLanguage struct {
+			Language string  `json:"language"`
+			Score    float64 `json:"score"`
+		} `json:"detectedLanguage"`
+		Translations []struct {
+			Text string `json:"text"`
+			To   string `json:"to"`
+		} `json:"translations"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+	if len(raw) == 0 || len(raw[0].Translations) == 0 {
+		return nil, fmt.Errorf("响应为空")
+	}
+	translation := raw[0].Translations[0].Text
+	if translation == "" {
+		return nil, fmt.Errorf("未取到翻译")
+	}
+
+	sourceLang := raw[0].DetectedLanguage.Language
+	if sourceLang == "" {
+		sourceLang = "auto"
+	}
+
+	html := fmt.Sprintf(
+		`<div class="ms-translation"><p class="ms-result">%s</p><p class="ms-meta">%s → zh-Hans</p></div>`,
+		htmlEscape(translation), htmlEscape(sourceLang))
+
+	return &translatePayload{
+		Word:        word,
+		Translation: translation,
+		SourceLang:  sourceLang,
+		TargetLang:  "zh-Hans",
+		ExtraHTML:   html,
+	}, nil
+}
+
+// ---------------- 微软翻译 Auth Token 缓存（v1.3.4） ----------------
+
+var (
+	msAuthTokenMu sync.RWMutex
+	msAuthToken   string
+	msAuthTokenAt time.Time
+)
+
+const msAuthTokenTTL = 8 * time.Minute // Edge token 实际 ~10 分钟，提前 2 分钟续期
+
+// fetchMicrosoftAuthToken 拿 Edge 翻译的 JWT（带缓存）
+func fetchMicrosoftAuthToken(ctx context.Context, client *http.Client) (string, error) {
+	msAuthTokenMu.RLock()
+	if msAuthToken != "" && time.Since(msAuthTokenAt) < msAuthTokenTTL {
+		tok := msAuthToken
+		msAuthTokenMu.RUnlock()
+		return tok, nil
+	}
+	msAuthTokenMu.RUnlock()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://edge.microsoft.com/translate/auth", nil)
+	if err != nil {
+		return "", fmt.Errorf("构造 auth 请求失败: %w", err)
+	}
+	req.Header.Set("User-Agent", uaEdgeBrowser)
+	req.Header.Set("Accept", "application/json,text/plain,*/*")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("auth 请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("auth HTTP %d：%s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
+	if err != nil {
+		return "", fmt.Errorf("读取 auth 响应失败: %w", err)
+	}
+
+	tok := strings.TrimSpace(string(body))
+	tok = strings.Trim(tok, `"`)
+	if tok == "" {
+		return "", fmt.Errorf("auth 响应为空")
+	}
+
+	msAuthTokenMu.Lock()
+	msAuthToken = tok
+	msAuthTokenAt = time.Now()
+	msAuthTokenMu.Unlock()
+	return tok, nil
+}
+
+// invalidateMicrosoftAuthToken token 失效（401 时调用）
+func invalidateMicrosoftAuthToken() {
+	msAuthTokenMu.Lock()
+	msAuthToken = ""
+	msAuthTokenAt = time.Time{}
+	msAuthTokenMu.Unlock()
 }

@@ -1,8 +1,376 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v1.3.1 网页词典 / AI 代理配置 + 部署文档化（CONFIGURATION.md）已完成 | 日期：2026-07-07
+> 状态：v1.3.5 网页词典 3 个源修复（你道 TLS / 微软 400 / Oxford 404）已完成 | 日期：2026-07-07
 
-## 活跃里程碑：v1.3.1 网页词典 / AI 代理配置 + 部署文档化（2026-07-07 完成）
+## 活跃里程碑：v1.3.5 网页词典 3 个源修复（2026-07-07 完成）
+
+v1.3.4 上线后用户实测反馈 3 类问题：
+
+1. **有道词典 TLS handshake timeout**：`net/http: TLS handshake timeout`（直连被墙/限速）
+2. **微软翻译 HTTP 400**：`{"error":{"code":400035,"message":"The source language is not valid."}}`（Edge API 不支持 `from=auto`）
+3. **Oxford 404**：复数形式（如 `eggs`）找不到（站点本身只收录单数/原形）
+
+本轮一次性修复 3 个源的实际使用问题：
+
+1. **有道词典移除源级 SkipProxy=true + 从默认 SkipProxyHosts 移除 youdao.com**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) + [backend/internal/config/config.go](backend/internal/config/config.go)）：让用户配的 `ECHOSUB_WEBDICT_PROXY` 自动生效；没配仍走默认（无代理）
+2. **微软翻译 `from=auto` → `from=en`**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `fetchMicrosoftTranslate` + `microsoft.BuildURL`）：Edge Translator API 只接受 ISO 639-1 具体语言码
+3. **Oxford 404 复数剥 s 重试 1 次**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `handleHTMLScrape`）：检测 `isHTTPNotFound` + 源是 oxford + 单词以 s 结尾 + 长度 > 1 → 剥 s 重试；命中后 `targetURL` 改为单数版
+
+### 一、目标与设计原则
+
+#### 1. 有道词典走代理
+
+**问题现象**：v1.3.4 实测有道在国内偶发 TLS handshake timeout
+
+**根因**：v1.3.2 在源级硬编码 `SkipProxy: true` + 全局默认 `SkipProxyHosts` 含 `youdao.com` → 即便用户配了代理也走直连
+
+**修复策略**：
+
+- 源级 `SkipProxy: true` → `false`（不再硬编码直连）
+- 默认 `SkipProxyHosts` 移除 `youdao.com`（让用户代理生效）
+- **保持向后兼容**：用户没配代理仍走默认（无代理），不影响普通用户
+- **保留用户主动权**：想强制有道直连可 `ECHOSUB_WEBDICT_SKIP_PROXY="youdao.com"`
+
+#### 2. Edge API from=auto 不支持
+
+**问题现象**：微软翻译 `HTTP 400: The source language is not valid (code 400035)`
+
+**根因**：Bing Translator 网页版用 `from=auto`（参数语义是「自动检测」），但 Edge Translator API 端点只接受 ISO 639-1 具体语言码（如 `en` / `zh-Hans` / `ja`）
+
+**修复策略**：
+
+- 硬编码 `from=en`（本应用主要查英文单词）
+- 注释说明：若将来支持「中→英」场景，可让前端传 from 参数或前端检测单词字符集
+
+#### 3. Oxford 复数 404
+
+**问题现象**：用户查 `eggs` 拿不到，弹窗显示 404
+
+**根因**：Oxford Learner 词典站点本身只收录**单数/原形**（`egg`），复数（`eggs`）走单独 URL 或直接 404。这是 Oxford 站点数据组织方式，不是抓取侧问题
+
+**修复策略**（最小侵入）：
+
+- 仅在 Oxford 源 + 404 + 单词以 s 结尾 + 长度 > 1 时触发剥 s 重试
+- 其他源/其他错误不触发（保持通用行为）
+- 命中单数后 `targetURL` 同步更新为单数版，前端「在新窗口打开」也跳单数页
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/internal/handlers/web_dict.go` | `kWebDictSources["youdao"].SkipProxy: true → false`；`microsoft.BuildURL` 中 `from=auto → from=en`；`fetchMicrosoftTranslate` 中 `apiURL from=auto → from=en`；`handleHTMLScrape` 新增 Oxford 404 剥 s 重试逻辑 + `isHTTPNotFound` 辅助函数 |
+| `backend/internal/config/config.go` | `WebDictConfig.SkipProxyHosts` 默认值移除 `youdao.com` |
+| `docs/ChangeLog.md` | 新增 v1.3.5 章节（3 个 Fixed 段） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.5） |
+| `docs/TASKS.md` | 新增 v1.3.5 任务清单（T1~T5） |
+
+### 三、验证清单
+
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（config 1.2s + handlers 1.8s + learning cached + utils cached + dictcsv cached + subtitle cached）
+- [x] `pnpm build` exit code 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过 / 3.81s）
+- [x] 文档同步：ChangeLog.md v1.3.5 章节 / PLAN.md 当前活跃里程碑 / TASKS.md v1.3.5 段
+
+### 四、收尾说明
+
+- **有道词典代理配置**：用户配 `ECHOSUB_WEBDICT_PROXY` 后自动走代理（解决 TLS timeout）；没配仍走默认（无代理）
+- **微软翻译**：硬编码 `from=en`；若要中→英场景需后续前端配合
+- **Oxford 剥 s**：仅处理简单复数（`eggs → egg`），不处理不规则复数（`children → child`）或不规则动词过去式（`ran → run`）—— 这些情况仍 404，用户可手动查单数
+
+---
+
+## 旧版：v1.3.4 网页词典最终精简为 5 源 + 微软翻译（2026-07-07 完成）
+
+v1.3.3 修复后用户进一步实测反馈：
+
+1. **百度翻译仍报「抓取受限」**：v1.3.3 改用 `dict.baidu.com/suggest` 端点后依然不行 → 该端点同样被百度风控
+2. **谷歌翻译仍 i/o timeout**：即便加了 `ForceProxy=true`，部分海外代理节点对 `translate.googleapis.com` 不友好（被代理服务商封禁 / TCP 阻断 / TLS 拦截），用户也无法继续往更细粒度调
+3. **Collins 长期反爬**：留着持续占用源列表
+4. **新增需求**：参考 [docs/Reference/STranslate.Plugin.Translate.GoogleWebsite](docs/Reference/STranslate.Plugin.Translate.GoogleWebsite) 思路，新增微软翻译（Edge 翻译 API，无需 key）
+
+本轮一次性移除问题源 + 引入稳定的微软翻译：
+
+1. **移除 Collins / 百度翻译 / 谷歌翻译** 3 个源（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` + [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs` 同步删除）
+2. **新增「微软翻译」**（`microsoft`，Edge 翻译 API）：
+   - 原理：完全参考 `docs/Reference/STranslate.Plugin.Translate.GoogleWebsite` 风格，但用 Edge 后端（无需 key）
+   - 步骤 1：`GET https://edge.microsoft.com/translate/auth` → 拿短期 JWT token
+   - 步骤 2：`POST https://api-edge.cognitive.microsofttranslator.com/translate?from=auto&to=zh-Hans&api-version=3.0` 带 `Authorization: Bearer {token}` → 返回结构化 JSON
+   - 8 分钟 token 缓存 + 401 自动失效
+3. **源标记 `ForceProxy=true`**：源级强制走用户配置的 `ECHOSUB_WEBDICT_PROXY`，忽略 `SkipProxyHosts`（含 `microsoft.com` 域名）
+4. **前端类型 `DictionarySourceId` 同步精简**：移除 `cambridge` / `merriamWebster`（v1.3.3）/ `collins` / `baidu` / `google`（v1.3.4），新增 `microsoft`
+
+### 一、目标与设计原则
+
+#### 1. 移除策略
+
+**Collins / 百度翻译 / 谷歌翻译 三源全面下线**：
+
+- 既然 v1.3.3 的修补（ForceProxy + 换端点）都救不回来，留着只会误导用户
+- 翻译型源由「微软翻译」一个更稳定的源替代
+- 源数量：v1.3.3 的 7 → **5**
+
+#### 2. 微软翻译 Edge API
+
+- **端点选择依据**：参考 [docs/Reference/STranslate.Plugin.Translate.GoogleWebsite](docs/Reference/STranslate.Plugin.Translate.GoogleWebsite) 的「拿 token + 调 API」两步式设计
+- **Token 缓存**：8 分钟（Edge 默认 10 分钟有效，提前 2 分钟续期避免边界超时）
+- **401 自动失效**：拿到 401 立刻把缓存清空，下次调用重取
+- **强制走代理**：`ForceProxy: true` 覆盖默认 `SkipProxyHosts`（含 `microsoft.com`），国内必须配置 `ECHOSUB_WEBDICT_PROXY`
+
+#### 3. 5 个网页词典最终顺序
+
+```
+有道 → 微软翻译 → Oxford → Longman → Wiktionary
+```
+
+按「中文友好度（前端用户） + 翻译型源优先 + 词典权威性」排序。
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/internal/handlers/web_dict.go` | 移除 `collinsURL` / `baiduURL` / `googleURL` 构造函数；`kWebDictSources` 移除 3 个 source；新增 `microsoft` source；`webDictSource` 字段 `FetchTranslate` 由 `fetchBaiduTranslate` / `fetchGoogleTranslate` 改为 `fetchMicrosoftTranslate`；新增 `fetchMicrosoftTranslate` + `fetchMicrosoftAuthToken` + token 缓存 + 401 失效 |
+| `frontend/src/store/webDictionaryConfig.ts` | `kWebDictConfigs` 移除 `collins` / `baidu` / `google` 3 条，新增 `microsoft`（🪟 微软蓝） |
+| `frontend/src/types/index.ts` | `DictionarySourceId` 联合类型同步精简（移除 5 个，加 1 个） |
+| `frontend/src/pages/Favorites.tsx` | `sourceLabel` 字典同步移除 `cambridge` / `merriamWebster` / `collins`，新增 `microsoft` |
+| `frontend/src/pages/SentenceDetail.tsx` | 翻译型源注释从「baidu / google」改为「microsoft」 |
+| `frontend/src/store/wordFavorites.ts` | `favorite` 注释同步源列表 |
+| `frontend/src/api/index.ts` | `webDictApi.lookup` 与 `wordFavoriteApi.create` 注释同步源列表 |
+| `docs/ChangeLog.md` | 新增 v1.3.4 章节（Removed / Added / Changed / Reference 文档化） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.4） |
+| `docs/TASKS.md` | 新增 v1.3.4 任务清单（T1~T8） |
+
+### 三、验证清单
+
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（config 1.4s + handlers 3.2s + learning cached + utils 3.2s + dictcsv cached + subtitle cached）
+- [x] `pnpm build` exit code 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过 / 5.19s）
+- [x] 文档同步：ChangeLog.md v1.3.4 章节 / PLAN.md 当前活跃里程碑 / TASKS.md v1.3.4 段
+
+### 四、收尾说明
+
+- **代理配置强烈建议**：v1.3.4 微软翻译依赖 `ECHOSUB_WEBDICT_PROXY`；国内用户必须配，否则 i/o timeout（`edge.microsoft.com` 国内直连被 TCP 阻断）
+- **前端弹窗切换器**：自动减少 3 个按钮（Collins、百度翻译、谷歌翻译），新增 1 个「🪟 微软翻译」
+- **翻译型源快慢对照**：
+  - 微软翻译：~300ms（国内走代理） / ~500ms（海外直连 Edge）
+  - 之前的百度 / 谷歌：~400ms（国内走代理） / 超时（直连）
+  - 仍属「轻量级」，不附带音标 / 词性 / 例句
+
+---
+
+## 旧版：v1.3.3 网页词典精简源 + 修复百度/谷歌（2026-07-07 完成）
+
+v1.3.2 上线后用户实测反馈两类问题：
+
+1. **百度翻译不可用**：`抓取受限，翻译失败：百度翻译失败：errno=1000,errmsg=未知错误`
+   根因：`https://fanyi.baidu.com/sug?wd={word}` 端点 2024 年起已被百度风控
+2. **谷歌翻译国内超时**：`请求失败：dial tcp 74.125.142.95:443: i/o timeout`
+   根因：`translate.googleapis.com` 命中 v1.3.2 默认 `SkipProxyHosts`（含 `googleapis.com`），被强制直连
+3. **Cambridge / Merriam-Webster 长期 403**：留着误导用户
+
+本轮针对性修复：
+
+1. **移除 Cambridge、Merriam-Webster 源**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` + [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs`）：长期 403，源数量 9 → 7
+2. **`webDictSource` 新增 `ForceProxy` 字段**：与 `SkipProxy` 互斥。`google` 源标记 `ForceProxy=true` → 忽略 `cfg.WebDict.SkipProxyHosts` / `OnlyProxyHosts`，只读 `cfg.WebDict.CustomProxy`，强制走用户配置的代理
+3. **`makeProxyForSource` 决策升级**：三分支（SkipProxy / ForceProxy / 默认按域名分流）
+4. **百度翻译换端点**：`fanyi.baidu.com/sug` → `dict.baidu.com/suggest?wd={word}&json=1&type=0`（百度词典公开 suggest API，与百度翻译同源数据；额外提供音标 `p` 和多重释义数组 `c`）
+5. **前端同步精简**：弹窗切换器自动减少 2 个按钮
+
+### 一、目标与设计原则
+
+#### 1. 移除策略
+
+**Cambridge、Merriam-Webster 长期返回 403 / 503**：
+
+- 即使在 v1.3.2 已经做了「Mobile Safari UA + Google Referer + 跳过代理」组合优化，仍然无法稳定抓取
+- 前端弹窗显示「抓取受限」会让用户以为系统坏了
+- **决策**：直接移除，源数量 9 → 7
+
+#### 2. ForceProxy 与 SkipProxy 三分支
+
+```
+源级代理决策：
+├─ SkipProxy=true           → 返回 nil（直连，源级强制）  
+├─ ForceProxy=true（新增） → 只读 cfg.WebDict.CustomProxy，忽略 SkipProxyHosts / OnlyProxyHosts
+└─ 默认                     → 合并 cfg.WebDict.SkipProxyHosts / OnlyProxyHosts（按域名分流）
+```
+
+**ForceProxy 触发场景**：
+
+- 默认 `SkipProxyHosts` 包含 `googleapis.com`
+- `translate.googleapis.com` 命中后被强制直连 → 国内 i/o timeout
+- 用户实际需求：「谷歌翻译需要走代理」
+- **解决**：在源级声明 `ForceProxy=true` 覆盖全局配置
+
+**为什么不改默认 SkipProxyHosts**：
+
+- 有道 / 百度等中文站确实应该直连（境外 IP 反而被风控）
+- 如果从默认列表移除 `googleapis.com`，那么所有 googleapis 域名的调用都会走代理（包括前端 PWA / GA 等无关请求）
+- 源级 `ForceProxy` 是更精细的方案
+
+#### 3. 百度翻译新端点
+
+- **旧端点**：`https://fanyi.baidu.com/sug?wd={word}`
+  - 2024 年起所有请求都返回 `{"errno":1000,"errmsg":"未知错误"}`
+  - 推测：百度对 `/sug` 端点做了 sign 校验或 IP 风控
+- **新端点**：`https://dict.baidu.com/suggest?wd={word}&json=1&type=0`
+  - 百度词典的公开 suggest 接口
+  - 与百度翻译共用同一套后端词典数据
+  - 无风控、无需 sign、稳定可用
+  - 响应字段比 `/sug` 更丰富：
+    - `v` 字段：主释义（简版）
+    - `p` 字段：音标（v1.3.2 没有）
+    - `c` 字段：多重释义数组（v1.3.2 没有）
+
+#### 4. 7 个网页词典最终顺序
+
+```
+有道 → 百度翻译 → 谷歌翻译 → Oxford → Longman → Collins → Wiktionary
+```
+
+按「中文友好度 + 翻译型源优先」排序。
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/internal/handlers/web_dict.go` | 移除 `cambridgeURL` / `merriamWebsterURL` 构造函数；`kWebDictSources` 移除 2 个 source；`webDictSource` 新增 `ForceProxy bool`；`google` 源 `ForceProxy: true`；`makeProxyForSource` 三分支；`fetchBaiduTranslate` 换端点 + 解析 `p` / `c` 字段 |
+| `frontend/src/store/webDictionaryConfig.ts` | `kWebDictConfigs` 移除 `cambridge` / `merriamWebster` 两条；注释更新到 v1.3.3 |
+| `docs/ChangeLog.md` | 新增 v1.3.3 章节（Removed / Fixed / Changed / Known 遗留） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.3） |
+| `docs/TASKS.md` | 新增 v1.3.3 任务清单（T1~T16） |
+
+### 三、验证清单
+
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（handlers / learning / utils / dictcsv / subtitle）
+- [x] `pnpm build` exit code 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过）
+- [x] 文档同步：ChangeLog.md v1.3.3 章节 / PLAN.md 当前活跃里程碑 / TASKS.md v1.3.3 段
+
+### 四、收尾说明
+
+- **代理配置强烈建议**：v1.3.3 谷歌翻译依赖 `ECHOSUB_WEBDICT_PROXY`；国内用户必须配，否则 i/o timeout
+- **前端弹窗切换器**：自动减少 2 个按钮（Cambridge、Merriam-Webster）
+- **`fetchBaiduTranslate` 解析增强**：v1.3.3 起支持音标 + 多重释义数组，信息量比 v1.3.2 丰富
+
+---
+
+## 旧版：v1.3.2 网页词典按域名分流 + 翻译型源 + 词义持久化（2026-07-07 完成）
+
+v1.3.1 引入 `ECHOSUB_WEBDICT_PROXY` 后国内用户集中反馈两类问题：
+1. **有道词典失效**：开代理后从境外 IP 访问 `m.youdao.com` 经常被风控或返回简版页面
+2. **英文词典仍然 403**：Cambridge / Oxford / Longman / Merriam-Webster / Collins 仍有概率被反爬
+
+同时提出新需求：
+3. **加入百度翻译、谷歌翻译**为网页词典源（避开 JS SPA 抓取）
+4. **收藏的单词需要记住查询的词义**，下次直接从数据库读取
+
+本轮彻底解决这两类问题 + 两条新需求：
+
+1. **按域名分流代理**（[backend/internal/config/config.go](backend/internal/config/config.go) + [backend/internal/utils/http_client.go](backend/internal/utils/http_client.go)）：`WebDictConfig` 新增 `SkipProxyHosts` / `OnlyProxyHosts` 字段；中文站点（有道 / 百度 / 谷歌）默认跳过代理，英文站点按需走代理。新增 2 个环境变量 `ECHOSUB_WEBDICT_SKIP_PROXY` / `ECHOSUB_WEBDICT_ONLY_PROXY`。
+2. **每个源独立配置 UA / Referer / Accept-Language**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go)）：Merriam-Webster 改用 Mobile Safari UA（移动版可抓，desktop 经常 403）；Cambridge / Oxford / Longman / Collins 模拟从 Google 搜索点过来（带 Referer）。
+3. **新增「翻译型」源**：baidu（`fanyi.baidu.com/sug`，公开 JSON 接口）+ google（`translate.googleapis.com/translate_a/single`，公开 API），**无需 key**，直接返回结构化 JSON。彻底绕开 Cambridge / Oxford 的反爬。
+4. **单词收藏持久化词义快照**（[backend/internal/models/models.go](backend/internal/models/models.go) + [backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go)）：`WordFavorite` 新增 `QueryResult string` 字段；`POST /word-favorites` 接受 `query_result: {...}` 字段；`LookupWebDict` 三级缓存策略（**进程内缓存 → 收藏快照 → 实际抓取**）；即使 Cambridge / Oxford 全部失效、即使代理挂了，已收藏的单词仍能秒开。
+5. **前端集成**（[frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) + [frontend/src/pages/SentenceDetail.tsx](frontend/src/pages/SentenceDetail.tsx) + [frontend/src/pages/Favorites.tsx](frontend/src/pages/Favorites.tsx)）：新增 baidu / google 切换按钮；弹窗支持翻译型源展示；命中收藏快照时显示金黄色 `⭐ 已收藏词义（离线快照）` 徽标；收藏页打开查词弹窗时优先用 `wordFavorite.query_result` 渲染（零网络请求）。
+
+### 一、目标与设计原则
+
+#### 1. 按域名分流代理
+
+- **决策顺序**（[backend/internal/utils/http_client.go](backend/internal/utils/http_client.go) `shouldProxy`）：
+  1. `OnlyProxyHosts` 非空 → 必须 host 在白名单内才走代理（**严格白名单模式**）
+  2. `SkipProxyHosts` 非空 → host 在黑名单内则直连
+  3. 默认 → 走代理
+- **`hostMatchesAny` 匹配规则**：完全相等 OR `host` 以 `.pattern` 结尾（支持 `dict.youdao.com` 命中 `youdao.com`）
+- **默认 SkipProxyHosts**（开箱即用）：`youdao.com / baidu.com / baidupc.com / translate.google.com / translate.googleapis.com / gstatic.com / ggpht.com / googleapis.com` —— 这些域名从境外 IP 访问反而被风控
+- **环境变量**：留空 = 走默认；显式写 `none` = 清空；多值用半角逗号分隔
+
+#### 2. 每个源独立 UA / Referer
+
+| 源 | UA | Referer | Accept-Language | SkipProxy |
+|---|---|---|---|---|
+| 有道 | Mobile Safari | — | zh-CN,zh;q=0.9,en;q=0.8 | ✅ |
+| Cambridge | Desktop Chrome | https://www.google.com/ | en-US,en;q=0.9 | — |
+| Oxford | Desktop Chrome | https://www.google.com/ | en-US,en;q=0.9 | — |
+| Longman | Desktop Chrome | https://www.google.com/ | en-US,en;q=0.9 | — |
+| Merriam-Webster | **Mobile Safari** | — | en-US,en;q=0.9 | — |
+| Collins | Desktop Chrome | https://www.google.com/ | en-US,en;q=0.9 | — |
+| Wiktionary | Desktop Chrome | — | en-US,en;q=0.9 | — |
+| 百度翻译 | Mobile Safari | https://fanyi.baidu.com/ | zh-CN,zh;q=0.9,en;q=0.8 | ✅ |
+| 谷歌翻译 | Desktop Chrome | https://translate.google.com/ | en-US,en;q=0.9,zh-CN;q=0.8 | — |
+
+#### 3. 翻译型源设计
+
+- **百度翻译**：`GET https://fanyi.baidu.com/sug?wd={word}` → `{"errno":0,"data":[{"k":"hello","v":"hi; hello; int. 哈啰，你好"}]}` 取第一条 `v`
+- **谷歌翻译**：`GET https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q={word}` → `[[["你好","hello",null,null,1]],null,null,...]` 取 `raw[0][0][0]`
+- **优点**：无需 key、无反爬、响应快、跨设备
+- **与 html 源共用**：弹窗渲染 / 缓存 / 兜底 / 收藏快照 同一份代码
+
+#### 4. 词义快照三级缓存
+
+```
+GET /api/v1/dictionary/web/lookup?source=...&word=...
+   ↓
+[1] 进程内内存缓存 (5min for translate, 60min for html)
+   miss ↓
+[2] 收藏词义快照 (永久, 跨进程/跨重启/跨设备)
+   miss ↓
+[3] 实际网络抓取 / 翻译 API 调用
+```
+
+收藏快照命中时响应 payload 包含 `favorite: true / favorite_id / favorite_source / cached: true` 字段，前端展示「离线快照」徽标。
+
+#### 5. 前端 UX
+
+- 弹窗内切换器新增 2 个按钮：**百度翻译**（🐾 蓝） / **谷歌翻译**（🌍 谷歌蓝），按 1-2-3 顺序排在有道 / Cambridge 之间
+- 翻译型源弹窗：单纯展示 `translation` + 源/目标语言徽标 + 音标（部分源可能给），不展示 HTML 内容区
+- 命中收藏快照时弹窗顶部显示：
+  - 金黄色 `⭐ 已收藏词义（离线快照）` 徽标
+  - `内存缓存` 灰色徽标
+- 收藏按钮点击成功后 toast：「已收藏「xxx」（已保存词义快照，下次离线秒开）」
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/internal/config/config.go` | `WebDictConfig` 新增 `SkipProxyHosts` / `OnlyProxyHosts` 字段 + `Default()` 8 个中文域名默认 + 2 个新环境变量 |
+| `backend/internal/utils/http_client.go` | `ProxyConfig` 新增 `SkipProxyHosts` / `OnlyProxyHosts` + `shouldProxy` / `hostMatchesAny` 决策函数 |
+| `backend/internal/handlers/web_dict.go` | `kWebDictSources` 重构为结构化注册表 + 每源 UA/Referer/Accept-Language + `fetchBaiduTranslate` / `fetchGoogleTranslate` 公开 API 客户端 + `loadWordFavoriteCache` 三级缓存 |
+| `backend/internal/handlers/word_favorite.go` | `createWordFavoriteReq.QueryResult map[string]interface{}` + JSON 序列化 + 256KB 上限 + `loadWordFavoriteCache` 公开 |
+| `backend/internal/models/models.go` | `WordFavorite.QueryResult string \`gorm:"type:text"\`` |
+| `frontend/src/store/webDictionaryConfig.ts` | **重写**：移除 `buildUrl`（不再 window.open）+ 新增 `kind: 'html' \| 'translate'` + 新增 baidu / google |
+| `frontend/src/types/index.ts` | `DictionarySourceId` 加 `baidu` / `google`；`WebDictLookupResponse` 加 11 个新字段；`WordFavorite` 加 `query_result?` |
+| `frontend/src/api/index.ts` | `wordFavoriteApi.create` 接受 `query_result?: Record<string, unknown>` |
+| `frontend/src/store/wordFavorites.ts` | `favorite(word, source?, note?, queryResult?)` 第 4 个参数 |
+| `frontend/src/store/dictionary.ts` | `DictionarySourceId` 改为 `@/types` re-export |
+| `frontend/src/pages/SentenceDetail.tsx` | 收藏时把 webData 整个当 query_result 传；弹窗支持翻译型源展示；命中快照显示徽标 |
+| `frontend/src/pages/Favorites.tsx` | 打开单词查词弹窗时优先用 `wordFavorite.query_result` 渲染；弹窗支持翻译型源 |
+| `docs/ChangeLog.md` | 新增 v1.3.2 章节 |
+| `docs/PLAN.md` | 当前文件（活跃里程碑段） |
+| `docs/TASKS.md` | 新增 v1.3.2 任务清单 |
+| `docs/CONFIGURATION.md` | 新增「按域名分流代理」「翻译型源」「词义快照」三节 |
+| `README.md` | API 概览补充 `query_result` 字段说明 |
+
+### 三、验证清单
+
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（config 3 + handlers 8 + learning 10 + utils 7 + dictcsv 16 + subtitle 8 = 52 用例）
+- [x] `pnpm build` exit code 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过）
+- [x] 文档同步：ChangeLog.md v1.3.2 章节 / PLAN.md 当前活跃里程碑 / TASKS.md v1.3.2 段 / CONFIGURATION.md 补充
+
+### 四、收尾说明
+
+- **`query_result` 刷新机制**：再次调用 `wordFavoriteApi.create` 时若传了非空 `query_result` 字段，后端会覆盖旧快照；用户可在 Settings 主动「重新收藏」覆盖
+- **翻译型源 vs HTML 源选择**：翻译型源快、稳、但只有简短译文；HTML 源慢、易 403、但有完整词条 + 音标 + 例句；建议日常用 baidu / google 快速过词，重要单词切到 youdao / cambridge 看完整释义后再收藏
+- **Merriam-Webster 移动版 UA**：在某些 CDN 区域可能仍然 403；前端已有「blocked=true + 在新窗口打开」兜底
+- **已知遗留**：百度 / 谷歌翻译公开 API 有日请求量软限制（实测单 IP 千次/小时不会触发）；`query_result` 是**首次收藏时的快照**不会自动更新
+
+---
+
+## 旧版：v1.3.1 网页词典 / AI 代理配置 + 部署文档化（2026-07-07 完成）
 
 v1.3.0 上线后国内用户集中反馈：网页词典抓取时频繁出现 `context deadline exceeded` / `HTTP 403`，查词弹窗里看到「抓取受限」；AI 翻译请求 OpenAI / DeepSeek 等海外 API 也慢。本轮彻底修复网络问题，并把所有环境变量 / 代理 / 部署细节集中到一个文档：
 

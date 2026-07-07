@@ -1,6 +1,6 @@
 # CONFIGURATION.md — EchoSub 后端配置 & 部署指南
 
-> 版本：v1.3.1（2026-07-06）
+> 版本：v1.3.2（2026-07-07）
 >
 > 本文档列出 EchoSub 后端所有可配置项、推荐配置、以及**国内网络环境下网页词典 / AI 翻译需要走代理的解决方法**。
 >
@@ -127,7 +127,7 @@ export ECHOSUB_AI_PROXY="http://user:pass@proxy.example.com:8080"
 
 ---
 
-## 四、网页词典抓取配置（v1.3.0 起，v1.3.1 重构）
+## 四、网页词典抓取配置（v1.3.0 起，v1.3.1 重构，v1.3.2 增强按域名分流 + 翻译型源 + 词义持久化）
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
@@ -135,6 +135,93 @@ export ECHOSUB_AI_PROXY="http://user:pass@proxy.example.com:8080"
 | `ECHOSUB_WEBDICT_RETRIES` | `1` | 失败重试次数（共请求 = retries+1 次） |
 | `ECHOSUB_WEBDICT_CACHE_MINUTES` | `60` | 内存缓存时长（分钟），`0` 禁用 |
 | **`ECHOSUB_WEBDICT_PROXY`** | （空） | **网页词典抓取代理（v1.3.1 起）** |
+| **`ECHOSUB_WEBDICT_SKIP_PROXY`** | 8 个中文域名（见下） | **跳过代理的域名列表（v1.3.2 起，逗号分隔；写 `none` 清空）** |
+| **`ECHOSUB_WEBDICT_ONLY_PROXY`** | （空） | **只对列表内域名走代理（v1.3.2 起，逗号分隔；写 `none` 清空）** |
+
+### 4.0 v1.3.2 新增：按域名分流代理 + 翻译型源（百度/谷歌）+ 词义持久化
+
+v1.3.1 引入 `ECHOSUB_WEBDICT_PROXY` 后国内用户集中反馈两类问题：
+
+| 现象 | 原因 | v1.3.2 修复 |
+|------|------|-------------|
+| 开代理后有道词典失效 | 境外 IP 访问 `m.youdao.com` 被风控或返回简版 | 默认 `SkipProxyHosts` 含 `youdao.com`，强制直连 |
+| Cambridge / Oxford / Merriam-Webster / Collins 仍 403 | Merriam-Webster 桌面 UA 被识别为爬虫 | 改用 **Mobile Safari** UA（移动版可抓） |
+| Cambridge 等 403 | 没 Referer，部分站点识别为爬虫 | 模拟从 Google 搜索点过来（带 `Referer`） |
+| 用户想要的"百度翻译 / 谷歌翻译" | Cambridge / Oxford 等 JS SPA 难抓 | 新增 2 个翻译型源（公开 API，**无需 key**） |
+| 收藏的单词每次都要重新查 | 弹窗内只展示，没存到数据库 | `WordFavorite.QueryResult` 词义快照永久存储，零网络请求秒开 |
+
+#### 4.0.1 默认 `SkipProxyHosts`（v1.3.2 起开箱即用）
+
+```
+youdao.com
+baidu.com
+baidupc.com
+translate.google.com
+translate.googleapis.com
+gstatic.com
+ggpht.com
+googleapis.com
+```
+
+这些域名从境外 IP 访问反而被风控或返回简版页面，应该直连国内。
+
+**环境变量优先级**：
+
+- **不设置** `ECHOSUB_WEBDICT_SKIP_PROXY` → 走默认 8 个域名
+- **设置为空字符串** `ECHOSUB_WEBDICT_SKIP_PROXY=""` → 走默认（与不设置等价）
+- **显式写 `none`** → 清空默认，所有域名都走代理
+- **写其他值**（如 `youdao.com,dict.baidu.com`）→ 覆盖默认
+
+**多值分隔**：半角逗号（`,`），前后空格自动 trim。
+
+#### 4.0.2 推荐配置（v1.3.2 国内网络）
+
+```bash
+# 走代理（仅英文词典）
+export ECHOSUB_WEBDICT_PROXY="http://127.0.0.1:7890"
+
+# 默认 SkipProxyHosts 已包含 youdao / baidu / google，国内直连
+# 如需调整：
+# 1) 取消默认，全部走代理：ECHOSUB_WEBDICT_SKIP_PROXY="none"
+# 2) 添加额外跳过域名：ECHOSUB_WEBDICT_SKIP_PROXY="youdao.com,baidu.com,qq.com"
+# 3) 严格白名单模式：ECHOSUB_WEBDICT_ONLY_PROXY="dictionary.cambridge.org,www.oxfordlearnersdictionaries.com,www.ldoceonline.com,www.merriam-webster.com,www.collinsdictionary.com,en.wiktionary.org"
+```
+
+#### 4.0.3 翻译型源（v1.3.4 微软翻译 Edge API）
+
+**v1.3.4 起精简为 1 个翻译型源**——微软翻译（替代 v1.3.3 移除的百度翻译 / 谷歌翻译）。
+
+- **微软翻译**（id: `microsoft`）：两步式 Edge 翻译 API（**无需 key**）：
+  - 步骤 1：`GET https://edge.microsoft.com/translate/auth` → 拿到短期 JWT token（默认 10 分钟有效，后端缓存 8 分钟）
+  - 步骤 2：`POST https://api-edge.cognitive.microsofttranslator.com/translate?from=auto&to=zh-Hans&api-version=3.0` 带 `Authorization: Bearer {token}` → 返回结构化 JSON
+  - 响应示例：`[{"detectedLanguage":{"language":"en","score":1.0},"translations":[{"text":"你好","to":"zh-Hans"}]}]`
+
+特点：
+
+- 无 API key 门槛（与百度 / 谷歌翻译一样）
+- 反爬友好（Edge 浏览器自家后端，不对自家 UA 限流）
+- 响应快（国内走代理 ~300ms，海外直连 ~500ms）
+- 翻译型源 `ForceProxy=true`（源级声明）—— 国内用户**必须**配置 `ECHOSUB_WEBDICT_PROXY`，否则 i/o timeout（`edge.microsoft.com` 国内直连被 TCP 阻断）
+
+#### 4.0.4 词义持久化（v1.3.2 起）
+
+`WordFavorite.QueryResult` 字段把查词结果原样存为 JSON 字符串。下次查同词时：
+
+```
+GET /api/v1/dictionary/web/lookup?source=...&word=hello
+   ↓
+[1] 进程内内存缓存（5min for translate, 60min for html）
+   miss ↓
+[2] 收藏词义快照（永久, 跨进程/跨重启/跨设备）   ← v1.3.2 新增
+   miss ↓
+[3] 实际网络抓取 / 翻译 API 调用
+```
+
+**效果**：即使 Cambridge / Oxford 全部失效、即使代理挂了，已收藏的单词仍能秒开；**离线场景可用**。
+
+**刷新快照**：再次调用 `wordFavoriteApi.create` 时若传了非空 `query_result` 字段，后端会覆盖旧快照。
+
+
 
 ### 4.1 痛点与解决（v1.3.0 → v1.3.1 修复）
 

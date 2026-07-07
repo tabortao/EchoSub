@@ -73,7 +73,7 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 - 📕 **本地词典**（v0.9.1 起）：用户上传自己的 CSV 词库即可离线查词，零 token 消耗；查词支持精确匹配 + 简单词形 fallback（`studies → study`），单本最大 50 MiB。
 - 📚 **内置词典 ECDICT**（v1.1.0 起）：~77 万词条、零 token 消耗、整库一份的英汉离线词典；首次启动自动导入。
 - ⚡ **v1.2.0 词典智能回退**：默认源是 AI 但未启用 / 查词失败时，自动切换到内置 ECDICT 词典；UI 提示「AI 未启用 · 查词自动回退到内置词典」让用户对自动行为有可见性。
-- 🌐 **网页词典**（v0.9.2 起）：含 **有道词典** / Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary 7 个选项，点击单词直接打开新标签页查网页释义，零 token 消耗。
+- 🌐 **网页词典**（v0.9.2 起，v1.3.4 精简为 5 个源）：**有道词典** / 微软翻译 / Oxford / Longman / Wiktionary。v1.3.0 起改为「后端 fetch + 弹窗内渲染」，不再跳新标签页；v1.3.1 起支持 `ECHOSUB_WEBDICT_PROXY` 走代理，**v1.3.4 起微软翻译**走 Edge 翻译 API（无需 key，国内需代理）。
 - 📱 **息屏播放**（v0.9.2 起）：手机锁屏 / 切后台后音频继续播放；锁屏卡片显示媒体标题 / 专辑 / 封面，支持系统级播放控制（Media Session + Wake Lock API）。
 - 📚 **Markdown 学习页**：每个专辑可创建多份学习笔记，支持多图上传 + 全屏查看 + TTS 朗读。
 - 🏷️ **多态标签系统**（v0.5.0 起）：专辑 / 季 / 学习页 / 媒体四类实体可统一打标签与按标签筛选。
@@ -116,7 +116,7 @@ EchoSub 是一款**自托管的 Web 应用**，专为语言学习与文本背诵
 - **AI 词典**（v0.9.0）：调用 OpenAI 兼容模型，按「词典编纂者」prompt 生成结构化词条（音标 / 词义 / 例句 / 词族 / 词源 / 学习提示）；支持传入 `sentence` 进行上下文消歧。**v1.3.1 起**支持 `ECHOSUB_AI_PROXY` 走代理，国内网络也能访问 OpenAI / DeepSeek / 通义千问。
 - **本地词典**（v0.9.1）：用户上传自己的 CSV 词库（`word,phonetic,translation`，表头列名兼容多种英文别名），单本最大 50 MiB；查词走 SQL（精确 + 简单词形 fallback），零 token 消耗。
 - **句子详情页**（v1.1.0 起，v1.2.0 重构查词交互）：点击每条字幕进入 `/play/:id/sentence/:idx`，AI 一次返回「整句翻译 / 逐词拆解 / 语法解析 / 学习提示」。v1.2.0 起**原文按词可独立点击查词**（不依赖 AI explain）；默认源是 AI 但未启用 / 失败时自动回退到内置 ECDICT 词典。
-- **网页词典弹窗化**（v1.3.0 起，v1.3.1 网络优化）：Cambridge / Oxford / Longman / Merriam-Webster / Collins / Wiktionary / 有道 7 个网页词典改为「后端 fetch + XSS 清洗 + 弹窗内渲染」，不再 `window.open` 跳新标签页。**v1.3.1 起**支持 `ECHOSUB_WEBDICT_PROXY` 走代理、15s 默认超时、自动重试、内存缓存 60 分钟，**国内网络也能稳定抓取**（详见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)）。
+- **网页词典弹窗化**（v1.3.0 起，v1.3.1 网络优化，v1.3.4 精简为 5 源）：**有道 / 微软翻译 / Oxford / Longman / Wiktionary** 5 个网页词典改为「后端 fetch + XSS 清洗 + 弹窗内渲染」，不再 `window.open` 跳新标签页。**v1.3.1 起**支持 `ECHOSUB_WEBDICT_PROXY` 走代理、15s 默认超时、自动重试、内存缓存 60 分钟；**v1.3.4 起微软翻译**走 Edge 翻译 API（无需 key，国内需代理，详见 [docs/CONFIGURATION.md](docs/CONFIGURATION.md)）。
 - **偏好持久化**：默认词典源 / 禁用源 / 是否本地命中时仍调 AI（`preferLocalHit`）通过 zustand + localStorage 持久化，跨会话保留。
 
 ### 🏷️ 标签管理（v0.5.0 多态）
@@ -514,16 +514,14 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 
 ### 🌐 网页词典（v0.9.2 跳转型 · v1.3.0 起改为后端抓取 + 弹窗内渲染）
 
-参考 Echo Loop `WebDictConfig` 模式：v1.3.0 之前网页词典**只按词构造 URL 在新标签页打开**（完全前端实现，无后端接口）；v1.3.0 起改为**后端 fetch + XSS 清洗 + 弹窗内渲染**，用户停留在当前页面就能看完整释义，弹窗内可一键切换源。当前收录 7 个词典（详见 [ChangeLog v0.9.2](docs/ChangeLog.md#v092---2026-07-06) 与 [ChangeLog v1.3.0](docs/ChangeLog.md#v130---2026-07-06)）：
+参考 Echo Loop `WebDictConfig` 模式：v1.3.0 之前网页词典**只按词构造 URL 在新标签页打开**（完全前端实现，无后端接口）；v1.3.0 起改为**后端 fetch + XSS 清洗 + 弹窗内渲染**，用户停留在当前页面就能看完整释义，弹窗内可一键切换源。**v1.3.4 起精简为 5 个源**（v1.3.3 已移除 Cambridge / Merriam-Webster；v1.3.4 移除 Collins / 百度翻译 / 谷歌翻译，并新增微软翻译 Edge API）：
 
-| id | 名称 | 类型 | URL 模板 |
+| id | 名称 | 类型 | URL 模板 / 端点 |
 |----|------|------|---------|
 | `youdao` | 有道词典 📕 | 中英 / 英英 | `https://m.youdao.com/dict?le=eng&q={w}` |
-| `cambridge` | Cambridge 🎓 | 英中 / 英英 | `https://dictionary.cambridge.org/dictionary/english-chinese-simplified/{w}` |
+| `microsoft` | 微软翻译 🪟 | 多语（翻译型） | `https://api-edge.cognitive.microsofttranslator.com/translate`（Edge API，需 `ECHOSUB_WEBDICT_PROXY`） |
 | `oxford` | Oxford 📘 | 英英 | `https://www.oxfordlearnersdictionaries.com/definition/english/{w}` |
 | `longman` | Longman 📚 | 英英 | `https://www.ldoceonline.com/dictionary/{w}` |
-| `merriamWebster` | Merriam-Webster 📖 | 英英 | `https://www.merriam-webster.com/dictionary/{w}` |
-| `collins` | Collins 📗 | 英英 | `https://www.collinsdictionary.com/dictionary/english/{w}` |
 | `wiktionary` | Wiktionary 🌐 | 多语 | `https://en.m.wiktionary.org/wiki/{w}` |
 
 | Method | Path                              | 描述                                  |
@@ -561,7 +559,7 @@ GitHub Actions 会在每次打 tag 时构建多架构镜像（`linux/amd64`、`l
 | Method | Path                              | 描述                                  |
 |--------|-----------------------------------|--------------------------------------|
 | GET    | `/word-favorites?q=&page=&size=`  | 列出当前用户收藏的单词（默认 `size=50` 上限 200；`q` 不区分大小写模糊匹配 `word`；按 `updated_at DESC` 排序）|
-| POST   | `/word-favorites`                 | 收藏一个单词（请求体 `{word, source?, note?}`；幂等：同 user+word 重复 POST 视为「再次收藏」并把 `hit_count++`；`source` 记录首次来源 `ai / local / builtin / youdao / cambridge / ...`，不覆盖）|
+| POST   | `/word-favorites`                 | 收藏一个单词（请求体 `{word, source?, note?, query_result?}`；幂等：同 user+word 重复 POST 视为「再次收藏」并把 `hit_count++`；`source` 记录首次来源 `ai / local / builtin / youdao / oxford / longman / wiktionary / microsoft`，不覆盖；`query_result` v1.3.2 起新增，传查词弹窗当前内容，下次查同词时直接命中离线快照）|
 | GET    | `/word-favorites/check?words=hello,world` | 批量检查（响应 `{favorited: {hello: id1, world: id2}}`，未收藏的单词不在 map 中）|
 | PATCH  | `/word-favorites/:id`             | 更新某条收藏的笔记（请求体 `{note}`，最长 500 字符）|
 | DELETE | `/word-favorites/:id`             | 删除一条收藏（按主键，登录用户仅能删自己的）|
@@ -738,7 +736,7 @@ volumes:
 
 - 每个自然日的所有变更合并为 **一个** 版本号（如 `v0.7.0`），详见 [docs/ChangeLog.md](docs/ChangeLog.md)。
 - 版本遵循 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范，仅使用 `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` 六类。
-- 当前活跃版本：**v1.3.1**（网页词典 / AI 代理配置 + 部署文档化 CONFIGURATION.md，参考 [docs/ChangeLog.md](docs/ChangeLog.md)）。
+- 当前活跃版本：**v1.3.5**（网页词典 3 个源修复：移除有道源级 SkipProxy 让你道走代理；微软翻译 from=auto → from=en；Oxford 复数剥 s 重试 1 次，参考 [docs/ChangeLog.md](docs/ChangeLog.md)）。
 
 ## 🔧 配置 & 部署（[CONFIGURATION.md](docs/CONFIGURATION.md)）
 

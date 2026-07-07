@@ -401,7 +401,7 @@ export const builtinDictApi = {
 export const webDictApi = {
   /**
    * 抓取并清洗目标 URL 的 HTML
-   * @param source 来源 id：youdao / cambridge / oxford / longman / merriamWebster / collins / wiktionary
+   * @param source 来源 id：youdao / oxford / longman / wiktionary / microsoft
    * @param word 待查单词
    * @returns WebDictLookupResponse（含 html / blocked / error 等）
    */
@@ -425,10 +425,19 @@ export const wordFavoriteApi = {
   /**
    * 收藏一个单词（幂等：同 user+word 重复 POST 视为再次收藏，hit_count++）
    * @param payload.word 待收藏的单词
-   * @param payload.source 收藏来源（ai / local / builtin / youdao / ...）
+   * @param payload.source 收藏来源（ai / local / builtin / youdao / oxford / longman / wiktionary / microsoft）
    * @param payload.note 可选笔记
+   * @param payload.query_result 查词快照（v1.3.2 起新增）
+   *   客户端把查词弹窗当前展示的内容（任意 JSON 对象）原样传过来；
+   *   后端序列化后存数据库，下次查同词时直接返回，零网络请求。
+   *   留空 = 只收藏单词，不缓存词义。
    */
-  create: (payload: { word: string; source?: string; note?: string }) =>
+  create: (payload: {
+    word: string
+    source?: string
+    note?: string
+    query_result?: Record<string, unknown>
+  }) =>
     client.post<ApiResponse<WordFavorite>>('/word-favorites', payload),
   /** 更新某条收藏的笔记 */
   updateNote: (id: number, note: string) =>

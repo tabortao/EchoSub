@@ -8,7 +8,7 @@
  *     - 'ai'       → 仅调 AI 词典
  *     - 'local'    → 仅查本地词典
  *     - 'builtin'  → 仅查内置 ECDict
- *     - 'youdao' / 'cambridge' / ... → v1.3.0 起改为「后端 fetch + 弹窗内渲染清洗后的 HTML」，
+ *     - 'youdao' / 'oxford' / ... → v1.3.0 起改为「后端 fetch + 弹窗内渲染清洗后的 HTML」，
  *       不再 window.open 跳新标签页
  *   - 弹窗标题栏右上 ⭐：收藏当前单词（已在 store 则显示实心星，点击取消）
  *   - 弹窗底部始终保留「其他词典」快捷切换入口
@@ -220,7 +220,7 @@ export default function SentenceDetailPage() {
   //
   // 策略：完全依照 useDictionaryStore.defaultSourceId 派发
   //   - 'ai' / 'local' / 'builtin' → 弹窗展示单源结果
-  //   - 'youdao' / 'cambridge' / ... → v1.3.0 起改为「后端 fetch + 弹窗内渲染清洗后的 HTML」，
+  //   - 'youdao' / 'oxford' / ... → v1.3.0 起改为「后端 fetch + 弹窗内渲染清洗后的 HTML」，
   //     不再 window.open 跳新标签页
   //   - 弹窗底部始终保留「其他词典」快捷切换入口（含 AI / 本地 / 内置 + 7 个网页词典）
   //
@@ -390,9 +390,11 @@ export default function SentenceDetailPage() {
     }, 100)
   }
 
-  // 3.3 收藏 / 取消收藏当前单词（v1.3.0）
+  // 3.3 收藏 / 取消收藏当前单词（v1.3.0，v1.3.2 增强词义持久化）
   //   - 已收藏：实心星 + 取消（乐观更新 + 失败回滚）
   //   - 未收藏：空心星 + 收藏
+  //   - v1.3.2 起：kind=web 时把当前 webData 整个作为 query_result 传给后端，
+  //     下次查同词时直接返回该快照，零网络请求。
   const wordFavItems = useWordFavoritesStore((s) => s.items)
   const favoriteWord = useWordFavoritesStore((s) => s.favorite)
   const unfavoriteWord = useWordFavoritesStore((s) => s.unfavorite)
@@ -410,9 +412,18 @@ export default function SentenceDetailPage() {
         : wordLookup.kind === 'ai' ? 'ai'
           : wordLookup.kind === 'local' ? 'local'
             : wordLookup.kind === 'builtin' ? 'builtin' : 'builtin'
-      const r = await favoriteWord(word, src)
-      if (r) message.success(`已收藏「${word}」`)
-      else message.error('收藏失败')
+      // v1.3.2：web 源把整个 webData 当作 query_result 存下来
+      // 翻译型源（microsoft）的 translation / source_lang / target_lang 也保留
+      const queryResult = wordLookup.kind === 'web' && wordLookup.webData
+        ? (wordLookup.webData as unknown as Record<string, unknown>)
+        : undefined
+      const r = await favoriteWord(word, src, undefined, queryResult)
+      if (r) {
+        const saved = queryResult ? '（已保存词义快照，下次离线秒开）' : ''
+        message.success(`已收藏「${word}」${saved}`)
+      } else {
+        message.error('收藏失败')
+      }
     }
   }
 
@@ -983,7 +994,36 @@ function WordLookupView({
         />
       </Space>
       <Divider style={{ margin: '12px 0' }} />
-      {state.webData?.blocked ? (
+      {/* v1.3.4 起：翻译型源（microsoft）用 translation 字段简短展示 */}
+      {state.webData?.kind === 'translate' && state.webData?.translation ? (
+        <div
+          style={{
+            border: '1px solid var(--color-border-soft)',
+            borderRadius: 12,
+            padding: 16,
+            background: 'var(--color-bg-page, #fafafa)',
+          }}
+        >
+          <div style={{ marginBottom: 8 }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {state.webData.source_lang && state.webData.target_lang
+                ? `${state.webData.source_lang} → ${state.webData.target_lang}`
+                : '翻译'}
+            </Text>
+          </div>
+          <div style={{ fontSize: 18, lineHeight: 1.6 }}>{state.webData.translation}</div>
+          {state.webData.phonetic && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>音标：{state.webData.phonetic}</Text>
+            </div>
+          )}
+          <div style={{ marginTop: 12, textAlign: 'right' }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              来源 <a href={state.webData.url} target="_blank" rel="noreferrer">{state.webData.source_name}</a>
+            </Text>
+          </div>
+        </div>
+      ) : state.webData?.blocked ? (
         <Alert
           type="warning"
           showIcon
@@ -1005,27 +1045,36 @@ function WordLookupView({
           }
         />
       ) : state.webData?.html ? (
-        <div
-          style={{
-            border: '1px solid var(--color-border-soft)',
-            borderRadius: 12,
-            padding: 12,
-            maxHeight: 480,
-            overflow: 'auto',
-            background: 'var(--color-bg-page, #fafafa)',
-          }}
-        >
+        <>
+          {/* v1.3.2 起：命中收藏快照时给个明显的「离线快照」徽标 */}
+          {state.webData.favorite && (
+            <div style={{ marginBottom: 8 }}>
+              <Tag color="gold" icon={<StarFilled />}>已收藏词义（离线快照）</Tag>
+              {state.webData.cached && <Tag>内存缓存</Tag>}
+            </div>
+          )}
           <div
-            className="web-dict-content"
-            // eslint-disable-next-line react/no-danger
-            dangerouslySetInnerHTML={{ __html: state.webData.html }}
-          />
-          <div style={{ marginTop: 8, textAlign: 'right' }}>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              来源 <a href={state.webData.url} target="_blank" rel="noreferrer">{state.webData.source_name}</a>
-            </Text>
+            style={{
+              border: '1px solid var(--color-border-soft)',
+              borderRadius: 12,
+              padding: 12,
+              maxHeight: 480,
+              overflow: 'auto',
+              background: 'var(--color-bg-page, #fafafa)',
+            }}
+          >
+            <div
+              className="web-dict-content"
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: state.webData.html }}
+            />
+            <div style={{ marginTop: 8, textAlign: 'right' }}>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                来源 <a href={state.webData.url} target="_blank" rel="noreferrer">{state.webData.source_name}</a>
+              </Text>
+            </div>
           </div>
-        </div>
+        </>
       ) : (
         <Empty description="该网页词典返回空内容" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       )}
