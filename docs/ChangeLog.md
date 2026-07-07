@@ -7,6 +7,133 @@
 
 **版本约定**：每一天的修改归为一个版本，版本号顺序递增。
 
+
+
+## [v1.3.5] - 2026-07-07
+
+### Fixed
+
+#### 有道词典国内 TLS handshake timeout（v1.3.5）
+
+**现象**：用户报告「抓取受限，请求失败：Get `https://m.youdao.com/dict?le=eng&q=eggs`: net/http: TLS handshake timeout」。
+
+**根因**：v1.3.2 时为「中文站开代理反而被风控」在源级硬编码 `SkipProxy: true`，并把 `youdao.com` 加进 `WebDictConfig.SkipProxyHosts` 默认黑名单。但用户实测发现**有道在国内偶发 TLS 超时**（直连被墙/限速），走代理反而更稳。
+
+**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources["youdao"]` + [backend/internal/config/config.go](backend/internal/config/config.go) `WebDictConfig.SkipProxyHosts`）：
+
+- 移除 `youdao` 源级 `SkipProxy: true`（改为 `false`）→ 走默认按域名分流
+- 移除默认 `SkipProxyHosts` 中的 `youdao.com` → 用户配了 `ECHOSUB_WEBDICT_PROXY` 自动走代理
+- 用户没配代理：仍走默认（无代理），不影响普通用户
+- 用户想强制有道直连：可显式 `ECHOSUB_WEBDICT_SKIP_PROXY="youdao.com"`
+
+#### 微软翻译 HTTP 400「The source language is not valid」（v1.3.5）
+
+**现象**：用户报告「抓取受限，HTTP 400: `{"error":{"code":400035,"message":"The source language is not valid."}}`」。
+
+**根因**：[fetchMicrosoftTranslate](backend/internal/handlers/web_dict.go) 调用 `api-edge.cognitive.microsofttranslator.com/translate?from=auto&...`，但 **Edge Translator API 不支持 `from=auto`**（会返回 code 400035）。`auto` 是 Bing 网页翻译的参数，不是 Edge API 的参数。
+
+**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go)）：
+
+- `from=auto` → `from=en`（本应用主要查英文单词 → 中文）
+- 同步修改 `BuildURL` 中 `bing.com/translator` 链接的 `from=auto` → `from=en`
+- 后续若需要支持「中→英」场景：可让前端传 `from` 参数或前端检测单词字符集
+
+#### Oxford Learner 词典 404（v1.3.5）
+
+**现象**：用户报告「抓取受限，HTTP 404: NotFound（部分词典对抓取有限制...）」。
+
+**根因**：Oxford Learner 词典（`oxfordlearnersdictionaries.com`）对**复数形式不收录**——`eggs` 找不到，但 `egg` 找得到。这是 Oxford 站点本身的数据结构（每个单词都单独一个 URL），不是反爬。
+
+**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `handleHTMLScrape`）：
+
+- 在 `fetchWebDictHTML` 返回 `HTTP 404` 错误时：
+  - 若源是 `oxford` 且单词以 `s` 结尾且长度 > 1 → 剥去末尾 `s` 重试 1 次
+  - 命中后 `targetURL` 切换为单数版，前端「在新窗口打开」链接也对应单数
+- 对非 Oxford 源、非 404 错误、非 `s` 结尾等场景不触发（保持通用行为）
+
+
+
+### Removed
+
+- **Collins 网页词典**：长期反爬 + 资源占用偏高，且**用户已不在浏览器内使用** → 直接移除（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` + [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs` 同步删除）
+- **百度翻译网页词典**：v1.3.3 改用 `dict.baidu.com/suggest` 端点后**用户实测仍报「抓取受限」**——百度已对该端点加入风控（与 `fanyi.baidu.com/sug` 一样），`errno=1000` 不再回来；继续留着只会误导用户 → 直接移除
+- **谷歌翻译网页词典**：v1.3.3 加 `ForceProxy=true` 后**用户实测仍 i/o timeout**——`translate.googleapis.com` 即便走用户配置的代理，部分海外代理节点对该域名不友好（被代理服务商自身封禁 / TCP 阻断 / TLS 拦截），且无法继续往更细粒度调（用户也无法换代理节点）→ 直接移除。代码中 `fetchGoogleTranslate` / `googleURL` 一并删除
+
+### Added
+
+- **微软翻译网页词典**（`microsoft`，Edge 翻译 API）：完全替代 v1.3.3 移除的百度/谷歌翻译
+  - 原理：完全参考 `docs/Reference/STranslate.Plugin.Translate.GoogleWebsite` 风格，但用 Edge 后端（无需 API key）
+    - 步骤 1：`GET https://edge.microsoft.com/translate/auth` → 拿到短期 JWT token（默认 10 分钟有效）
+    - 步骤 2：`POST https://api-edge.cognitive.microsofttranslator.com/translate?from=auto&to=zh-Hans&api-version=3.0` 带 `Authorization: Bearer {token}` → 返回结构化 JSON
+  - 响应示例：`[{"detectedLanguage":{"language":"en","score":1.0},"translations":[{"text":"你好","to":"zh-Hans"}]}]`
+  - 后端实现：[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `fetchMicrosoftTranslate` + `fetchMicrosoftAuthToken`（含 8 分钟 token 缓存 + 401 自动失效）
+  - **国内必须配置 `ECHOSUB_WEBDICT_PROXY`**：源标记 `ForceProxy=true` → 强制走用户代理，忽略 `SkipProxyHosts`（含 `microsoft.com` 域名）
+  - 用户代理：`uaEdgeBrowser`（Edge 浏览器 UA）
+  - 缓存：翻译型源 5 分钟（token 可能变化，避免缓存过久）
+
+### Changed
+
+- 网页词典源数量：v1.3.3 的 7 个 → **5 个**（移除 Collins / 百度翻译 / 谷歌翻译）
+- `kWebDictSources` 新顺序：youdao → 微软翻译 → oxford → longman → wiktionary
+- `kWebDictConfigs` 同上；前端弹窗切换器自动同步减少 3 个按钮、新增 1 个「🪟 微软翻译」按钮
+- `DictionarySourceId` 联合类型（[frontend/src/types/index.ts](frontend/src/types/index.ts)）同步精简：移除 `cambridge` / `merriamWebster`（v1.3.3）/ `collins` / `baidu` / `google`（v1.3.4），新增 `microsoft`
+- `webDictSource` 字段 `FetchTranslate` 由 v1.3.3 的 `fetchBaiduTranslate` / `fetchGoogleTranslate` 改为 `fetchMicrosoftTranslate`
+
+### Reference 文档化
+
+- 在 [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) 顶部注释补充 `docs/Reference/STranslate.Plugin.Translate.GoogleWebsite` 链接 + 关键借鉴点（端点选择、UA、Referer）
+- [docs/PLAN.md](docs/PLAN.md) 活跃里程碑段同步 v1.3.4 调整
+- [docs/TASKS.md](docs/TASKS.md) v1.3.4 任务清单（T1~T8）全部完成
+
+
+
+## [v1.3.3] - 2026-07-07
+
+### Removed
+
+- **Cambridge 网页词典**：长期返回 403 / 503，连 `Mobile Safari UA + Referer` 组合都不能稳定抓取，留着只会误导用户。已从 [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` 与 [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs` 同时移除
+- **Merriam-Webster 网页词典**：同理，反复 403；同样从前端 + 后端同时移除
+
+### Fixed
+
+#### 谷歌翻译国内请求 `i/o timeout`（v1.3.3）
+
+**现象**：用户报告 `翻译失败：请求失败：Get "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=back: dial tcp 74.125.142.95:443: i/o timeout"`，即在国内直连 `translate.googleapis.com` 超时。
+
+**根因**：v1.3.2 默认 `SkipProxyHosts` 黑名单包含 `googleapis.com`，`translate.googleapis.com` 命中后被强制直连。但谷歌翻译在国内必须走代理才能稳定访问——**v1.3.2 的按域名分流机制存在一刀切漏洞**。
+
+**修复**：在 [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `webDictSource` 结构体新增 `ForceProxy bool` 字段：
+
+- `SkipProxy=true` → 完全不走代理（直连，源级强制）
+- **`ForceProxy=true`（v1.3.3 新增）→ 忽略 `cfg.WebDict.SkipProxyHosts` / `OnlyProxyHosts`，只读 `cfg.WebDict.CustomProxy`**
+- 默认 → 读 `cfg.WebDict.SkipProxyHosts` / `OnlyProxyHosts`（按域名分流）
+
+`google` 源声明 `ForceProxy=true` → 强制走用户配置的 `ECHOSUB_WEBDICT_PROXY` 国内代理，绕开默认 `googleapis.com` 黑名单。
+
+#### 百度翻译 `errno=1000,errmsg=未知错误`（v1.3.3）
+
+**现象**：用户报告 `抓取受限，翻译失败：百度翻译失败：errno=1000,errmsg=未知错误`。
+
+**根因**：v1.3.2 用 `https://fanyi.baidu.com/sug?wd={word}` 端点，但 2024 年起该端点已被百度风控，所有请求都返回 `errno=1000`。
+
+**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `fetchBaiduTranslate`）：换用 `https://dict.baidu.com/suggest?wd={word}&json=1&type=0` 端点——**这是百度词典的公开 suggest 接口，与百度翻译共用同一套后端词典数据**。
+
+- 端点稳定可用，公开、无需 key
+- 返回 JSON（不是 JSONP）：`{"errno":0,"data":[{"k":"hello","v":"int. 你好；喂；哈罗","p":"[həˈləʊ]","c":["n. 引人注意的呼喊","vi. 喊叫","vt. 向…打招呼"]}]}`
+- 新增音标（`p` 字段）和多重释义（`c` 数组）解析，比 v1.3.2 的 `/sug` 信息更丰富
+- 百度词典与百度翻译同源数据，显示仍标「百度翻译」品牌
+- `dict.baidu.com` 通过 `hostMatchesAny` 命中默认 `SkipProxyHosts` 里的 `baidu.com` → 自动直连国内，无需额外配置
+
+### Changed
+
+- 网页词典源数量：9 个 → 7 个（移除 Cambridge、Merriam-Webster）
+- `kWebDictSources` 顺序：有道 → 百度翻译 → 谷歌翻译 → Oxford → Longman → Collins → Wiktionary
+- `kWebDictConfigs` 同上；前端弹窗切换器自动同步减少 2 个按钮
+
+### Known 遗留
+
+- 谷歌翻译仍依赖用户配置 `ECHOSUB_WEBDICT_PROXY`；如果用户没配代理且 `ForceProxy=true` 的源会直接走 `CustomProxy=""` 等价直连（但 `translate.googleapis.com` 在国内直连会超时）。建议国内用户**必须**配置代理
+
 ## [v1.3.2] - 2026-07-07
 
 ### Fixed
@@ -139,131 +266,6 @@ v1.3.1 引入 `ECHOSUB_WEBDICT_PROXY` 后，国内用户反馈两类问题：
 - `query_result` 字段存的是**首次收藏时的快照**——若 Cambridge / Oxford 网站改版或新增内容，已收藏的旧快照不会自动更新；用户需要重新收藏或调用 `wordFavoriteApi.create`（已支持刷新快照）覆盖
 - Merriam-Webster 移动版 UA 抓取在某些 CDN 区域可能仍然 403；前端已有「blocked=true + 在新窗口打开」兜底
 - 翻译型源（v1.3.2 当时为 baidu / google，v1.3.4 改用 microsoft）仅返回简短译文，不附带音标 / 词性 / 例句；要完整词条仍需选 HTML 型源（youdao / oxford / longman 等）
-
-## [v1.3.5] - 2026-07-07
-
-### Fixed
-
-#### 有道词典国内 TLS handshake timeout（v1.3.5）
-
-**现象**：用户报告「抓取受限，请求失败：Get `https://m.youdao.com/dict?le=eng&q=eggs`: net/http: TLS handshake timeout」。
-
-**根因**：v1.3.2 时为「中文站开代理反而被风控」在源级硬编码 `SkipProxy: true`，并把 `youdao.com` 加进 `WebDictConfig.SkipProxyHosts` 默认黑名单。但用户实测发现**有道在国内偶发 TLS 超时**（直连被墙/限速），走代理反而更稳。
-
-**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources["youdao"]` + [backend/internal/config/config.go](backend/internal/config/config.go) `WebDictConfig.SkipProxyHosts`）：
-
-- 移除 `youdao` 源级 `SkipProxy: true`（改为 `false`）→ 走默认按域名分流
-- 移除默认 `SkipProxyHosts` 中的 `youdao.com` → 用户配了 `ECHOSUB_WEBDICT_PROXY` 自动走代理
-- 用户没配代理：仍走默认（无代理），不影响普通用户
-- 用户想强制有道直连：可显式 `ECHOSUB_WEBDICT_SKIP_PROXY="youdao.com"`
-
-#### 微软翻译 HTTP 400「The source language is not valid」（v1.3.5）
-
-**现象**：用户报告「抓取受限，HTTP 400: `{"error":{"code":400035,"message":"The source language is not valid."}}`」。
-
-**根因**：[fetchMicrosoftTranslate](backend/internal/handlers/web_dict.go) 调用 `api-edge.cognitive.microsofttranslator.com/translate?from=auto&...`，但 **Edge Translator API 不支持 `from=auto`**（会返回 code 400035）。`auto` 是 Bing 网页翻译的参数，不是 Edge API 的参数。
-
-**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go)）：
-
-- `from=auto` → `from=en`（本应用主要查英文单词 → 中文）
-- 同步修改 `BuildURL` 中 `bing.com/translator` 链接的 `from=auto` → `from=en`
-- 后续若需要支持「中→英」场景：可让前端传 `from` 参数或前端检测单词字符集
-
-#### Oxford Learner 词典 404（v1.3.5）
-
-**现象**：用户报告「抓取受限，HTTP 404: NotFound（部分词典对抓取有限制...）」。
-
-**根因**：Oxford Learner 词典（`oxfordlearnersdictionaries.com`）对**复数形式不收录**——`eggs` 找不到，但 `egg` 找得到。这是 Oxford 站点本身的数据结构（每个单词都单独一个 URL），不是反爬。
-
-**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `handleHTMLScrape`）：
-
-- 在 `fetchWebDictHTML` 返回 `HTTP 404` 错误时：
-  - 若源是 `oxford` 且单词以 `s` 结尾且长度 > 1 → 剥去末尾 `s` 重试 1 次
-  - 命中后 `targetURL` 切换为单数版，前端「在新窗口打开」链接也对应单数
-- 对非 Oxford 源、非 404 错误、非 `s` 结尾等场景不触发（保持通用行为）
-
-
-
-### Removed
-
-- **Collins 网页词典**：长期反爬 + 资源占用偏高，且**用户已不在浏览器内使用** → 直接移除（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` + [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs` 同步删除）
-- **百度翻译网页词典**：v1.3.3 改用 `dict.baidu.com/suggest` 端点后**用户实测仍报「抓取受限」**——百度已对该端点加入风控（与 `fanyi.baidu.com/sug` 一样），`errno=1000` 不再回来；继续留着只会误导用户 → 直接移除
-- **谷歌翻译网页词典**：v1.3.3 加 `ForceProxy=true` 后**用户实测仍 i/o timeout**——`translate.googleapis.com` 即便走用户配置的代理，部分海外代理节点对该域名不友好（被代理服务商自身封禁 / TCP 阻断 / TLS 拦截），且无法继续往更细粒度调（用户也无法换代理节点）→ 直接移除。代码中 `fetchGoogleTranslate` / `googleURL` 一并删除
-
-### Added
-
-- **微软翻译网页词典**（`microsoft`，Edge 翻译 API）：完全替代 v1.3.3 移除的百度/谷歌翻译
-  - 原理：完全参考 `docs/Reference/STranslate.Plugin.Translate.GoogleWebsite` 风格，但用 Edge 后端（无需 API key）
-    - 步骤 1：`GET https://edge.microsoft.com/translate/auth` → 拿到短期 JWT token（默认 10 分钟有效）
-    - 步骤 2：`POST https://api-edge.cognitive.microsofttranslator.com/translate?from=auto&to=zh-Hans&api-version=3.0` 带 `Authorization: Bearer {token}` → 返回结构化 JSON
-  - 响应示例：`[{"detectedLanguage":{"language":"en","score":1.0},"translations":[{"text":"你好","to":"zh-Hans"}]}]`
-  - 后端实现：[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `fetchMicrosoftTranslate` + `fetchMicrosoftAuthToken`（含 8 分钟 token 缓存 + 401 自动失效）
-  - **国内必须配置 `ECHOSUB_WEBDICT_PROXY`**：源标记 `ForceProxy=true` → 强制走用户代理，忽略 `SkipProxyHosts`（含 `microsoft.com` 域名）
-  - 用户代理：`uaEdgeBrowser`（Edge 浏览器 UA）
-  - 缓存：翻译型源 5 分钟（token 可能变化，避免缓存过久）
-
-### Changed
-
-- 网页词典源数量：v1.3.3 的 7 个 → **5 个**（移除 Collins / 百度翻译 / 谷歌翻译）
-- `kWebDictSources` 新顺序：youdao → 微软翻译 → oxford → longman → wiktionary
-- `kWebDictConfigs` 同上；前端弹窗切换器自动同步减少 3 个按钮、新增 1 个「🪟 微软翻译」按钮
-- `DictionarySourceId` 联合类型（[frontend/src/types/index.ts](frontend/src/types/index.ts)）同步精简：移除 `cambridge` / `merriamWebster`（v1.3.3）/ `collins` / `baidu` / `google`（v1.3.4），新增 `microsoft`
-- `webDictSource` 字段 `FetchTranslate` 由 v1.3.3 的 `fetchBaiduTranslate` / `fetchGoogleTranslate` 改为 `fetchMicrosoftTranslate`
-
-### Reference 文档化
-
-- 在 [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) 顶部注释补充 `docs/Reference/STranslate.Plugin.Translate.GoogleWebsite` 链接 + 关键借鉴点（端点选择、UA、Referer）
-- [docs/PLAN.md](docs/PLAN.md) 活跃里程碑段同步 v1.3.4 调整
-- [docs/TASKS.md](docs/TASKS.md) v1.3.4 任务清单（T1~T8）全部完成
-
-
-
-## [v1.3.3] - 2026-07-07
-
-### Removed
-
-- **Cambridge 网页词典**：长期返回 403 / 503，连 `Mobile Safari UA + Referer` 组合都不能稳定抓取，留着只会误导用户。已从 [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `kWebDictSources` 与 [frontend/src/store/webDictionaryConfig.ts](frontend/src/store/webDictionaryConfig.ts) `kWebDictConfigs` 同时移除
-- **Merriam-Webster 网页词典**：同理，反复 403；同样从前端 + 后端同时移除
-
-### Fixed
-
-#### 谷歌翻译国内请求 `i/o timeout`（v1.3.3）
-
-**现象**：用户报告 `翻译失败：请求失败：Get "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=back: dial tcp 74.125.142.95:443: i/o timeout"`，即在国内直连 `translate.googleapis.com` 超时。
-
-**根因**：v1.3.2 默认 `SkipProxyHosts` 黑名单包含 `googleapis.com`，`translate.googleapis.com` 命中后被强制直连。但谷歌翻译在国内必须走代理才能稳定访问——**v1.3.2 的按域名分流机制存在一刀切漏洞**。
-
-**修复**：在 [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `webDictSource` 结构体新增 `ForceProxy bool` 字段：
-
-- `SkipProxy=true` → 完全不走代理（直连，源级强制）
-- **`ForceProxy=true`（v1.3.3 新增）→ 忽略 `cfg.WebDict.SkipProxyHosts` / `OnlyProxyHosts`，只读 `cfg.WebDict.CustomProxy`**
-- 默认 → 读 `cfg.WebDict.SkipProxyHosts` / `OnlyProxyHosts`（按域名分流）
-
-`google` 源声明 `ForceProxy=true` → 强制走用户配置的 `ECHOSUB_WEBDICT_PROXY` 国内代理，绕开默认 `googleapis.com` 黑名单。
-
-#### 百度翻译 `errno=1000,errmsg=未知错误`（v1.3.3）
-
-**现象**：用户报告 `抓取受限，翻译失败：百度翻译失败：errno=1000,errmsg=未知错误`。
-
-**根因**：v1.3.2 用 `https://fanyi.baidu.com/sug?wd={word}` 端点，但 2024 年起该端点已被百度风控，所有请求都返回 `errno=1000`。
-
-**修复**（[backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `fetchBaiduTranslate`）：换用 `https://dict.baidu.com/suggest?wd={word}&json=1&type=0` 端点——**这是百度词典的公开 suggest 接口，与百度翻译共用同一套后端词典数据**。
-
-- 端点稳定可用，公开、无需 key
-- 返回 JSON（不是 JSONP）：`{"errno":0,"data":[{"k":"hello","v":"int. 你好；喂；哈罗","p":"[həˈləʊ]","c":["n. 引人注意的呼喊","vi. 喊叫","vt. 向…打招呼"]}]}`
-- 新增音标（`p` 字段）和多重释义（`c` 数组）解析，比 v1.3.2 的 `/sug` 信息更丰富
-- 百度词典与百度翻译同源数据，显示仍标「百度翻译」品牌
-- `dict.baidu.com` 通过 `hostMatchesAny` 命中默认 `SkipProxyHosts` 里的 `baidu.com` → 自动直连国内，无需额外配置
-
-### Changed
-
-- 网页词典源数量：9 个 → 7 个（移除 Cambridge、Merriam-Webster）
-- `kWebDictSources` 顺序：有道 → 百度翻译 → 谷歌翻译 → Oxford → Longman → Collins → Wiktionary
-- `kWebDictConfigs` 同上；前端弹窗切换器自动同步减少 2 个按钮
-
-### Known 遗留
-
-- 谷歌翻译仍依赖用户配置 `ECHOSUB_WEBDICT_PROXY`；如果用户没配代理且 `ForceProxy=true` 的源会直接走 `CustomProxy=""` 等价直连（但 `translate.googleapis.com` 在国内直连会超时）。建议国内用户**必须**配置代理
 
 ## [v1.3.1] - 2026-07-07
 
