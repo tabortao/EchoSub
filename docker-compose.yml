@@ -1,21 +1,28 @@
-# EchoSub Docker Compose 配置
-# 使用云端镜像 + 数据卷持久化
+# =============================================================================
+# EchoSub Docker Compose 配置（v1.3.1 起完整支持代理 / AI / 网页词典）
+# =============================================================================
 #
 # 使用方法：
-#   1. 将下方 volumes 中的 NAS 媒体路径改为你实际的 NAS 共享路径（见注释示例）
-#   2. 修改 ECHOSUB_JWT_SECRET 为一个随机字符串
-#   3. docker compose up -d
+#   1. 将下方 volumes 中的 ./media 改为你实际的 NAS / 媒体路径（见注释示例）
+#   2. 修改 ECHOSUB_JWT_SECRET 为一个随机字符串（openssl rand -hex 32）
+#   3. 按需取消注释「AI 翻译」和「网页词典 / 代理」段的设置
+#   4. docker compose up -d
 #
 # 关于后端配置：
 #   容器内媒体目录固定为 /media（由 ECHOSUB_MEDIA_DIR=/media 指定），
-#   只需在 volumes 中把「宿主机 NAS 路径」挂载到容器的 /media 即可，
-#   后端 config.go / config.yaml 无需任何修改。
+#   只需在 volumes 中把「宿主机 NAS 路径」挂载到容器的 /media 即可。
+#
+#   后端配置优先级：环境变量（下面） > /app/config/config.yaml 挂载 > 代码默认值
+#   如果挂载 config.yaml：下方 environment 会覆盖 yaml 中相同字段
+#
+# 完整配置 & 部署文档：docs/CONFIGURATION.md
 #
 # NAS 路径示例（任选一种与你的 NAS 匹配）：
 #   • Synology / 群晖 DSM（NFS/SMB 挂载到宿主机）:  /volume1/media/EchoSub
 #   • Linux 宿主机 NFS 挂载点:                      /mnt/nas/EchoSub
 #   • Windows Docker Desktop + SMB 映射盘:           //192.168.1.10/media/EchoSub
 #   • Windows 已映射为 Z 盘:                          Z:\EchoSub  → 写作 Z:/EchoSub
+# =============================================================================
 
 services:
   echosub:
@@ -25,13 +32,76 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+
+    # -----------------------------------------------------------------------------
+    # 环境变量
+    # -----------------------------------------------------------------------------
     environment:
+      # ===== 基础配置 =====
       - ECHOSUB_PORT=8080
       - ECHOSUB_DB_PATH=/app/data/echosub.db
       # 容器内媒体目录，固定为 /media（与下方挂载点一致）
       - ECHOSUB_MEDIA_DIR=/media
+      # ★ 必填 ★：用 openssl rand -hex 32 生成随机字符串
       - ECHOSUB_JWT_SECRET=please-change-this-secret
       - GIN_MODE=release
+
+      # =============================================================================
+      # AI 翻译（按需启用；推荐用 .env 文件或 Portainer 管理密钥）
+      # =============================================================================
+      # 国内推荐：DeepSeek / 通义千问（OpenAI 兼容协议，国内直连无需代理）
+      # 海外推荐：OpenAI（需要走代理，详见下方「代理」段）
+      # =============================================================================
+
+      # --- DeepSeek（国内直连）---
+      # - ECHOSUB_AI_BASE_URL=https://api.deepseek.com/v1
+      # - ECHOSUB_AI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+      # - ECHOSUB_AI_MODEL=deepseek-chat
+
+      # --- 通义千问 DashScope（国内直连）---
+      # - ECHOSUB_AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+      # - ECHOSUB_AI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+      # - ECHOSUB_AI_MODEL=qwen-plus
+
+      # --- OpenAI 官方（需要走代理）---
+      # - ECHOSUB_AI_BASE_URL=https://api.openai.com/v1
+      # - ECHOSUB_AI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+      # - ECHOSUB_AI_MODEL=gpt-4o-mini
+
+      # 通用
+      - ECHOSUB_AI_TARGET_LANG=Chinese
+      - ECHOSUB_AI_TIMEOUT=60
+
+      # =============================================================================
+      # 代理（v1.3.1 起；国内访问 OpenAI / 网页词典必需）
+      # =============================================================================
+      # Docker 容器内访问宿主机代理的地址：
+      #   Windows / macOS Docker Desktop：host.docker.internal
+      #   Linux 桥接网络：                172.17.0.1（按实际网关调整）
+      #   远程代理服务器：                http://10.0.0.5:7890
+      # =============================================================================
+
+      # --- AI 代理（仅 OpenAI 等海外 API 需要）---
+      # - ECHOSUB_AI_PROXY=http://host.docker.internal:7890
+      # - ECHOSUB_AI_PROXY=socks5://host.docker.internal:1080
+
+      # --- 网页词典代理（国内网络强烈建议配置）---
+      # - ECHOSUB_WEBDICT_PROXY=http://host.docker.internal:7890
+      # - ECHOSUB_WEBDICT_PROXY=socks5://host.docker.internal:1080
+
+      # =============================================================================
+      # 网页词典抓取（v1.3.1 起可调）
+      # =============================================================================
+      # 默认值已够用：超时 15s / 重试 1 次 / 缓存 60 分钟
+      # 网络特别差时可调大：
+      # =============================================================================
+      # - ECHOSUB_WEBDICT_TIMEOUT=30
+      # - ECHOSUB_WEBDICT_RETRIES=2
+      # - ECHOSUB_WEBDICT_CACHE_MINUTES=120
+
+    # -----------------------------------------------------------------------------
+    # 挂载卷
+    # -----------------------------------------------------------------------------
     volumes:
       # 媒体目录：将宿主机的 NAS 媒体文件夹挂载到容器的 /media
       # ★ 请把下面这行左侧改为你实际的 NAS 媒体路径 ★
@@ -39,7 +109,43 @@ services:
       - ./media:/media
       # 数据持久化：SQLite 数据库 + 笔记图片（建议保留在宿主机本地，不要放 NAS）
       - ./data:/app/data
+      # （可选）挂载自定义 config.yaml，覆盖环境变量之外的字段：
+      # - ./config.yaml:/app/config/config.yaml:ro
     # NAS 设备通常无需特殊设备映射；如需硬件解码视频可按需配置
+
+    # -----------------------------------------------------------------------------
+    # 健康检查（可选；启动后端后用 curl 验证 /api/v1/health）
+    # -----------------------------------------------------------------------------
+    # healthcheck:
+    #   test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/v1/health"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
 
 volumes:
   echosub-data:
+
+
+# =============================================================================
+# 常见场景速查（按需替换上方 environment 段）
+# =============================================================================
+#
+# 场景 1：海外服务器（无墙）
+#   取消 OpenAI 注释即可，无需任何代理
+#
+# 场景 2：国内服务器 + Clash 跑在宿主机（默认 7890 端口）
+#   取消 ECHOSUB_AI_BASE_URL=https://api.openai.com/v1
+#   取消 ECHOSUB_AI_PROXY=http://host.docker.internal:7890
+#   取消 ECHOSUB_WEBDICT_PROXY=http://host.docker.internal:7890
+#
+# 场景 3：国内服务器 + DeepSeek（国内直连，推荐）
+#   取消 DeepSeek 三行（base_url / api_key / model）
+#   网页词典仍建议配置 ECHOSUB_WEBDICT_PROXY
+#
+# 场景 4：国内服务器 + 远程代理服务器
+#   ECHOSUB_AI_PROXY=http://user:pass@10.0.0.5:8080
+#   ECHOSUB_WEBDICT_PROXY=socks5://10.0.0.5:1080
+#   ECHOSUB_WEBDICT_TIMEOUT=30
+#
+# 完整 4 个场景的 docker-compose.yml 模板：docs/CONFIGURATION.md §七
+# =============================================================================

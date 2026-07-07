@@ -1,18 +1,150 @@
-# EchoSub 配置示例
-# 复制为 config.yaml 或通过环境变量覆盖（环境变量前缀 ECHOSUB_）
+# =============================================================================
+# EchoSub 配置示例（v1.3.1 起）
+# =============================================================================
+#
+# 使用方法：
+#   1. 复制为 config.yaml：
+#        cp config.example.yaml config.yaml
+#   2. 按需取消注释 / 修改对应字段
+#   3. 字段全部可选；不写则使用默认值
+#
+# 配置优先级（高 → 低）：
+#   1. 环境变量（ECHOSUB_* 前缀）—— 部署 / 容器推荐
+#   2. 本文件（config.yaml）        —— 桌面 / 本地开发推荐
+#   3. 代码内置默认值               —— 见 internal/config/config.go Default()
+#
+# 安全提示：
+#   - ECHOSUB_JWT_SECRET 生产环境必须修改为随机字符串
+#     生成命令：openssl rand -hex 32
+#   - ECHOSUB_AI_API_KEY 强烈建议用环境变量注入，避免明文落盘
+#   - 本文件可提交到 Git；实际部署时把含密钥的 config.yaml 加入 .gitignore
+#
+# 完整配置 & 部署文档：docs/CONFIGURATION.md
+# =============================================================================
 
+
+# -----------------------------------------------------------------------------
+# 基础：HTTP 服务
+# -----------------------------------------------------------------------------
 server:
-  port: "8080"                 # ECHOSUB_PORT
+  # 监听端口
+  port: "8080"                         # ECHOSUB_PORT
 
+
+# -----------------------------------------------------------------------------
+# 基础：SQLite 数据库
+# -----------------------------------------------------------------------------
 database:
-  path: "data/echosub.db"      # ECHOSUB_DB_PATH
+  # 数据库文件路径（绝对 / 相对均可；启动时自动创建父目录）
+  path: "data/echosub.db"              # ECHOSUB_DB_PATH
+  # Docker 部署建议：/app/data/echosub.db（配合 volumes 挂载）
 
+
+# -----------------------------------------------------------------------------
+# 基础：JWT 鉴权
+# -----------------------------------------------------------------------------
 jwt:
-  secret: "change-me-in-production"  # ECHOSUB_JWT_SECRET
-  expire_hours: 72
+  # ★ 生产环境必填 ★：用 openssl rand -hex 32 生成
+  secret: "change-me-in-production"     # ECHOSUB_JWT_SECRET
+  # Token 有效期（小时），默认 72
+  expire_hours: 72                      # ECHOSUB_JWT_EXPIRE_HOURS
 
+
+# -----------------------------------------------------------------------------
+# 基础：媒体目录与支持的文件类型
+# -----------------------------------------------------------------------------
 media:
-  dir: "/media"                # ECHOSUB_MEDIA_DIR  媒体文件根目录
+  # 媒体文件根目录（绝对路径）；启动时若不存在会自动创建
+  dir: "/media"                         # ECHOSUB_MEDIA_DIR
+  # 容器部署：固定为 /media，配合 docker-compose 的 volumes 挂载宿主机目录
+  # Windows 本地：D:\\Media  或  D:/Media
   supported_video: [".mp4", ".mkv", ".mov", ".webm", ".avi"]
   supported_audio: [".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg"]
   supported_subs: [".srt", ".vtt"]
+  supported_images: [".jpg", ".jpeg", ".png", ".webp"]
+
+
+# =============================================================================
+# AI 翻译（v0.8.0 起，v1.3.1 增强代理）
+# =============================================================================
+# 用途：批量翻译字幕 / 字典 / 句子解释
+# 启用条件：base_url + api_key 都必须有值
+#
+# 兼容以下 OpenAI 兼容服务：
+#   - OpenAI 官方（https://api.openai.com/v1）
+#   - DeepSeek（https://api.deepseek.com/v1）—— 国内直连
+#   - 通义千问 DashScope（https://dashscope.aliyuncs.com/compatible-mode/v1）
+#   - 智谱 GLM / 硅基流动 / OneAPI / Ollama 等
+# =============================================================================
+ai:
+  # ===== 启用配置（任选一组取消注释）=====
+
+  # --- OpenAI 官方（需要海外代理，详见 web_dict.proxy）---
+  # base_url: "https://api.openai.com/v1"
+  # api_key: "sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+  # model: "gpt-4o-mini"
+
+  # --- DeepSeek（国内直连，无需代理）---
+  # base_url: "https://api.deepseek.com/v1"
+  # api_key: "sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+  # model: "deepseek-chat"
+
+  # --- 通义千问（国内直连，OpenAI 兼容模式）---
+  # base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  # api_key: "sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+  # model: "qwen-plus"
+
+  # --- 本地 Ollama ---
+  # base_url: "http://localhost:11434/v1"
+  # api_key: "ollama"        # Ollama 不校验 key，任意非空字符串
+  # model: "qwen2.5:7b"
+
+  # ===== 通用配置 =====
+  # 默认翻译目标语言
+  target_lang: "Chinese"                # ECHOSUB_AI_TARGET_LANG
+  # 单次请求超时（秒），默认 60
+  timeout_sec: 60                       # ECHOSUB_AI_TIMEOUT
+
+  # v1.3.1 起：AI 请求代理（http / https / socks5）
+  # 国内访问 OpenAI 必需；DeepSeek / 通义 等国内 AI 不需要
+  # 与环境变量 ECHOSUB_AI_PROXY 等价，二选一
+  # proxy: "http://127.0.0.1:7890"      # Clash / V2RayN 默认端口
+  # proxy: "socks5://127.0.0.1:1080"   # SOCKS5 代理
+  # proxy: "http://user:pass@proxy.example.com:8080"   # 带认证
+
+
+# =============================================================================
+# 网页词典抓取（v1.3.0 起，v1.3.1 强化网络）
+# =============================================================================
+# 用途：让 Cambridge / Oxford / Longman / 有道 等 7 个网页词典
+#       在国内网络下也能稳定抓取（弹窗内渲染）
+#
+# 痛点：v1.3.0 默认 6s 超时 + 无代理 → 国内用户大量 timeout / 403
+# 解决：v1.3.1 起默认 15s 超时 + 自动重试 + 内存缓存 + 可走代理
+# =============================================================================
+web_dict:
+  # 单次抓取超时（秒），默认 15（v1.3.0 是 6）
+  timeout_sec: 15                       # ECHOSUB_WEBDICT_TIMEOUT
+  # 单次响应大小上限（字节），默认 1 MiB
+  max_bytes: 1048576                    # ECHOSUB_WEBDICT_MAX_BYTES
+  # 失败重试次数（仅对 timeout / 网络错误重试；4xx/5xx 不重试）
+  # 0 = 禁用重试，1 = 重试 1 次（共请求 2 次），默认 1
+  retries: 1                            # ECHOSUB_WEBDICT_RETRIES
+  # 内存缓存时长（分钟），0 = 禁用缓存，默认 60
+  cache_minutes: 60                     # ECHOSUB_WEBDICT_CACHE_MINUTES
+
+  # v1.3.1 起：抓取请求代理（http / https / socks5）
+  # 国内网络强烈建议配置，否则 Cambridge / Longman / 有道 经常 timeout / 403
+  # 与环境变量 ECHOSUB_WEBDICT_PROXY 等价，二选一
+  # proxy: "http://127.0.0.1:7890"
+  # proxy: "socks5://127.0.0.1:1080"
+
+
+# =============================================================================
+# 内置词典 ECDICT（v1.1.0 起，可选）
+# =============================================================================
+# 用途：离线英汉词典（~77 万词条），零 token 消耗
+# 路径：默认 backend/data/dict/ecdict.csv
+# 启动时若不存在自动从 GitHub release 下载（约 70 秒）
+# 如已下载可指定自定义路径：
+# builtin_dict_csv: "/opt/echosub/data/dict/ecdict.csv"

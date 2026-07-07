@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -152,6 +153,24 @@ func Load() (*Config, error) {
 					SupportedSubs   []string `yaml:"supported_subs"`
 					SupportedImages []string `yaml:"supported_images"`
 				} `yaml:"media"`
+				// v1.3.1 起：AI 配置可写入 config.yaml（环境变量仍是最高优先级）
+				// 注意：API key 仍建议用环境变量 ECHOSUB_AI_API_KEY，避免明文落盘
+				AI struct {
+					BaseURL    string `yaml:"base_url"`
+					APIKey     string `yaml:"api_key"`
+					Model      string `yaml:"model"`
+					TargetLang string `yaml:"target_lang"`
+					TimeoutSec int    `yaml:"timeout_sec"`
+					Proxy      string `yaml:"proxy"`
+				} `yaml:"ai"`
+				// v1.3.1 起：网页词典抓取配置
+				WebDict struct {
+					TimeoutSec   int    `yaml:"timeout_sec"`
+					MaxBytes     int64  `yaml:"max_bytes"`
+					Retries      int    `yaml:"retries"`
+					CacheMinutes int    `yaml:"cache_minutes"`
+					Proxy        string `yaml:"proxy"`
+				} `yaml:"web_dict"`
 			}
 			if err := yaml.Unmarshal(data, &ycfg); err == nil {
 				// 覆盖默认值（仅当 yaml 中有值时）
@@ -181,6 +200,42 @@ func Load() (*Config, error) {
 				}
 				if len(ycfg.Media.SupportedImages) > 0 {
 					cfg.Media.SupportedImages = ycfg.Media.SupportedImages
+				}
+				// AI（v1.3.1 起支持 yaml）
+				if ycfg.AI.BaseURL != "" {
+					cfg.AI.BaseURL = ycfg.AI.BaseURL
+				}
+				if ycfg.AI.APIKey != "" {
+					cfg.AI.APIKey = ycfg.AI.APIKey
+				}
+				if ycfg.AI.Model != "" {
+					cfg.AI.Model = ycfg.AI.Model
+				}
+				if ycfg.AI.TargetLang != "" {
+					cfg.AI.TargetLang = ycfg.AI.TargetLang
+				}
+				if ycfg.AI.TimeoutSec > 0 {
+					cfg.AI.TimeoutSec = ycfg.AI.TimeoutSec
+				}
+				if ycfg.AI.Proxy != "" {
+					cfg.AI.Proxy = ycfg.AI.Proxy
+				}
+				// 网页词典（v1.3.1 起支持 yaml）
+				if ycfg.WebDict.TimeoutSec > 0 {
+					cfg.WebDict.TimeoutSec = ycfg.WebDict.TimeoutSec
+				}
+				if ycfg.WebDict.MaxBytes > 0 {
+					cfg.WebDict.MaxBytes = ycfg.WebDict.MaxBytes
+				}
+				if ycfg.WebDict.Retries > 0 || ycfg.WebDict.Retries == 0 && yamlHasField(data, "web_dict", "retries") {
+					// 显式写 0 也允许（极端场景禁用重试）；用辅助函数判断键存在
+					cfg.WebDict.Retries = ycfg.WebDict.Retries
+				}
+				if ycfg.WebDict.CacheMinutes > 0 {
+					cfg.WebDict.CacheMinutes = ycfg.WebDict.CacheMinutes
+				}
+				if ycfg.WebDict.Proxy != "" {
+					cfg.WebDict.Proxy = ycfg.WebDict.Proxy
 				}
 				fmt.Printf("[INFO] 已加载配置文件: %s\n", yamlPath)
 			}
@@ -301,6 +356,57 @@ func findConfigFile(name string) string {
 		return abs
 	}
 	return ""
+}
+
+// yamlHasField 检查 yaml 文本中指定 section 下是否显式包含某个 key
+// 用于区分「用户没写」和「用户写了 0 / 空字符串」两种情况
+// 实现：粗略的字符串匹配（不依赖完整的 yaml AST 解析）
+func yamlHasField(yamlData []byte, section, key string) bool {
+	lines := strings.Split(string(yamlData), "\n")
+	inSection := false
+	sectionIndent := -1
+	keyIndent := -1
+	for _, line := range lines {
+		// 跳过空行与注释
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// 计算缩进（空格数）
+		indent := 0
+		for _, c := range line {
+			if c == ' ' {
+				indent++
+			} else {
+				break
+			}
+		}
+		// 检测 section 起始（顶层 key + 冒号）
+		if indent == 0 && strings.HasSuffix(trimmed, ":") {
+			inSection = strings.TrimSuffix(trimmed, ":") == section
+			sectionIndent = indent
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		// section 内缩进必须 > section 缩进
+		if indent <= sectionIndent {
+			inSection = false
+			continue
+		}
+		// 找到 key（形如 "key:" 或 "key: value"）
+		keyIndent = indent
+		colonIdx := strings.Index(trimmed, ":")
+		if colonIdx > 0 {
+			k := strings.TrimSpace(trimmed[:colonIdx])
+			if k == key {
+				return true
+			}
+		}
+		_ = keyIndent
+	}
+	return false
 }
 
 func getEnv(key, fallback string) string {

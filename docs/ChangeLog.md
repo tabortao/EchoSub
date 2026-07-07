@@ -72,6 +72,11 @@ v1.3.0 上线后国内用户反馈：7 个网页词典（Cambridge / Oxford / Lo
 
 - `backend/go.mod` 新增 `github.com/andybalholm/brotli v1.2.2`（br 解压依赖）
 - 网页词典抓取失败错误文案更友好：附带「部分词典对抓取有限制，可点击下方「在新窗口打开」手动查看」提示
+- `backend/internal/config/config.go` 扩展 `config.yaml` 加载：除原有 `server/database/jwt/media` 外，新增 `ai` 与 `web_dict` 两个 section，环境变量仍是最高优先级。`web_dict.retries` 支持显式写 0（禁用重试）——通过 `yamlHasField` 辅助函数区分「未设置」与「显式为 0」两种情况
+- [backend/config.example.yaml](backend/config.example.yaml) 重写：150 行完整配置示例，含 4 组 AI 启用方案（OpenAI / DeepSeek / 通义千问 / Ollama）和详尽中文注释
+- [backend/config.yaml](backend/config.yaml) 补全本地开发配置：保留原 `D:/Code/Go/EchoSub/test-media` 等实际路径，新增 `ai` 与 `web_dict` 段（默认全部注释，用户按需取消）
+- [docker-compose.yml](docker-compose.yml) 大幅完善：保留原基础配置 + 注释化「DeepSeek / 通义 / OpenAI」三组 AI 启用方案 + 「AI 代理 / 网页词典代理」段 + 4 个常见场景速查表
+- [backend/internal/config/config_test.go](backend/internal/config/config_test.go) **新建**：3 个测试覆盖 `yamlHasField` 工具 / `Load` yaml 加载 / 环境变量覆盖 yaml 优先级
 
 ### Known 遗留
 
