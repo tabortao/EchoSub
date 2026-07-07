@@ -82,6 +82,12 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   const [localSentences, setLocalSentences] = useState<Sentence[]>(sentences)
   useEffect(() => { setLocalSentences(sentences) }, [sentences])
 
+  // v1.3.8：把 hasSubtitle 派生提前到 line 99 之前。
+  //   原来 hasSubtitle 在 line 653 声明（函数体靠后），line 99 的 useState 引用时
+  //   TypeScript 会报"used before declaration"（const 在 TDZ 之外，hoist 不允许）。
+  //   派生非常轻量（line 653 那行只有 1 表达式），重复定义一处不影响性能。
+  const hasSubtitleEarly = localSentences.length > 0
+
   // UI 状态
   // v1.2.0：默认开启逐句复读（Echo Loop 模式）。这是 Echo Loop 参考实现的核心行为：
   //   - 每句重复 N 次（sentence_repeat）
@@ -92,7 +98,12 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1)
-  const [mode, setMode] = useState<PlayMode>('repeat')
+  // v1.3.8：无字幕时强制初始 mode='normal'（Echo Loop 不可用）。
+  //   v1.3.7 之前无字幕时 mode 仍默认为 'repeat'，只是被 onModeChange 检测后强制回退，
+  //   但首次渲染时 UI 会闪一下「Echo Loop 复读中」徽标（line 686-688 的 warning tag 会短暂显示）。
+  //   现在初始化时就分流：无字幕 → 'normal'，有字幕 → 'repeat'（保留默认学习行为）。
+  //   引用 line 89 的 hasSubtitleEarly（line 653 的 hasSubtitle 太晚，TDZ 会报错）。
+  const [mode, setMode] = useState<PlayMode>(hasSubtitleEarly ? 'repeat' : 'normal')
   const [loopCount, setLoopCount] = useState(loop_count || 3)
   const [sentenceRepeat, setSentenceRepeat] = useState(sentence_repeat || 3)
   const [pauseSeconds, setPauseSeconds] = useState(pause_seconds ?? 1.5)
@@ -477,25 +488,43 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   const incRate = () => onRateChange(playbackRate + RATE_STEP)
 
   // 媒体自然结束（普通模式）
+  //
+  // v1.3.7 重构：移除无字幕早 return，统一由 onEnded 接管循环。
+  // v1.3.8 调整：每次 onEnded 触发都把「已听 N 遍 +1」写入后端（即每次循环结束时调用
+  //   savePosition(..., incrementPlay: true)），而 v1.3.7 只在第 N 轮才记一次。
+  //   这样「已听 N 遍」真正反映"已经完整听过几遍"（与 UI 上的 overallLoopRef 同步），
+  //   不再需要等 N 轮结束才能看到数字变化。
+  //
+  //   有字幕时（mode='repeat'）会在 line 848 onTimeUpdate 内已经按句计过 repeat_count，
+  //   但 playCount（已听 N 遍）是整个媒体维度的，每轮 +1 合理。
   const onEnded = () => {
     if (modeRef.current === 'repeat') return
     const el = mediaRef.current
     if (!el) return
 
-    // 修复：最后一句播放到媒体末尾时，timeupdate 可能没有机会在 t >= end 时触发，
-    // 导致该句的 repeat_count 未被计数。在 ended 事件中补计最后一句。
-    const lastIdx = currentSentenceIdxRef.current
-    if (lastIdx >= 0 && lastIdx < sentencesRef.current.length) {
-      incrementSentenceRepeat(lastIdx)
+    // 有字幕时：补计最后一句（v0.4.x 起的兼容性 fix）
+    // 无字幕时：无句可补计
+    if (sentencesRef.current.length > 0) {
+      const lastIdx = currentSentenceIdxRef.current
+      if (lastIdx >= 0 && lastIdx < sentencesRef.current.length) {
+        incrementSentenceRepeat(lastIdx)
+      }
     }
 
+    // v1.3.8：每次循环都递增 playCount（"已听 N 遍"）
+    //   当前 currentTime ≈ el.duration（已播完），用 currentTime 保存位置
+    //   force=true 强制覆盖（不依赖 t > lastSavePos 判断）
+    //   incrementPlay=true 触发后端 PlayCount++
+    const endPos = isFinite(el.duration) && el.duration > 0 ? el.duration : el.currentTime
+    savePosition(endPos, { force: true, incrementPlay: true })
+
+    // 整体循环 N 次状态机（v1.3.7 起有 / 无字幕共用同一条逻辑）
     if (overallLoopRef.current + 1 < loopCountRef.current) {
       overallLoopRef.current += 1
       el.currentTime = 0
       el.play().then(() => setPlaying(true)).catch(() => {})
     } else {
       setPlaying(false)
-      savePosition(el.duration, { force: true, incrementPlay: true })
       message.success('播放完成')
     }
   }
@@ -566,8 +595,12 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
   }
 
   // 切换模式
+  //
+  // v1.3.7：无字幕时禁用 repeat 模式。
+  //   - v1.3.6 已加 line 586-589 的「checked + 无字幕 → 自动回 normal」保护
+  //   - 但 line 581 先 setMode('repeat') 再 setMode('normal') 会触发一次中间态
+  //   - v1.3.7 改为提前判断：checked + 无字幕 → 直接保持 normal，避免中间态
   const onModeChange = (checked: boolean) => {
-    setMode(checked ? 'repeat' : 'normal')
     handlingEndRef.current = false
     if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current)
     sentenceRepeatRef.current = 0
@@ -575,7 +608,9 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
     if (checked && localSentences.length === 0) {
       message.warning('该媒体无字幕文件，逐句复读需要字幕支持')
       setMode('normal')
+      return
     }
+    setMode(checked ? 'repeat' : 'normal')
   }
 
   // 切换遮挡模式时清空揭示集合
@@ -760,6 +795,11 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               controls={false}
+              // v1.3.7：移除 loop={!hasSubtitle}。
+              //   v1.3.6 用 HTML5 原生 loop 实现「无字幕整体循环」，但浏览器原生 loop
+              //   会吞掉 ended 事件，导致「整体第 N 轮 / 已听 N 遍」计数器永远停在 1。
+              //   现在统一由 onEnded 接管循环（手动 currentTime=0 + play()），
+              //   有 / 无字幕走同一条「整体循环 N 次」状态机。
             />
             {/* 视频叠加字幕：在画面底部显示当前句（v0.7.0 AC 风：暖羊皮纸 + 暖深棕字） */}
             {currentSentence && (
@@ -812,6 +852,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
             onEnded={onEnded}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
+            // v1.3.7：移除 loop={!hasSubtitle}（同 video，理由见上）
           />
         )}
       </div>
@@ -939,7 +980,9 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
           <Tooltip title="Echo Loop：开启后每句重复 N 次 → 停顿 K 秒 → 下一句，整体循环 M 次">
             <span style={{ fontWeight: 600 }}>🔁 Echo Loop</span>
           </Tooltip>
-          <Switch checked={mode === 'repeat'} onChange={onModeChange} disabled={!hasSubtitle} />
+          {/* v1.3.8：无字幕时 checked=false + disabled（v1.3.7 已加 disabled，但 checked 没改，
+              仍按 mode 渲染 → 无字幕 + mode='normal'（v1.3.8 起默认值）时显示正确 OFF） */}
+          <Switch checked={mode === 'repeat' && hasSubtitle} onChange={onModeChange} disabled={!hasSubtitle} />
           {!hasSubtitle && <Tag>无字幕</Tag>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 36 }}>
@@ -1122,6 +1165,14 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
                           const next = !favoritePlayMode
                           setFavoritePlayMode(next)
                           if (next) {
+                            // v1.3.7：无字幕时禁用 repeat 模式 → 收藏播放也无意义
+                            //   收藏列表按 subtitle index 索引，无字幕时 favoriteSet 为空
+                            //   但仍要早 return，避免 setMode('repeat') 与 onEnded 状态机冲突
+                            if (!hasSubtitle) {
+                              message.warning('该媒体无字幕文件，无法按收藏列表复读')
+                              setFavoritePlayMode(false)
+                              return
+                            }
                             // 进入收藏播放模式：自动切到 repeat 模式，并跳到第一句收藏句
                             if (modeRef.current !== 'repeat') setMode('repeat')
                             const favSorted = Array.from(favoriteSet).sort((a, b) => a - b)

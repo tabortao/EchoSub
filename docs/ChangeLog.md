@@ -9,6 +9,118 @@
 
 
 
+## [v1.3.8] - 2026-07-07
+
+### Fixed
+
+#### 无字幕时 Echo Loop Switch 显示 OFF + 已听 N 遍逐轮递增（v1.3.8）
+
+**现象**：用户实测 v1.3.7 后反馈 2 个细节问题：
+1. 无字幕的音频 / 视频 Echo Loop 开关仍显示 ON（v1.3.7 已加 disabled，但 Switch 视觉上未明确 OFF）
+2. 无字幕时循环 N 次完，「已听 N 遍」仍只增 1（v1.3.7 只在第 N 轮才触发 `savePosition(..., incrementPlay: true)`）
+
+**修复**（[frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx)）：
+
+1. **初始 `mode` 分流**（line 106）：`useState<PlayMode>('repeat')` → `useState<PlayMode>(hasSubtitleEarly ? 'repeat' : 'normal')` —— 无字幕时初始 mode = 'normal'，避免首次渲染 UI 闪烁「Echo Loop 复读中」徽标
+2. **`hasSubtitleEarly` 派生上移**（line 89）：提前到 useState 之前（line 653 的 `hasSubtitle` 在 TDZ 之后，TS 报"used before declaration"）
+3. **Switch checked 强化**（line 971）：`checked={mode === 'repeat'}` → `checked={mode === 'repeat' && hasSubtitle}` —— 视觉上明确显示 OFF
+4. **`onEnded` 每次都递增 playCount**（v1.3.8 关键修复）：把 `savePosition(..., incrementPlay: true)` 从「第 N 轮分支」提前到「循环状态机之前」—— 每次 onEnded 触发都 `PlayCount++`，与 UI 上的 `overallLoopRef` 同步
+   - 用 `isFinite(el.duration) && el.duration > 0 ? el.duration : el.currentTime` 兜底 NaN
+
+### Changed
+
+- 无字幕时 UI 默认值：`mode='normal'`（v1.3.8 起）
+- 「已听 N 遍」语义：每次循环 +1（v1.3.8 起，不再等 N 轮结束才 +1）
+
+
+
+## [v1.3.7] - 2026-07-07
+
+### Fixed
+
+#### v1.3.6「无字幕整体循环」导致「已听 N 遍」永远停在 1（v1.3.7）
+
+**现象**：用户实测 v1.3.6 后反馈 2 个问题：
+1. 无字幕的音频 / 视频循环 N 次后，「已听 N 遍」计数器不变（永远 = 1）
+2. 无字幕时按句复读按钮应该禁用（v1.3.6 已加 disabled 但仍有边界）
+
+**根因**：
+
+v1.3.6 在 `<video>` / `<audio>` 上加了 `loop={!hasSubtitle}` 走 HTML5 原生 loop。**但浏览器原生 `loop` 属性会吞掉 `ended` 事件**（自动重置 currentTime=0 并 play），导致：
+- 「整体第 N 轮」UI 永远停在 1（`overallLoopRef.current` 不变）
+- 「已听 N 遍」后端 `playCount` 不增（`savePosition(..., incrementPlay: true)` 不调用）
+- 用户观感：「明明播了好几遍，怎么听遍数不涨？」
+
+**修复**（[frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx)）：
+
+1. **移除 `<video>` / `<audio>` 上的 `loop={!hasSubtitle}`** — 统一由 `onEnded` 接管循环
+2. **`onEnded` 重构**：
+   - `mode='repeat'` → 早 return（按句循环不结束）
+   - 有字幕时：补计最后一句 `repeat_count`（v0.4.x 起的兼容性 fix）
+   - 无字幕时：跳过补计（无句可补计）
+   - 走「整体循环 N 次」状态机：手动 `el.currentTime = 0 + el.play()`
+   - 第 N 轮结束 → `savePosition(duration, incrementPlay: true)` → 后端 `playCount++`
+3. **`onModeChange` 优化**（v1.3.7 增强）：提前判断无字幕 + 提前 return，**避免 `setMode('repeat') → setMode('normal')` 中间态闪烁**
+4. **收藏播放入口保护**（line 1143）：无字幕时拒绝进入收藏播放模式（`favoriteSet` 按 subtitle index 索引，无字幕时为空），并 toast 提示
+
+### Changed
+
+- 无字幕时只能「整体循环 N 次」，不能「按句重复」—— 这与 v1.3.6 的语义一致，但 v1.3.6 用浏览器原生 loop 会让计数器失效
+- v1.3.7 起 `<video>` / `<audio>` 完全不带 `loop` 属性，**循环完全由 `onEnded` 状态机控制**
+
+
+
+## [v1.3.6] - 2026-07-07
+
+### Fixed
+
+#### IDE 诊断 9 项全部清空
+
+v1.3.5 引入了几处 IDE 静态分析报告（unused function / unused param / S1009 / modernize / `any` vs `interface{}`）。本轮一次性清空：
+
+- [backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) line 221：删 `req.QueryResult != nil` 单独 nil 检查（`len()` 对 nil map 定义为 0）— 修复 staticcheck S1009
+- [backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) line 73-118：删除 unused function `loadWordFavoriteCache`（v1.3.2 设计用于"三级缓存"，但 web_dict.go 未接入，留着干扰静态分析）
+- [backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) 2 处 `map[string]interface{}` → `map[string]any`（Go 1.18+ 推荐写法）
+- [backend/internal/config/config.go](backend/internal/config/config.go) line 492-506：删除 unused functions `getEnv` / `getEnvInt`（早期 yaml 解析的辅助函数，现在用 yaml.Unmarshal 直接处理）
+- [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) line 376：参数 `c` → `_`（保留 gin 助手函数签名一致性）
+- [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) line 458：`if retries < 0 { retries = 0 }` → `retries = max(retries, 0)`（Go 1.21+ 内置 max）
+
+#### Docker 部署后「内置词典尚未导入」提示
+
+**现象**：用户部署 `ghcr.io/tabortao/echosub` 镜像后，前端显示「内置词典尚未导入，请确认 backend/data/dict/ecdict.csv 存在后重启服务」。
+
+**根因**：[.dockerignore](.dockerignore) 中 `backend/data` 整目录被排除 → 镜像内不含 `ecdict.csv` → 后端 `resolveBuiltinDictCSVPath` 找不到 CSV，跳过导入。
+
+**修复**（[.dockerignore](.dockerignore) + [Dockerfile](Dockerfile) + [docker-compose.yml](docker-compose.yml)）：
+
+- `.dockerignore`：保留 `!backend/data/dict/ecdict.csv` 显式 include（其余 `*.db` / `*.sqlite*` 仍排除）
+- `Dockerfile` 第 3 阶段：`COPY backend/data/dict/ecdict.csv /app/backend/data/dict/ecdict.csv`，并把 `/app/backend/data/dict` 加入 `VOLUME`
+- `docker-compose.yml`：注释化示例展示如何把 NAS 路径挂载到 `/app/backend/data/dict/ecdict.csv`（覆盖镜像内 CSV）
+- 用户没动挂载：直接用镜像内 CSV，免去首次下载/导入
+- 用户想用最新词库：取消挂载注释，左侧改为自己 NAS 路径
+- 想完全禁用：把挂载左侧指向空目录或文件
+
+**镜像大小变化**：+ 65 MB（ecdict.csv 自身大小）
+
+#### 无字幕时视频/音频不循环
+
+**现象**：用户报告「音频或视频需要可以整体循环播放」场景下，无字幕文件时播放器播完一遍就停止。
+
+**根因**：[frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) 的 `<video>` / `<audio>` 元素没有 `loop` 属性；`onEnded` 处理器在 `mode === 'repeat'` 时直接 return，普通模式走「整体循环 N 次」逻辑（依赖 `loop_count` 用户设置，N 次后停止）。无字幕时 UI 强制 mode ≠ 'repeat'，导致播完即停。
+
+**修复**（[frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx)）：
+
+- `<video loop={!hasSubtitle}>` / `<audio loop={!hasSubtitle}>`：无字幕时启用 HTML5 原生 loop 属性（浏览器自动重置 currentTime=0 并 play）
+- `onEnded` 处理器加 `if (sentencesRef.current.length === 0) return` 早 return：避免原生 loop 与 onEnded 循环 N 次逻辑冲突
+- 有字幕时 loop=false，由原有「整体循环 N 次 + 逐句复读」逻辑接管
+
+### Changed
+
+- `Dockerfile` 镜像体积 +65 MB（内置 ECDICT 词库）
+- `docker-compose.yml` `volumes` 段增加内置词典挂载示例（注释形式，默认不启用）
+
+
+
 ## [v1.3.5] - 2026-07-07
 
 ### Fixed

@@ -62,60 +62,6 @@ func toWordFavoriteItem(w *models.WordFavorite) wordFavoriteItem {
 	}
 }
 
-// loadWordFavoriteCache 读取某用户某词的收藏快照（v1.3.2 起新增）
-// 返回 (queryResultMap, ok)：
-//   - ok=true 且 map 非空 → 该词已被收藏且 query_result 非空
-//   - ok=true 且 map 为空 → 收藏过但 query_result 为空（罕见，可能是老数据）
-//   - ok=false            → 没收藏过
-//
-// 用途：在 web_dict.go 的 LookupWebDict 中先查这个，
-//      命中就直接返回，零网络请求。
-func loadWordFavoriteCache(uid uint, source, word string) (gin.H, bool) {
-	if uid == 0 {
-		return nil, false
-	}
-	w := strings.ToLower(strings.TrimSpace(word))
-	if w == "" {
-		return nil, false
-	}
-	var fav models.WordFavorite
-	err := database.DB.
-		Where("user_id = ? AND word = ?", uid, w).
-		First(&fav).Error
-	if err != nil {
-		// 包括 gorm.ErrRecordNotFound；任何错误都当作没收藏过
-		return nil, false
-	}
-	if strings.TrimSpace(fav.QueryResult) == "" {
-		// 收藏过但没存词义（老数据 / 用户主动清空）
-		return gin.H{
-			"favorite_id":     fav.ID,
-			"favorite_source": fav.Source,
-			"favorite_note":   fav.Note,
-			"favorite_only":   true, // 标记：仅收藏记录，没有词义快照
-		}, true
-	}
-	// 解析 query_result JSON
-	var cached map[string]interface{}
-	if err := json.Unmarshal([]byte(fav.QueryResult), &cached); err != nil {
-		// JSON 损坏：当作仅收藏
-		return gin.H{
-			"favorite_id":     fav.ID,
-			"favorite_source": fav.Source,
-			"favorite_note":   fav.Note,
-			"favorite_only":   true,
-		}, true
-	}
-	// 把 source 覆盖成请求的 source（用户可能在不同源之间切换）
-	cached["favorite_id"] = fav.ID
-	cached["favorite_source"] = fav.Source
-	cached["favorite_note"] = fav.Note
-	if _, ok := cached["source"]; !ok {
-		cached["source"] = source
-	}
-	return cached, true
-}
-
 // ListWordFavorites 列出当前用户收藏的单词
 // GET /api/v1/word-favorites?q=hel&page=1&size=50
 //
@@ -182,7 +128,8 @@ type createWordFavoriteReq struct {
 	// 客户端把查词弹窗当前展示的内容（任意 JSON 对象）原样传过来；
 	// 后端序列化后存数据库，下次查同词时直接返回，零网络请求。
 	// 留空 = 只收藏单词，不缓存词义。
-	QueryResult map[string]interface{} `json:"query_result"`
+	// v1.3.6：Go 1.18+ 推荐使用 any 替代 interface{}
+	QueryResult map[string]any `json:"query_result"`
 }
 
 // CreateWordFavorite 收藏一个单词
@@ -217,8 +164,9 @@ func CreateWordFavorite() gin.HandlerFunc {
 		}
 
 		// v1.3.2：序列化 query_result JSON
-		var queryResultJSON string
-		if req.QueryResult != nil && len(req.QueryResult) > 0 {
+	var queryResultJSON string
+	// v1.3.6 修复 staticcheck S1009：nil map 的 len() 是 0，不需要单独 nil 检查
+	if len(req.QueryResult) > 0 {
 			b, err := json.Marshal(req.QueryResult)
 			if err != nil {
 				utils.Fail(c, http.StatusBadRequest, "query_result 序列化失败: "+err.Error())

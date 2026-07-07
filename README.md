@@ -736,7 +736,7 @@ volumes:
 
 - 每个自然日的所有变更合并为 **一个** 版本号（如 `v0.7.0`），详见 [docs/ChangeLog.md](docs/ChangeLog.md)。
 - 版本遵循 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范，仅使用 `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security` 六类。
-- 当前活跃版本：**v1.3.5**（网页词典 3 个源修复：移除有道源级 SkipProxy 让你道走代理；微软翻译 from=auto → from=en；Oxford 复数剥 s 重试 1 次，参考 [docs/ChangeLog.md](docs/ChangeLog.md)）。
+- 当前活跃版本：**v1.3.7**（v1.3.6 无字幕循环 bug 修复：移除浏览器原生 loop，统一由 onEnded 状态机管理，无字幕时也能正确递增「整体第 N 轮 / 已听 N 遍」计数器，参考 [docs/ChangeLog.md](docs/ChangeLog.md)）。
 
 ## 🔧 配置 & 部署（[CONFIGURATION.md](docs/CONFIGURATION.md)）
 

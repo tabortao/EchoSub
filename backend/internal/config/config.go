@@ -489,22 +489,6 @@ func yamlHasField(yamlData []byte, section, key string) bool {
 	return false
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func getEnvInt(key string, fallback int) int {
-	if v := os.Getenv(key); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			return i
-		}
-	}
-	return fallback
-}
-
 // parseCSV 把半角逗号分隔的字符串拆成非空切片
 // 用法：parseCSV("a,b, c,,d") → ["a", "b", "c", "d"]
 // v1.3.2 起新增：用于 ECHOSUB_WEBDICT_SKIP_PROXY 等多值环境变量

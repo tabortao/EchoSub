@@ -4,7 +4,8 @@
 // 也能在弹窗中渲染结果，而不是 window.open 跳新标签页。
 //
 // 路由：
-//   GET /api/v1/dictionary/web/lookup?source=youdao&word=hello
+//
+//	GET /api/v1/dictionary/web/lookup?source=youdao&word=hello
 //
 // 源类型（v1.3.2 起）：
 //   - kind="html"     抓取目标 URL 的 HTML → 通用清洗（去噪+XSS）→ 弹窗内渲染
@@ -101,6 +102,7 @@ type webDictSource struct {
 func youdaoURL(w string) string {
 	return "https://m.youdao.com/dict?le=eng&q=" + w
 }
+
 // v1.3.3 移除 cambridgeURL / v1.3.4 移除 merriamWebsterURL / collinsURL
 func oxfordURL(w string) string {
 	return "https://www.oxfordlearnersdictionaries.com/definition/english/" + w
@@ -151,7 +153,7 @@ var kWebDictSources = map[string]webDictSource{
 	"wiktionary": {
 		ID: "wiktionary", DisplayName: "Wiktionary", Kind: kindHTML,
 		UserAgent: uaDesktopChrome, AcceptLanguage: "en-US,en;q=0.9",
-		BuildURL:       wiktionaryURL,
+		BuildURL: wiktionaryURL,
 	},
 	"microsoft": {
 		ID: "microsoft", DisplayName: "微软翻译", Kind: kindTranslate,
@@ -373,7 +375,10 @@ func htmlEscape(s string) string {
 
 // getWebDictCfg 从 gin context 取 *config.Config
 // router 启动时通过 handlers.SetGlobalConfig 注入；缺省时退到 Default()（仅用于单元测试）
-func getWebDictCfg(c *gin.Context) *config.Config {
+//
+// v1.3.6：参数 c 当前未使用（保留 gin handler 助手函数签名一致性）；
+// 改名 _ 让 IDE 静态分析满意。
+func getWebDictCfg(_ *gin.Context) *config.Config {
 	if cfg := GetGlobalConfig(); cfg != nil {
 		return cfg
 	}
@@ -455,9 +460,8 @@ func fetchWebDictHTML(cfg *config.Config, targetURL string) (string, string, err
 		maxBytes = 1 * 1024 * 1024
 	}
 	retries := cfg.WebDict.Retries
-	if retries < 0 {
-		retries = 0
-	}
+	// v1.3.6：使用 Go 1.21+ 内置 max 简化
+	retries = max(retries, 0)
 	proxy := &utils.ProxyConfig{CustomProxy: cfg.WebDict.Proxy}
 	client := utils.NewHTTPClient(timeout, proxy)
 
@@ -754,19 +758,21 @@ func setAttr(n *html.Node, key, val string) {
 // fetchMicrosoftTranslate 调用微软 Edge 翻译 API（v1.3.4 新增）
 //
 // 实现原理：Edge 浏览器的翻译后端，无需 API key
-//   1) GET https://edge.microsoft.com/translate/auth  → 拿到短期 JWT token
-//   2) POST https://api-edge.cognitive.microsofttranslator.com/translate
-//      带 Authorization: Bearer {token}
-//      Body: [{"Text": "hello"}]
-//      响应: [{"translations":[{"text":"你好","to":"zh-Hans"}],"detectedLanguage":{"language":"en","score":1.0}}]
+//  1. GET https://edge.microsoft.com/translate/auth  → 拿到短期 JWT token
+//  2. POST https://api-edge.cognitive.microsofttranslator.com/translate
+//     带 Authorization: Bearer {token}
+//     Body: [{"Text": "hello"}]
+//     响应: [{"translations":[{"text":"你好","to":"zh-Hans"}],"detectedLanguage":{"language":"en","score":1.0}}]
 //
 // token 默认有效期 ~10 分钟；这里缓存 8 分钟（提前 2 分钟续期，避免边界超时）
 //
 // 国内访问：edge.microsoft.com / api-edge.cognitive.microsofttranslator.com 必须走代理
-//   → 源标记 ForceProxy=true（忽略默认 SkipProxyHosts）
+//
+//	→ 源标记 ForceProxy=true（忽略默认 SkipProxyHosts）
 //
 // 端点选择依据：参考 docs/Reference/STranslate.Plugin.Translate.GoogleWebsite 风格
-//   （该插件用于谷歌翻译），但用户实测后选择更稳的 Edge API
+//
+//	（该插件用于谷歌翻译），但用户实测后选择更稳的 Edge API
 func fetchMicrosoftTranslate(ctx context.Context, client *http.Client, word string) (*translatePayload, error) {
 	// 1) 拿 token
 	token, err := fetchMicrosoftAuthToken(ctx, client)

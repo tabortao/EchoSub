@@ -1,8 +1,286 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v1.3.5 网页词典 3 个源修复（你道 TLS / 微软 400 / Oxford 404）已完成 | 日期：2026-07-07
+> 状态：v1.3.8 无字幕 Echo Loop 开关 + 已听 N 遍逐轮递增 | 日期：2026-07-07
 
-## 活跃里程碑：v1.3.5 网页词典 3 个源修复（2026-07-07 完成）
+## 活跃里程碑：v1.3.8 无字幕播放器 UI 与计数器微调（2026-07-07 完成）
+
+v1.3.7 修好「已听 N 遍永远停在 1」之后，用户实测发现仍有 2 个细节问题：
+
+1. **无字幕的音频 / 视频 Echo Loop 开关视觉上仍显示 ON**：v1.3.7 加了 `disabled` 防误触，但 Switch 视觉状态没明确切到 OFF，首次进播放器会闪一下「Echo Loop 复读中」徽标
+2. **无字幕时「已听 N 遍」计数依然只在第 N 轮结束才 +1**：v1.3.7 修复思路正确（每轮 `onEnded` 触发 playCount++），但因为保存动作 `savePosition(..., incrementPlay: true)` 仍放在「第 N 轮分支」里，导致前 N-1 轮根本未递增
+
+**修复策略**（最小改动 + 状态清晰）：
+
+1. **初始 `mode` 分流**：`useState<PlayMode>('repeat')` → `useState<PlayMode>(hasSubtitleEarly ? 'repeat' : 'normal')`，无字幕时初始 mode 即为 'normal'，避免 UI 闪烁
+2. **`hasSubtitleEarly` 派生上移**：line 89 提前到 useState 之前，规避 TDZ（`const hasSubtitle` 在 line 653 才声明）
+3. **Switch checked 强化**：`checked={mode === 'repeat'}` → `checked={mode === 'repeat' && hasSubtitle}`，视觉明确 OFF
+4. **`onEnded` 每次都递增 playCount**：把 `savePosition(..., incrementPlay: true)` 从「第 N 轮分支」提前到「循环状态机之前」—— 每次 onEnded 触发都 `PlayCount++`
+
+### 一、目标与设计原则
+
+#### 1. 无字幕 UI 初始态分流
+
+**问题现象**：无字幕媒体进入播放器，UI 短暂显示「Echo Loop 复读中」徽标（line 686-688 的 warning tag）
+
+**根因**：
+
+- v1.3.7 把 `disabled={!hasSubtitle}` 加在 Switch 上，但 `mode` 状态默认值仍是 `'repeat'`
+- 首次渲染时 `mode === 'repeat'` → warning tag 判定为「复读模式」并渲染
+- `useEffect` 跑完才校正（视觉闪烁 1-2 帧）
+
+**修复策略**：
+
+- 初始化时按 `hasSubtitle` 分流 mode：无字幕 → 'normal'，有字幕 → 'repeat'（保留默认学习行为）
+- 派生量 `hasSubtitleEarly` 提前到 useState 之前（line 89），规避 TS2448/TS2454
+
+#### 2. Switch 视觉明确 OFF
+
+**修复策略**：
+
+- `checked={mode === 'repeat' && hasSubtitle}` —— `hasSubtitle === false` 时 Switch 视觉上必为 OFF（蓝色滑块 → 灰色）
+- 与 `disabled={!hasSubtitle}` 配合：禁用 + 视觉 OFF，无字幕场景双重明确
+
+#### 3. onEnded 每次都递增 playCount（关键修复）
+
+**v1.3.7 残留 bug**：
+
+- v1.3.7 的 `onEnded` 把 `savePosition(..., incrementPlay: true)` 放在「整体循环结束」的 else 分支
+- 前 N-1 轮只更新 `overallLoopRef.current`，但**没有**触发后端 `playCount++`
+- 用户看到 UI 显示「整体第 2/3 轮」但后端听遍数仍 = 1
+
+**v1.3.8 修复**：
+
+- 把 `savePosition(..., incrementPlay: true)` 提到「循环状态机之前」—— 每次 `onEnded` 触发都调用
+- 与 `overallLoopRef.current` 同步递增：第 1 轮结束 UI 1/3 → playCount 1；第 2 轮结束 UI 2/3 → playCount 2；第 3 轮结束 UI 3/3 → playCount 3
+- 用 `isFinite(el.duration) && el.duration > 0 ? el.duration : el.currentTime` 兜底 NaN 边界
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `frontend/src/components/MediaPlayer.tsx` | 新增 `hasSubtitleEarly` 派生（line 89）；初始 `mode` 按 subtitle 分流（line 106）；Switch checked 强化（line 971）；`onEnded` 每次都 `savePosition(..., incrementPlay: true)` |
+| `docs/ChangeLog.md` | 新增 v1.3.8 章节（Fixed 段：UI 闪烁 + playCount 计数时机；Changed 段：mode 初始值语义） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.8） |
+| `docs/TASKS.md` | 新增 v1.3.8 任务清单（T1~T4） |
+
+### 三、验证清单
+
+- [x] `pnpm build` exit code 0（tsc -b 严格类型检查通过）
+- [x] 后端无修改（v1.3.8 仅前端） → `go build` / `vet` / `test` 维持绿
+- [x] 文档同步：ChangeLog.md v1.3.8 章节 / PLAN.md 当前活跃里程碑 / TASKS.md v1.3.8 段
+
+### 四、收尾说明
+
+- **测试场景**：用任意无字幕 MP3 / MP4，进入播放器 → Switch 应明确为 OFF → 听 1 遍完「整体第 1/3 轮」显示，「已听 N 遍」= 1 → 听 2 遍完「整体第 2/3 轮」，「已听 N 遍」= 2 → 听 3 遍完停止
+- **核心教训**（写入 project_memory）：**计数器递增必须与状态机递增同步**——`overallLoopRef.current += 1` 与 `savePosition(..., incrementPlay: true)` 必须在同一处触发，避免 UI 与后端数据错位
+
+---
+
+## 旧版：v1.3.7 播放器无字幕循环 + 听遍数递增（2026-07-07 完成）
+
+v1.3.6 上线后用户实测反馈 2 个新问题：
+
+1. **「已听 N 遍」计数器永远停在 1**：无字幕的音频 / 视频循环 N 次后，后端 `playCount` 不增
+2. **无字幕时按句复读仍可点击（边界）**：收藏播放入口未做无字幕保护
+
+**根因**（advisor 指出）：v1.3.6 在 `<video>` / `<audio>` 上加了 `loop={!hasSubtitle}` 走 HTML5 原生 loop。**但浏览器原生 `loop` 属性会吞掉 `ended` 事件**（自动重置 currentTime=0 并 play）—— 这导致：
+- `onEnded` 永远不触发
+- `overallLoopRef.current` 永远 = 0
+- `savePosition(..., incrementPlay: true)` 永远不调用
+- 后端 `playCount` 永远不增
+
+**修复策略**（advisor 建议 + 项目最小改动原则）：
+
+1. **移除 `<video>` / `<audio>` 上的 `loop={!hasSubtitle}`** — 统一由 `onEnded` 接管循环
+2. **`onEnded` 重构**：移除无字幕早 return；有 / 无字幕共用「整体循环 N 次」状态机；手动 `el.currentTime = 0 + el.play()` 续播
+3. **`onModeChange` 优化**：提前判断无字幕 → 提前 return，避免 `setMode('repeat') → setMode('normal')` 中间态闪烁
+4. **收藏播放入口保护**：无字幕时拒绝进入收藏播放模式（`favoriteSet` 按 subtitle index 索引，无字幕时为空），toast 提示
+
+### 一、目标与设计原则
+
+#### 1. 移除浏览器原生 loop
+
+**问题现象**：v1.3.6 用 `loop={!hasSubtitle}` 让无字幕文件自动循环，但**计数器全部失效**
+
+**根因**：
+
+- HTML5 `loop` 属性触发后，浏览器内部自动重置 `currentTime=0` 并 `play()`
+- 这**不发 `ended` 事件**（`ended` 只在非循环模式下触发）
+- `onEnded` 内的 `overallLoopRef.current += 1` 永远不执行
+- `savePosition(..., incrementPlay: true)` 永远不调用 → 后端 `playCount` 不增
+
+**修复策略**：
+
+- 完全移除 `<video loop={...}>` / `<audio loop={...}>`
+- `onEnded` 手动实现「整体循环 N 次」状态机
+
+#### 2. onEnded 重构
+
+**新逻辑**：
+
+```ts
+const onEnded = () => {
+  if (modeRef.current === 'repeat') return           // 按句循环不结束
+  const el = mediaRef.current
+  if (!el) return
+
+  // 有字幕时：补计最后一句（v0.4.x 起的兼容性 fix）
+  // 无字幕时：无句可补计
+  if (sentencesRef.current.length > 0) {
+    const lastIdx = currentSentenceIdxRef.current
+    if (lastIdx >= 0 && lastIdx < sentencesRef.current.length) {
+      incrementSentenceRepeat(lastIdx)
+    }
+  }
+
+  // 整体循环 N 次状态机（有 / 无字幕共用）
+  if (overallLoopRef.current + 1 < loopCountRef.current) {
+    overallLoopRef.current += 1
+    el.currentTime = 0
+    el.play().then(() => setPlaying(true)).catch(() => {})
+  } else {
+    setPlaying(false)
+    savePosition(el.duration, { force: true, incrementPlay: true })
+    message.success('播放完成')
+  }
+}
+```
+
+#### 3. 无字幕禁用按句重复
+
+**两处保护**（v1.3.7 强化）：
+
+- `onModeChange`：提前判断 + 提前 return，避免 setMode 中间态
+- 收藏播放入口（line 1143）：无字幕拒绝进入 + toast 提示
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `frontend/src/components/MediaPlayer.tsx` | 移除 `<video>` / `<audio>` `loop={!hasSubtitle}`；`onEnded` 重构（移除无字幕早 return / 共享「整体循环 N 次」状态机）；`onModeChange` 提前 return；收藏播放入口加无字幕保护 |
+| `docs/ChangeLog.md` | 新增 v1.3.7 章节（Fixed 段：循环 + 听遍数；Changed 段：完全无原生 loop） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.7） |
+| `docs/TASKS.md` | 新增 v1.3.7 任务清单（T1~T5） |
+
+### 三、验证清单
+
+- [x] `pnpm build` exit code 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过 / 3.98s）
+- [x] 后端无修改（v1.3.7 仅前端） → `go build` / `vet` / `test` 维持绿
+- [x] 文档同步：ChangeLog.md v1.3.7 章节 / PLAN.md 当前活跃里程碑 / TASKS.md v1.3.7 段
+
+### 四、收尾说明
+
+- **测试场景**：用任意无字幕 MP3 / MP4，进入播放器 → 听一遍完应自动重播 → 听 N 遍完 → 后端 `playCount` = N，「整体第 N/N 轮」UI 显示 N
+- **收藏播放**：无字幕时按钮拒绝触发，toast 提示「该媒体无字幕文件，无法按收藏列表复读」
+- **核心教训**（写入 project_memory）：**永远不要用 HTML5 原生 `loop` 属性** —— 它会吞掉 `ended` 事件，让所有「循环 N 次」状态机失效。统一由 JS 状态机手动控制。
+
+---
+
+## 旧版：v1.3.6 IDE 诊断清空 + Docker ECDICT 打包 + 播放器无字幕循环（2026-07-07 完成）
+
+v1.3.5 上线后用户集中反馈 3 类问题：
+
+1. **IDE problems_and_diagnostics 报告 9 项警告**（unused function / S1009 / modernize / `any` vs `interface{}`）
+2. **Docker 部署后「内置词典尚未导入」**：ghcr.io 镜像内不含 ecdict.csv，用户必须手动下载挂载
+3. **无字幕时视频/音频不循环**：播完一遍就停止，无法循环听写
+
+本轮一次性解决 3 类问题：
+
+1. **IDE 诊断 9 项清空**（[backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) + [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) + [backend/internal/config/config.go](backend/internal/config/config.go)）：删 unused functions / 简化 nil check / 改用 `any` / 改用 `max()` 内置函数
+2. **Docker 镜像打包 ECDICT**（[Dockerfile](Dockerfile) + [.dockerignore](.dockerignore) + [docker-compose.yml](docker-compose.yml)）：`COPY backend/data/dict/ecdict.csv` 写入镜像；`/app/backend/data/dict` 声明为 VOLUME 支持 NAS 挂载覆盖
+3. **播放器无字幕循环**（[frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx)）：`<video>` / `<audio>` 加 `loop={!hasSubtitle}`；`onEnded` 加无字幕早 return 避免冲突
+
+### 一、目标与设计原则
+
+#### 1. IDE 诊断清空
+
+**问题现象**：v1.3.5 引入了几处 `unusedfunc` / `unusedparams` / `S1009` / `minmax` / `any` 提示
+
+**根因**：
+
+- v1.3.2 三级缓存设计时写了 `loadWordFavoriteCache` 但 web_dict.go 没用上
+- 早期 yaml 解析的辅助函数 `getEnv` / `getEnvInt` 被 yaml.Unmarshal 直接处理代替
+- Go 1.18+ 推荐用 `any` 替代 `interface{}`
+- Go 1.21+ 内置 `max` / `min` 替代手写 if
+
+**修复策略**（最小改动）：
+
+- 删除 3 个 unused functions（`loadWordFavoriteCache`、`getEnv`、`getEnvInt`）
+- `interface{}` → `any`（2 处）
+- `if retries < 0 { retries = 0 }` → `retries = max(retries, 0)`
+- `req.QueryResult != nil && len(req.QueryResult) > 0` → `len(req.QueryResult) > 0`（nil map len 是 0）
+- 保留 gin 助手函数签名一致性：`c` → `_`
+
+#### 2. Docker 镜像内置 ECDICT
+
+**问题现象**：ghcr.io 镜像部署后前端显示「内置词典尚未导入」
+
+**根因**：[.dockerignore](.dockerignore) 中 `backend/data` 整目录被排除 → 镜像内不含 `ecdict.csv`
+
+**修复策略**：
+
+- `.dockerignore`：保留 `!backend/data/dict/ecdict.csv` 显式 include
+- `Dockerfile` 第 3 阶段：`COPY backend/data/dict/ecdict.csv /app/backend/data/dict/ecdict.csv`
+- `/app/backend/data/dict` 声明为 `VOLUME` → 用户可挂载覆盖
+- `docker-compose.yml`：注释化示例展示如何挂载 NAS 路径
+
+**体积影响**：
+
+- 镜像 +65 MB（ecdict.csv 自身大小）
+- 用户下载时间增加约 10-15 秒（取决于网络）
+- 用户首次启动从「必须下载 + 导入」变为「直接导入」（约 30 秒）
+
+#### 3. 播放器无字幕循环
+
+**问题现象**：用户希望「音频或视频需要可以整体循环播放」
+
+**根因**：
+
+- HTML5 `<video>` / `<audio>` 元素没有 `loop` 属性
+- 现有 `onEnded` 逻辑在 `mode === 'repeat'` 时 return，普通模式走「整体循环 N 次」（依赖用户设置）
+- 无字幕时 UI 强制 mode ≠ 'repeat'，播完即停
+
+**修复策略**（最小侵入）：
+
+- `<video loop={!hasSubtitle}>` / `<audio loop={!hasSubtitle}>` — HTML5 原生 loop
+- `onEnded` 加 `if (sentencesRef.current.length === 0) return` 早 return — 避免冲突
+- 有字幕时由原有「整体循环 N 次 + 逐句复读」逻辑接管
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/internal/handlers/word_favorite.go` | 删 `loadWordFavoriteCache` unused func；2 处 `interface{}` → `any`；删 nil check |
+| `backend/internal/handlers/web_dict.go` | `c` → `_`；`if retries < 0` → `retries = max(retries, 0)` |
+| `backend/internal/config/config.go` | 删 unused `getEnv` / `getEnvInt` |
+| `Dockerfile` | `COPY backend/data/dict/ecdict.csv` + `VOLUME /app/backend/data/dict` |
+| `.dockerignore` | 显式 `!backend/data/dict/ecdict.csv` 保留 |
+| `docker-compose.yml` | 注释化挂载示例 + 内置词典环境变量注释 |
+| `frontend/src/components/MediaPlayer.tsx` | `<video>` / `<audio>` 加 `loop={!hasSubtitle}`；`onEnded` 早 return |
+| `docs/ChangeLog.md` | 新增 v1.3.6 章节（3 个 Fixed 段） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.6） |
+| `docs/TASKS.md` | 新增 v1.3.6 任务清单（T1~T6） |
+
+### 三、验证清单
+
+- [x] `go build ./...` exit code 0
+- [x] `go vet ./...` exit code 0
+- [x] `go test ./...` 全部 PASS（config 0.8s + handlers 0.03s + learning cached + utils cached + dictcsv cached + subtitle cached）
+- [x] `pnpm build` exit code 0（1571 modules / 27 PWA precache / tsc -b 严格类型检查通过 / 5.13s）
+- [x] `docker-compose.yml` YAML 解析正确（自定义 check-yaml 工具验证，验证后已删除）
+- [x] IDE `problems_and_diagnostics` 清空（9 项 → 0 项）
+- [x] 文档同步：ChangeLog.md v1.3.6 章节 / PLAN.md 当前活跃里程碑 / TASKS.md v1.3.6 段
+
+### 四、收尾说明
+
+- **Docker 镜像**：`ghcr.io/tabortao/echosub:v1.3.6+` 起内置 ECDICT 词库
+- **NAS 用户**：取消挂载注释即可把本地词库覆盖进容器
+- **无字幕循环**：HTML5 原生 loop，零代码介入；用户可暂停 / 调节速度 / 跳转都不影响循环
+- **`loadWordFavoriteCache` 已删除**：v1.3.2 的"三级缓存"功能 v1.3.6 暂未接入（仅有 query_result 字段持久化），等后续完善后再加回
+
+---
+
+## 旧版：v1.3.5 网页词典 3 个源修复（2026-07-07 完成）
 
 v1.3.4 上线后用户实测反馈 3 类问题：
 

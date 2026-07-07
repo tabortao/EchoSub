@@ -278,4 +278,4 @@ Windows 下 `strings.HasPrefix` 路径检查**不可靠**（路径分隔符混�
 
 ---
 
-**最后更新**：v1.3.5（网页词典 3 个源修复：你道 TLS / 微软 400 / Oxford 404）
+**最后更新**：v1.3.8（v1.3.7 无字幕 UI 微调：mode 初始分流 + Switch 视觉 OFF + onEnded 每次递增 playCount）

@@ -1,6 +1,64 @@
-# TASKS.md — v1.3.5 网页词典 3 个源修复（2026-07-07）
+# TASKS.md — v1.3.8 无字幕播放器 UI 与计数器微调（2026-07-07）
 
 配套 [PLAN.md](PLAN.md) / [CONFIGURATION.md](CONFIGURATION.md)。每完成一个任务勾选并填时间。
+
+## v1.3.8 无字幕播放器 UI 与计数器微调（2026-07-07）
+
+### 前端 — UI 初始态分流
+
+- [x] **T1** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) 新增 `hasSubtitleEarly` 派生（line 89），提前到 useState 之前，规避 TS2448/TS2454 TDZ
+- [x] **T2** 初始 `mode` 分流：`useState<PlayMode>('repeat')` → `useState<PlayMode>(hasSubtitleEarly ? 'repeat' : 'normal')`（line 106）—— 无字幕时初始 mode = 'normal'，避免首次渲染 UI 闪烁「Echo Loop 复读中」徽标
+
+### 前端 — Switch 视觉明确 OFF
+
+- [x] **T3** Switch `checked` 强化（line 971）：`checked={mode === 'repeat'}` → `checked={mode === 'repeat' && hasSubtitle}`，与 `disabled={!hasSubtitle}` 配合，无字幕场景双重明确（视觉 OFF + 禁用）
+
+### 前端 — onEnded 每次都递增 playCount
+
+- [x] **T4** `onEnded` 关键修复：把 `savePosition(..., incrementPlay: true)` 从「第 N 轮分支」提前到「循环状态机之前」—— 每次 onEnded 触发都 `PlayCount++`，与 `overallLoopRef.current` 同步递增
+
+### 验证
+
+- [x] **T5** `pnpm build` exit 0（tsc -b 严格类型检查通过）；后端无修改维持绿；ChangeLog v1.3.8 + PLAN v1.3.8 活跃里程碑 + TASKS v1.3.8 段同步完成
+
+
+
+## v1.3.7 播放器无字幕循环 + 听遍数递增（2026-07-07）
+
+### 前端 — 播放器循环修复
+
+- [x] **T1** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) 移除 `<video>` / `<audio>` 上的 `loop={!hasSubtitle}`（浏览器原生 loop 会吞掉 ended 事件）
+- [x] **T2** `onEnded` 重构：移除无字幕早 return；有 / 无字幕共用「整体循环 N 次」状态机；手动 `el.currentTime = 0 + el.play()` 续播；第 N 轮 `savePosition(incrementPlay: true)`
+- [x] **T3** `onModeChange` 优化：提前判断无字幕 → 提前 return，避免 `setMode('repeat') → setMode('normal')` 中间态闪烁
+- [x] **T4** 收藏播放入口（line 1143）：无字幕时拒绝进入 + toast 提示「该媒体无字幕文件，无法按收藏列表复读」
+
+### 验证
+
+- [x] **T5** `pnpm build` exit 0（1571 modules / 3.98s）；后端无修改维持绿；ChangeLog v1.3.7 + PLAN v1.3.7 活跃里程碑同步完成
+
+
+
+## v1.3.6 IDE 诊断清空 + Docker ECDICT 打包 + 播放器无字幕循环（2026-07-07）
+
+### 后端 — IDE 诊断清空
+
+- [x] **T1** [backend/internal/handlers/word_favorite.go](backend/internal/handlers/word_favorite.go) 删 `loadWordFavoriteCache` unused func；2 处 `interface{}` → `any`；删 nil check
+- [x] **T2** [backend/internal/handlers/web_dict.go](backend/internal/handlers/web_dict.go) `c` → `_`；`if retries < 0` → `retries = max(retries, 0)`
+- [x] **T3** [backend/internal/config/config.go](backend/internal/config/config.go) 删 unused `getEnv` / `getEnvInt`
+
+### Docker — 内置 ECDICT 词库
+
+- [x] **T4** [.dockerignore](.dockerignore) 显式 `!backend/data/dict/ecdict.csv` 保留；[Dockerfile](Dockerfile) 第 3 阶段 `COPY backend/data/dict/ecdict.csv` + `VOLUME /app/backend/data/dict`；[docker-compose.yml](docker-compose.yml) 注释化挂载示例 + 内置词典环境变量注释
+
+### 前端 — 播放器无字幕循环
+
+- [x] **T5** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) `<video>` / `<audio>` 加 `loop={!hasSubtitle}`；`onEnded` 加 `if (sentencesRef.current.length === 0) return` 早 return
+
+### 验证
+
+- [x] **T6** `go build ./...` / `go vet ./...` / `go test ./...` / `pnpm build` / docker-compose.yml YAML 解析全绿；IDE 诊断 9 → 0；ChangeLog v1.3.6 章节 + PLAN v1.3.6 活跃里程碑同步完成
+
+
 
 ## v1.3.5 网页词典 3 个源修复（2026-07-07）
 

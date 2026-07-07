@@ -4,6 +4,9 @@
 **/.vscode
 **/.idea
 **/*.log
+# v1.3.6：保留 ECDICT 词库 CSV，让镜像内自带内置词典
+#   其余运行时数据（SQLite 数据库、笔记图片）仍走 volumes 挂载
+!backend/data/dict/ecdict.csv
 backend/data
 backend/*.db
 backend/*.sqlite*
@@ -12,3 +15,4 @@ backend/config.yaml
 docs
 *.md
 !frontend/dist/.gitkeep
+!backend/data/dict/ecdict.csv

@@ -53,7 +53,13 @@ COPY --from=backend-builder /echosub-server /app/echosub-server
 COPY --from=frontend-builder /build/dist /app/frontend/dist
 
 # 数据目录
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data /app/backend/data/dict
+
+# v1.3.6：把内置词典 CSV 拷进镜像（~65 MB）
+#   - 通过 .dockerignore 中显式 `!backend/data/dict/ecdict.csv` 保留该文件
+#   - 后端 resolveBuiltinDictCSVPath 启动时会先找 /app/backend/data/dict/ecdict.csv
+#   - 用户也可用 ECHOSUB_BUILTIN_DICT_CSV 环境变量或卷挂载覆盖为 NAS 路径
+COPY backend/data/dict/ecdict.csv /app/backend/data/dict/ecdict.csv
 
 ENV ECHOSUB_PORT=8080
 ENV ECHOSUB_DB_PATH=/app/data/echosub.db
@@ -62,7 +68,8 @@ ENV GIN_MODE=release
 
 EXPOSE 8080
 
-# 声明数据卷（SQLite 数据库 + 媒体文件）
-VOLUME ["/app/data", "/media"]
+# 声明数据卷（SQLite 数据库 + 媒体文件 + 内置词典）
+# v1.3.6 起：dict 子目录也声明为卷，NAS 用户可挂载覆盖为最新词库
+VOLUME ["/app/data", "/app/backend/data/dict", "/media"]
 
 ENTRYPOINT ["/app/echosub-server"]
