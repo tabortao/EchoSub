@@ -17,8 +17,12 @@ backend/data/dev.db*
 backend/data/echosub.db*
 backend/config.yaml
 docs/Reference/
-# 内置词典 dict 目录需保留 README + sample + 下载脚本，ecdict.csv 太大不进 git
-backend/data/dict/ecdict.csv
+# 内置词典 dict 目录（v1.3.11：ecdict.csv 直接进 git，省去 CI 下载步骤）
+#   - 用户可手动替换为更新版本，git pull 后镜像自动使用新文件
+#   - 文件较大（~63 MB），GitHub 会 warn 但可接受
+backend/data/dict/ecdict.csv.gh-pages/
+backend/data/dict/*.tmp
+backend/data/dict/*.partial
 
 # Frontend
 frontend/node_modules/
