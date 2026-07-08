@@ -22,6 +22,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # v1.3.9：CI runner 上没有 ECDICT CSV，先下载再构建
+      #   - ecdict.csv 太大（~50MB）不进 git，必须在构建前临时下载
+      #   - 镜像内 CSV 仍由 Dockerfile 通配符 COPY 拷入（v1.3.9 起容错）
+      #   - 国内构建可用 RUN_EC_DICT_MIRROR=cn 切到 gh-proxy 镜像（默认 github 原站）
+      - name: Download ECDICT (optional)
+        shell: bash
+        env:
+          RUN_EC_DICT_MIRROR: ${{ vars.RUN_EC_DICT_MIRROR || 'github' }}
+        run: |
+          set -e
+          TARGET="backend/data/dict/ecdict.csv"
+          if [ -f "$TARGET" ]; then
+            echo "[SKIP] $TARGET already present ($(du -h "$TARGET" | cut -f1))"
+            exit 0
+          fi
+          mkdir -p "$(dirname "$TARGET")"
+          URL_BASE="https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict.csv"
+          if [ "$RUN_EC_DICT_MIRROR" = "cn" ]; then
+            URL="https://gh-proxy.com/${URL_BASE}"
+          else
+            URL="$URL_BASE"
+          fi
+          echo "[INFO] Downloading ECDICT from $URL"
+          curl -fL --retry 3 -o "$TARGET" "$URL"
+          echo "[OK] ECDICT downloaded: $(du -h "$TARGET" | cut -f1)"
+
       - name: Set up QEMU（多架构支持）
         uses: docker/setup-qemu-action@v3
 

@@ -4,9 +4,11 @@
 **/.vscode
 **/.idea
 **/*.log
-# v1.3.6：保留 ECDICT 词库 CSV，让镜像内自带内置词典
-#   其余运行时数据（SQLite 数据库、笔记图片）仍走 volumes 挂载
-!backend/data/dict/ecdict.csv
+# v1.3.9：保留 ECDICT 词库 CSV，让镜像内自带内置词典
+#   - .dockerignore 规则：`!` 必须出现在被忽略的目录模式之后才能解除忽略
+#   - `backend/data` 忽略整个目录（SQLite / 笔记图片都不进镜像）
+#   - `!backend/data/dict/ecdict.csv` 在其后解除对 ECDICT CSV 的忽略
+#   - 其余运行时数据（SQLite 数据库、笔记图片）仍走 volumes 挂载
 backend/data
 backend/*.db
 backend/*.sqlite*
@@ -14,5 +16,5 @@ backend/config.yaml
 .trae
 docs
 *.md
-!frontend/dist/.gitkeep
 !backend/data/dict/ecdict.csv
+!frontend/dist/.gitkeep

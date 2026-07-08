@@ -278,4 +278,4 @@ Windows 下 `strings.HasPrefix` 路径检查**不可靠**（路径分隔符混�
 
 ---
 
-**最后更新**：v1.3.8（v1.3.7 无字幕 UI 微调：mode 初始分流 + Switch 视觉 OFF + onEnded 每次递增 playCount）
+**最后更新**：v1.3.9（Docker buildx ecdict.csv 通配符 COPY + .dockerignore 规则顺序 + CI workflow 下载步骤）

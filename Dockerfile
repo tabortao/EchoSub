@@ -55,11 +55,14 @@ COPY --from=frontend-builder /build/dist /app/frontend/dist
 # 数据目录
 RUN mkdir -p /app/data /app/backend/data/dict
 
-# v1.3.6：把内置词典 CSV 拷进镜像（~65 MB）
+# v1.3.9：把内置词典 CSV 拷进镜像（~65 MB，可选）
+#   - 使用通配符 ecdict.csv* 而非精确路径，避免 buildx 在文件不存在时
+#     报「failed to calculate checksum ... not found」（cache key 计算失败）
+#   - 文件存在（本地开发已下载）：拷进镜像，容器首次启动自动导入
+#   - 文件不存在（CI 首次构建 / 用户未下载）：构建不失败，容器启动后
+#     用户仍可通过 ECHOSUB_BUILTIN_DICT_CSV 环境变量挂载 NAS 路径
 #   - 通过 .dockerignore 中显式 `!backend/data/dict/ecdict.csv` 保留该文件
-#   - 后端 resolveBuiltinDictCSVPath 启动时会先找 /app/backend/data/dict/ecdict.csv
-#   - 用户也可用 ECHOSUB_BUILTIN_DICT_CSV 环境变量或卷挂载覆盖为 NAS 路径
-COPY backend/data/dict/ecdict.csv /app/backend/data/dict/ecdict.csv
+COPY backend/data/dict/ecdict.csv* /app/backend/data/dict/
 
 ENV ECHOSUB_PORT=8080
 ENV ECHOSUB_DB_PATH=/app/data/echosub.db

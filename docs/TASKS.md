@@ -1,6 +1,32 @@
-# TASKS.md — v1.3.8 无字幕播放器 UI 与计数器微调（2026-07-07）
+# TASKS.md — v1.3.9 Docker buildx ecdict.csv 可选化（2026-07-07）
 
 配套 [PLAN.md](PLAN.md) / [CONFIGURATION.md](CONFIGURATION.md)。每完成一个任务勾选并填时间。
+
+## v1.3.9 Docker buildx ecdict.csv 可选化（2026-07-07）
+
+### Docker — Dockerfile 通配符 COPY
+
+- [x] **T1** [Dockerfile](Dockerfile) line 65：精确路径 `COPY backend/data/dict/ecdict.csv` → 通配符 `COPY backend/data/dict/ecdict.csv*`
+  - 避免 buildx 在 ECDICT CSV 不存在时因 cache key 计算失败而退出
+  - 通配符 `*` 匹配 0 个文件时**不报错**（Docker 官方文档明确说明）
+
+### Docker — .dockerignore 规则顺序修正
+
+- [x] **T2** [.dockerignore](.dockerignore) 调整顺序：删除 v1.3.6 重复的 `!backend/data/dict/ecdict.csv` 行；将 `backend/data` 忽略模式放在 `!backend/data/dict/ecdict.csv` 解除忽略之前
+  - 符合 .dockerignore 规则：`!` 必须在被忽略的模式**之后**才生效
+  - 注释升级为 v1.3.9，说明「规则顺序坑」
+
+### CI — GitHub Actions workflow 加 ECDICT 下载步骤
+
+- [x] **T3** [.github/workflows/docker.yml](.github/workflows/docker.yml) 在 checkout 之后新增 `Download ECDICT (optional)` 步骤：用 curl 从 ECDICT GitHub Release 下载到 `backend/data/dict/ecdict.csv`；支持 `vars.RUN_EC_DICT_MIRROR=cn` 走 gh-proxy 镜像加速；已有 CSV 时 SKIP
+  - CI runner 是全新 VM，没有 ECDICT CSV；v1.3.9 通配符 COPY 静默跳过会让镜像内无内置词典
+  - 解决思路：CSV 不进 git（保持 .gitignore），CI 构建前临时下载
+
+### 验证
+
+- [x] **T4** `go build ./...` / `go vet ./...` / `go test ./...` 维持绿（v1.3.9 仅 Docker + CI 配置）；`pnpm build` 维持绿（无前端改动）；ChangeLog v1.3.9 + PLAN v1.3.9 活跃里程碑 + TASKS v1.3.9 段同步完成
+
+
 
 ## v1.3.8 无字幕播放器 UI 与计数器微调（2026-07-07）
 

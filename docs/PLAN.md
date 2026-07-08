@@ -1,8 +1,93 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v1.3.8 无字幕 Echo Loop 开关 + 已听 N 遍逐轮递增 | 日期：2026-07-07
+> 状态：v1.3.9 Docker buildx ecdict.csv 缺失报错修复 | 日期：2026-07-07
 
-## 活跃里程碑：v1.3.8 无字幕播放器 UI 与计数器微调（2026-07-07 完成）
+## 活跃里程碑：v1.3.9 Docker buildx ecdict.csv 可选化（2026-07-07 完成）
+
+v1.3.6 把 ECDICT 词库 CSV 拷进镜像后，CI 用户（GitHub Actions `build-and-push` workflow）反馈 buildx 报错：
+
+```
+ERROR: failed to build: failed to solve: failed to compute cache key:
+failed to calculate checksum of ref ...:
+"/backend/data/dict/ecdict.csv": not found
+```
+
+**根因**：
+
+- Dockerfile 写死了精确路径 `COPY backend/data/dict/ecdict.csv /app/backend/data/dict/ecdict.csv`
+- buildx 在解 Dockerfile 时就尝试为 `COPY` 指令计算 cache key（文件 checksum）
+- CI runner 上 `backend/data/dict/ecdict.csv` 不存在（仅本地开发机下载过），buildx 立即报错
+- v1.3.6 的 `.dockerignore` 中 `!backend/data/dict/ecdict.csv` 在 `backend/data` 忽略模式**之前**就出现，违反 .dockerignore 规则（`!` 必须在被忽略的模式之后才生效），导致 `!` 实际上是 no-op
+
+**修复策略**（advisor 建议 + 项目最小改动原则）：
+
+1. **Dockerfile 改用通配符 COPY**：`ecdict.csv*` 匹配 0 个文件时**不报错**（Docker 官方文档明确说明）
+2. **.dockerignore 规则顺序修正**：`backend/data` 忽略在前，`!backend/data/dict/ecdict.csv` 解除忽略在后
+3. **删除重复 `!` 行**：避免 Docker 各版本对重复 `!` 处理不一致
+4. **文档升级为 v1.3.9**：注释里写明「.dockerignore 规则顺序坑」，避免后续踩雷
+
+### 一、目标与设计原则
+
+#### 1. 通配符 COPY 而非精确路径
+
+**问题现象**：`COPY backend/data/dict/ecdict.csv` 在文件不存在时让 buildx 退出
+
+**根因**：
+
+- buildx cache key 计算在 Dockerfile **解析阶段**就需要所有 COPY 源文件的 checksum
+- 文件不在 build context → checksum 无法计算 → 立即报错
+- 用户的 CI runner 没有 ECDICT CSV（仅本地开发下载过），必然失败
+
+**修复策略**：
+
+- 改用通配符 `COPY backend/data/dict/ecdict.csv* /app/backend/data/dict/`
+- 通配符 `*` 匹配 0 个文件时**不报错**（Docker 官方文档明确说明）
+- 文件存在 → 拷进镜像，行为与 v1.3.6 一致
+- 文件不存在 → 容器启动后用户可通过 `ECHOSUB_BUILTIN_DICT_CSV` 挂载 NAS 路径
+
+#### 2. .dockerignore 规则顺序修正
+
+**问题现象**：v1.3.6 的 `.dockerignore` 在 `backend/data` 忽略模式之前就出现 `!backend/data/dict/ecdict.csv`
+
+**根因**：
+
+- .dockerignore 规则：`!` 必须出现在被忽略的模式**之后**才生效
+- v1.3.6 的 `!` 行前面没有 `backend/data` 忽略模式 → no-op
+- 后续虽补了重复 `!` 行，但 Docker 各版本对重复 `!` 处理不一致
+
+**修复策略**：
+
+- 调整顺序：`backend/data` 忽略在前，`!backend/data/dict/ecdict.csv` 解除忽略在后
+- 删除重复的 `!backend/data/dict/ecdict.csv` 行
+- 注释升级为 v1.3.9，说明「`!` 必须在被忽略的模式之后才生效」
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `Dockerfile` | `COPY backend/data/dict/ecdict.csv` 精确路径 → `COPY backend/data/dict/ecdict.csv*` 通配符；注释升级为 v1.3.9 |
+| `.dockerignore` | 调整顺序（`backend/data` 在前，`!backend/data/dict/ecdict.csv` 在后）；删除重复 `!` 行；注释升级为 v1.3.9 |
+| `.github/workflows/docker.yml` | 新增 `Download ECDICT (optional)` 步骤：CI runner 在构建前从 ECDICT GitHub Release 下载 CSV；支持 `vars.RUN_EC_DICT_MIRROR=cn` 切 gh-proxy 镜像；已有 CSV 时 SKIP |
+| `docs/ChangeLog.md` | 新增 v1.3.9 章节（Fixed 段：buildx cache key 错误 + CI ECDICT 缺失；Changed 段：CSV 变为可选 + CI 镜像下载） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.9） |
+| `docs/TASKS.md` | 新增 v1.3.9 任务清单（T1~T4） |
+
+### 三、验证清单
+
+- [x] `go build ./...` / `go vet ./...` / `go test ./...` 维持绿（v1.3.9 仅 Docker 配置）
+- [x] `pnpm build` 维持绿（无前端改动）
+- [x] Dockerfile COPY 通配符语法正确（Docker 文档：`*` 匹配 0 个文件不报错）
+- [x] .dockerignore 规则顺序符合官方规范
+
+### 四、收尾说明
+
+- **测试场景**：在 CI runner（无 ECDICT CSV）跑 `docker buildx build` → 不再因文件缺失失败
+- **用户迁移**：现有用户部署无感知——本地有 CSV 时仍自动拷进镜像；没有时可通过 `ECHOSUB_BUILTIN_DICT_CSV` 挂载
+- **核心教训**（写入 project_memory）：**`COPY` 精确路径是 hard requirement；CI 上不可用文件必须用通配符或 `ADD` 远程 URL**；`.dockerignore` 的 `!` 必须在被忽略的模式之后才生效
+
+---
+
+## 旧版：v1.3.8 无字幕播放器 UI 与计数器微调（2026-07-07 完成）
 
 v1.3.7 修好「已听 N 遍永远停在 1」之后，用户实测发现仍有 2 个细节问题：
 

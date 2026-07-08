@@ -9,6 +9,68 @@
 
 
 
+## [v1.3.9] - 2026-07-07
+
+### Fixed
+
+#### Docker buildx 报 `failed to calculate checksum ... ecdict.csv: not found`（v1.3.9）
+
+**现象**：用户跑 `docker buildx build`（CI 或 GitHub Actions build-and-push 流程）报：
+
+```
+ERROR: failed to build: failed to solve: failed to compute cache key:
+failed to calculate checksum of ref ...:
+"/backend/data/dict/ecdict.csv": not found
+```
+
+**根因**：
+
+v1.3.6 把 `COPY backend/data/dict/ecdict.csv /app/backend/data/dict/ecdict.csv` 写进 Dockerfile，并通过 `.dockerignore` 中 `!backend/data/dict/ecdict.csv` 保留该文件。但在以下场景会失败：
+
+1. **buildx cache key 计算**：buildx 在解 Dockerfile 时就尝试为 `COPY` 指令计算 cache key（包括文件 checksum）。如果文件不在 build context（被 `.dockerignore` 排除或根本未下载），buildx 立即报错退出
+2. **CI 首次构建**：GitHub Actions runner 上 `backend/data/dict/ecdict.csv` 不存在（仅本地开发机下载过），`!` 模式也救不回来
+3. **`.dockerignore` 规则顺序坑**：v1.3.6 的 `.dockerignore` 在 `!backend/data/dict/ecdict.csv` 之前**没有** `backend/data` 忽略模式，导致 `!` 实际上是个 no-op；后来虽补了一行重复 `!`，但 Docker 各版本对重复 `!` 处理不一致
+
+**修复**（[Dockerfile](Dockerfile) + [.dockerignore](.dockerignore)）：
+
+1. **Dockerfile 改用通配符 COPY**：`COPY backend/data/dict/ecdict.csv* /app/backend/data/dict/`
+   - 通配符 `*` 匹配 0 个文件时**不报错**（Docker 官方文档明确说明）
+   - 文件存在：拷进镜像，容器首次启动自动导入（与 v1.3.6 行为一致）
+   - 文件不存在：构建继续，容器启动后用户可通过 `ECHOSUB_BUILTIN_DICT_CSV` 环境变量挂载 NAS 路径
+2. **.dockerignore 重排**：
+   - 删掉 v1.3.6 重复的 `!backend/data/dict/ecdict.csv` 行
+   - 调整顺序：`backend/data` 忽略在前，`!backend/data/dict/ecdict.csv` 解除忽略在后（符合 .dockerignore 规则：`!` 必须在被忽略的模式之后才生效）
+   - 注释升级为 v1.3.9，说明 .dockerignore 规则顺序坑
+
+### Changed
+
+- Dockerfile 行为：内置词典 CSV 变为「可选」—— 不再是构建的硬依赖
+- 用户体验：CI 首次构建不再因 ECDICT 未下载而失败，文档/部署流程更顺畅
+
+### Fixed
+
+#### GitHub Actions `build-and-push` 缺 ECDICT CSV 导致镜像内无内置词典（v1.3.9 续）
+
+**现象**：v1.3.9 把 Dockerfile 的精确 COPY 改成通配符后，本地构建不再因 ECDICT 缺失失败。但 CI runner 上首次构建时**镜像内仍没有 CSV**——Dockerfile 通配符只是「不再报错」，不是「自动下载」。
+
+**根因**：
+
+- `.github/workflows/docker.yml` 在 `actions/checkout@v4` 之后**直接**调 `docker buildx build`
+- CI runner 是全新 VM，没有 `backend/data/dict/ecdict.csv`
+- Dockerfile 的通配符 COPY 静默跳过 → 镜像内无 CSV → 容器启动后 `/dictionary/builtin/status` 返回 `available: false`
+
+**修复**（[.github/workflows/docker.yml](.github/workflows/docker.yml)）：
+
+- 在 checkout 之后、`build-and-push` 之前新增 `Download ECDICT (optional)` 步骤
+- 用 curl 从 ECDICT GitHub Release 下载（默认原站，CN 用户可设 `vars.RUN_EC_DICT_MIRROR=cn` 走 gh-proxy）
+- 已有 CSV 时 SKIP（避免重复下载）
+- 失败时 `set -e` 立即退出，CI 报错可见（不会沉默失败）
+
+### Changed
+
+- CI 工作流：ECDICT CSV 在构建前由 workflow 步骤下载，**不进 git 仓库**（避免 65 MB 巨型文件污染 repo）
+- 国内用户：可设 GitHub repo variable `RUN_EC_DICT_MIRROR=cn` 切到 `gh-proxy.com` 镜像加速
+
 ## [v1.3.8] - 2026-07-07
 
 ### Fixed
