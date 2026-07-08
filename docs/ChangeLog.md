@@ -9,6 +9,33 @@
 
 
 
+## [v1.3.10] - 2026-07-07
+
+### Changed
+
+#### 播放器 UI 「Echo Loop」更名为「逐句复读」（v1.3.10）
+
+**现象**：用户反馈音视频播放器页面的 `Echo Loop` 英文术语对中文用户不够友好，与「设置 → 学习」页已有「逐句复读」概念不一致。
+
+**修复**（[frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx)）：
+
+1. **状态条文案**（line 684）：`'Echo Loop 复读中'` → `'逐句复读中'`
+2. **模式开关 label**（line 981）：`'🔁 Echo Loop'` → `'🔁 逐句复读'`
+3. **Tooltip 说明**（line 980）：`'Echo Loop：开启后...'` → `'逐句复读：开启后...'`
+
+> 内部代码注释中的「Echo Loop 模式」指代底层算法（`loopWhole` + `loopSentence` 双循环设计，参见 v1.2.0 设计），保留作为历史/技术引用，不影响用户界面。
+
+### Added
+
+#### `frontend/dev-dist/` 加入 `.gitignore`（v1.3.10）
+
+**现象**：`pnpm dev` 启动时 `vite-plugin-pwa` 自动生成 `frontend/dev-dist/{sw.js, registerSW.js, workbox-*.js}`，此前未在 `.gitignore` 排除，会被误提交到 git 仓库。
+
+**修复**（[.gitignore](.gitignore) line 27-30）：
+
+- 新增 `frontend/dev-dist/` 规则，注释说明是 PWA dev 模式产物（不同于 `dist/` 的生产构建）
+- 同时 `git rm --cached -r frontend/dev-dist/` 把已追踪的 3 个文件从 git 索引中移除（保留本地文件）
+
 ## [v1.3.9] - 2026-07-07
 
 ### Fixed

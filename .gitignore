@@ -24,6 +24,10 @@ backend/data/dict/ecdict.csv
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
+# v1.3.10：vite-plugin-pwa dev 模式产物（dev server 自动生成的 SW / manifest）
+#   不同于 dist/（生产构建），dev-dist 是 pnpm dev 期间实时生成
+#   与 dist/ 一律不进 git
+frontend/dev-dist/
 frontend/.env.local
 frontend/.env.*.local
 frontend/*.local

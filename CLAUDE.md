@@ -17,15 +17,17 @@
 7. **文档同步** — 代码改完，立刻更新 [docs/TASKS.md](docs/TASKS.md)（勾选任务、记录完成时间）和 [docs/PLAN.md](docs/PLAN.md)（里程碑进度）。
 8. **最小改动** — 只改当前任务相关的文件和代码，不做额外重构。
 9. **类型安全** — 优先使用类型安全写法，避免 `any`、避免类型断言。
-10. **版本号** — 每次完成修改后，更新 [docs/ChangeLog.md](docs/ChangeLog.md) 的版本号（格式 `v0.1.0`），每天递增一次。
+10. **版本号** — 每次完成修改后，更新 [docs/ChangeLog.md](docs/ChangeLog.md) 的版本号（格式 `v0.1.0`）。
 
 ## 二、项目概述（Project Overview）
 
 EchoSub 是一款**自托管的 Web 应用**，用于语言学习与文本背诵。用户将视频 / 音频 + 字幕文件放入被监听的文件夹，EchoSub 会自动发现、按专辑（Emby 风格，支持季 / 海报 / 横幅）分组，并提供**逐句复读播放器**（可配置暂停 / 循环 + 逐句进度跟踪）。
 
-- **后端**：Go 1.26 · Gin · GORM · SQLite (`glebarez/sqlite`，CGO-free) · JWT · fsnotify
-- **前端**：React 19 · TypeScript 6 · Vite 8 · Ant Design 6 · zustand · axios · react-router-dom 7
-- **基础设施**：Docker 多阶段构建 · docker-compose · GitHub Actions (GHCR 多架构)
+* **后端**：Go 1.26 · Gin · GORM · SQLite (`glebarez/sqlite`，CGO-free) · JWT · fsnotify
+
+* **前端**：React 19 · TypeScript 6 · Vite 8 · Ant Design 6 · zustand · axios · react-router-dom 7
+
+* **基础设施**：Docker 多阶段构建 · docker-compose · GitHub Actions (GHCR 多架构)
 
 ## 三、常用命令（Common Commands）
 
@@ -61,17 +63,21 @@ python scripts/test-api.py
 
 依赖：Python 3.8+、requests 库、Go（已在 PATH）。脚本会在 `:18080` 端口启动后端（使用 `test-media/` 目录 + 临时 SQLite DB），跑完 **45 项** 端到端 API 检查后清理。
 
-**首次运行**会触发内置 ECDICT 词库导入（约 77 万词条 / ~70s），启动超时设 120s；已存在数据时秒过。
+**首次运行**会触发内置 ECDICT 词库导入（约 77 万词条 / \~70s），启动超时设 120s；已存在数据时秒过。
 
 > 旧 PowerShell 脚本 [scripts/test-api.ps1](scripts/test-api.ps1) 已停止维护，仅作参考。
 
 ## 四、开发环境注意事项（Dev Environment Notes）
 
-- **Go 路径**：安装位置 `D:\Code-E\Go\bin`，新终端可能未加载，需按上面命令从注册表刷新 PATH。
-- **Shell**：Windows PowerShell 5.1 默认 GBK 解码不支持 UTF-8 CJK，`.ps1` 脚本须保持纯 ASCII，或使用 PowerShell 7+。
-- **模块代理**：`GOPROXY=https://goproxy.cn,direct` 加速中国大陆网络下载。
-- **双进程开发**：后端 `:8080`、前端 `:5173`。Vite 通过 `/api` 代理到 `:8080`。`go run` **不**支持热重载，后端修改后需手动重启。
-- **后端热重启替代方案**：`go run` 配合 `air` / `wgo` / `reflex` 等文件监听工具；当前仓库未集成，按需自取。
+* **Go 路径**：安装位置 `D:\Code-E\Go\bin`，新终端可能未加载，需按上面命令从注册表刷新 PATH。
+
+* **Shell**：Windows PowerShell 5.1 默认 GBK 解码不支持 UTF-8 CJK，`.ps1` 脚本须保持纯 ASCII，或使用 PowerShell 7+。
+
+* **模块代理**：`GOPROXY=https://goproxy.cn,direct` 加速中国大陆网络下载。
+
+* **双进程开发**：后端 `:8080`、前端 `:5173`。Vite 通过 `/api` 代理到 `:8080`。`go run` **不**支持热重载，后端修改后需手动重启。
+
+* **后端热重启替代方案**：`go run` 配合 `air` / `wgo` / `reflex` 等文件监听工具；当前仓库未集成，按需自取。
 
 ## 五、架构（Architecture）
 
@@ -117,8 +123,10 @@ frontend/src/
 
 所有接口位于 `/api/v1` 下。公开接口：`POST /auth/register`、`POST /auth/login`、`GET /health`。
 其他接口需要 JWT，方式二选一：
-- `Authorization: Bearer <token>` 请求头
-- `?token=<jwt>` 查询参数（用于 HTML5 `<video>` / `<audio>` 等无法设置请求头的元素）
+
+* `Authorization: Bearer <token>` 请求头
+
+* `?token=<jwt>` 查询参数（用于 HTML5 `<video>` / `<audio>` 等无法设置请求头的元素）
 
 完整接口表见 [README.md#api-概览](README.md#-api-概览)。
 
@@ -145,8 +153,9 @@ SRT/VTT 文件可能带 UTF-8 BOM (`\ufeff`)。`ParseFile` 与 `ParseSRT` 都会
 
 ### 3. 字段命名 — `sentence_repeat` 与 `repeat_count` 是不同字段
 
-- `Settings.sentence_repeat` / `pause_seconds` / `loop_count` — 用户级别的学习偏好。
-- `SentenceProgress.repeat_count` — 单个句子已被重复的次数。
+* `Settings.sentence_repeat` / `pause_seconds` / `loop_count` — 用户级别的学习偏好。
+
+* `SentenceProgress.repeat_count` — 单个句子已被重复的次数。
 
 两者是**不同字段**，不要混淆。后端（`settingsReq`、`sentenceProgressReq`）与前端（`Settings`、`SentenceProgress` 类型）都使用这些精确的 JSON key。
 
@@ -202,10 +211,14 @@ Windows 下 `strings.HasPrefix` 路径检查**不可靠**（路径分隔符混�
 
 ### 12. 多态标签系统（v0.5.0）
 
-- 单个标签可附加到「专辑 / 季 / 学习页 / 媒体文件」四种实体类型。
-- 通用 `TagManagerModal` 组件统一 UI。
-- 历史媒体标签（v0.3.x 的 `media_tags` many2many 表）与新 `entity_tags` 表合并去重。
-- 后端 `GET /tags/:id/entities` 返回结构：
+* 单个标签可附加到「专辑 / 季 / 学习页 / 媒体文件」四种实体类型。
+
+* 通用 `TagManagerModal` 组件统一 UI。
+
+* 历史媒体标签（v0.3.x 的 `media_tags` many2many 表）与新 `entity_tags` 表合并去重。
+
+* 后端 `GET /tags/:id/entities` 返回结构：
+
   ```json
   {
     "tag": {"id":1,"name":"..."},
@@ -215,26 +228,35 @@ Windows 下 `strings.HasPrefix` 路径检查**不可靠**（路径分隔符混�
     "notes": [...]
   }
   ```
+
   每个数组都保证是 `[]` 而非 `null`（即使是空集）。
 
 ### 13. Emby 元数据识别
 
 扫描器在每个专辑 / 季目录识别以下元数据（按优先级选择）：
-- 封面：`folder.jpg` > `poster.jpg` > `cover.jpg`
-- 横幅：`banner.jpg` > `backdrop.jpg` > `fanart.jpg`
-- 描述：`tvshow.nfo` / `album.nfo`（专辑级）、`season.nfo`（季级）
-- 季继承专辑级 `banner.jpg`（缺省时回退）
+
+* 封面：`folder.jpg` > `poster.jpg` > `cover.jpg`
+
+* 横幅：`banner.jpg` > `backdrop.jpg` > `fanart.jpg`
+
+* 描述：`tvshow.nfo` / `album.nfo`（专辑级）、`season.nfo`（季级）
+
+* 季继承专辑级 `banner.jpg`（缺省时回退）
 
 ## 七、代码风格（Code Style）
 
-- **Go**：`gofmt` / `go vet` 标准。Handler 函数返回 `gin.HandlerFunc`。
+* **Go**：`gofmt` / `go vet` 标准。Handler 函数返回 `gin.HandlerFunc`。
   统一使用 `utils.OK(c, ...)` / `utils.Fail(c, status, msg)` 响应 `{code, message, data}` 结构。
-- **TypeScript**：严格模式，`noUnusedLocals`、`noUnusedParameters`。
+
+* **TypeScript**：严格模式，`noUnusedLocals`、`noUnusedParameters`。
   使用 `@/*` 别名导入 `src/*`。函数式组件 + Hooks。
-- **注释**：业务域逻辑注释可用中文（与需求文档风格一致）；公共 API / 导出类型建议英文。
-- **错误处理**：handler 返回描述性的中文错误信息给前端；需要时 wrap 上下文。
+
+* **注释**：业务域逻辑注释可用中文（与需求文档风格一致）；公共 API / 导出类型建议英文。
+
+* **错误处理**：handler 返回描述性的中文错误信息给前端；需要时 wrap 上下文。
   **不要**泄露堆栈跟踪。
-- **目录职责**：单一职责原则，避免「巨型 handler 文件」；按业务域拆分。
+
+* **目录职责**：单一职责原则，避免「巨型 handler 文件」；按业务域拆分。
 
 ## 八、测试清单（Testing Checklist）
 
@@ -251,31 +273,44 @@ Windows 下 `strings.HasPrefix` 路径检查**不可靠**（路径分隔符混�
 
 ## 九、变更日志规范（Changelog Discipline）
 
-- **每天一个版本号**，当日所有变更合并在同一个版本下。
-- 语言：**英文**（按 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范）。
-- 类别仅使用：`Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security`。
-- `CLAUDE.md` / `README.md` / 项目注释使用**中文**。
-- 版本号格式：`v0.MINOR.PATCH`（如 `v0.5.0`），每次修改版本号递增 1。
+* **每天一个版本号**，当日所有变更合并在同一个版本下。
+
+* 语言：**英文**（按 [Keep a Changelog 1.0.0](https://keepachangelog.com/en/1.0.0/) 规范）。
+
+* 类别仅使用：`Added` / `Changed` / `Deprecated` / `Removed` / `Fixed` / `Security`。
+
+* `CLAUDE.md` / `README.md` / 项目注释使用**中文**。
+
+* 版本号格式：`v0.MINOR.PATCH`（如 `v0.5.0`），每次修改版本号递增 1。
 
 ## 十、调试指引（When Stuck）
 
-- **后端启动失败**：检查 `ECHOSUB_*` 环境变量、DB 路径可写、媒体目录存在。
-- **媒体无法播放**：检查流式 URL 是否带 `?token=`，且用户已登录。
-- **字幕首句缺失**：检查 BOM，确保 `TrimPrefix` 未被删除。
-- **401 错误**：token 过期（默认 72 小时）或缺失 `Authorization` 请求头。
-- **`go: command not found`**：从注册表刷新 PATH（见常用命令章节）。
-- **前端 `.length` 崩溃**（`Cannot read properties of null`）：后端该字段序列化为 `null`，需初始化为空切片 `make([]T, 0)`。
-- **专辑封面 / 横幅未显示**：检查 `folder.jpg` / `banner.jpg` 命名是否正确（大小写敏感）；检查 NFO 是否为合法 XML（CDATA 已自动剥离）。
+* **后端启动失败**：检查 `ECHOSUB_*` 环境变量、DB 路径可写、媒体目录存在。
+
+* **媒体无法播放**：检查流式 URL 是否带 `?token=`，且用户已登录。
+
+* **字幕首句缺失**：检查 BOM，确保 `TrimPrefix` 未被删除。
+
+* **401 错误**：token 过期（默认 72 小时）或缺失 `Authorization` 请求头。
+
+* **`go: command not found`**：从注册表刷新 PATH（见常用命令章节）。
+
+* **前端** **`.length`** **崩溃**（`Cannot read properties of null`）：后端该字段序列化为 `null`，需初始化为空切片 `make([]T, 0)`。
+
+* **专辑封面 / 横幅未显示**：检查 `folder.jpg` / `banner.jpg` 命名是否正确（大小写敏感）；检查 NFO 是否为合法 XML（CDATA 已自动剥离）。
 
 ## 十一、项目记忆（Project Memory）
 
 跨会话的项目级经验已沉淀在：
-- 用户档案：`~/.trae-cn/memory/user_profile.md`
-- 项目档案：`~/.trae-cn/memory/projects/-d-Code-Go-EchoSub/project_memory.md`
-- 会话主题：`~/.trae-cn/memory/projects/-d-Code-Go-EchoSub/{date}/topics.md`
+
+* 用户档案：`~/.trae-cn/memory/user_profile.md`
+
+* 项目档案：`~/.trae-cn/memory/projects/-d-Code-Go-EchoSub/project_memory.md`
+
+* 会话主题：`~/.trae-cn/memory/projects/-d-Code-Go-EchoSub/{date}/topics.md`
 
 新需求接入时，AI 应主动 grep 这些文件以了解历史决策、避免重复踩坑。
 
----
+***
 
-**最后更新**：v1.3.9（Docker buildx ecdict.csv 通配符 COPY + .dockerignore 规则顺序 + CI workflow 下载步骤）
+**最后更新**：v1.3.10（播放器 UI 「Echo Loop」→「逐句复读」+ dev-dist 加入 .gitignore）

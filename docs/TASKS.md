@@ -1,6 +1,24 @@
-# TASKS.md — v1.3.9 Docker buildx ecdict.csv 可选化（2026-07-07）
+# TASKS.md — v1.3.10 播放器 UI 逐句复读改名 + dev-dist gitignore（2026-07-07）
 
 配套 [PLAN.md](PLAN.md) / [CONFIGURATION.md](CONFIGURATION.md)。每完成一个任务勾选并填时间。
+
+## v1.3.10 播放器 UI 逐句复读改名 + dev-dist gitignore（2026-07-07）
+
+### 前端 — UI 文案本地化
+
+- [x] **T1** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) line 684：状态条文案 `'Echo Loop 复读中'` → `'逐句复读中'`
+- [x] **T2** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) line 981：模式开关 label `'🔁 Echo Loop'` → `'🔁 逐句复读'`
+- [x] **T3** [frontend/src/components/MediaPlayer.tsx](frontend/src/components/MediaPlayer.tsx) line 980：Tooltip 说明 `'Echo Loop：开启后...'` → `'逐句复读：开启后...'`
+
+### Git — dev-dist 补忽略
+
+- [x] **T4** [.gitignore](.gitignore) 新增 `frontend/dev-dist/` 规则（PWA dev 模式产物）；执行 `git rm --cached -r frontend/dev-dist/` 移除 3 个已追踪文件
+
+### 验证
+
+- [x] **T5** `pnpm build` exit 0（1571 modules / 8.69s / tsc -b 严格类型检查通过）；`git ls-files frontend/dev-dist/` 已为空；后端无修改维持绿；ChangeLog v1.3.10 + PLAN v1.3.10 活跃里程碑 + TASKS v1.3.10 段同步完成
+
+
 
 ## v1.3.9 Docker buildx ecdict.csv 可选化（2026-07-07）
 

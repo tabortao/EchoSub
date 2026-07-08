@@ -1,8 +1,62 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v1.3.9 Docker buildx ecdict.csv 缺失报错修复 | 日期：2026-07-07
+> 状态：v1.3.10 播放器 UI 逐句复读改名 + dev-dist gitignore | 日期：2026-07-07
 
-## 活跃里程碑：v1.3.9 Docker buildx ecdict.csv 可选化（2026-07-07 完成）
+## 活跃里程碑：v1.3.10 播放器 UI 「Echo Loop」→「逐句复读」+ dev-dist gitignore（2026-07-07 完成）
+
+两个小调整：
+
+1. **UI 文案本地化**：音视频播放器的 `Echo Loop` 英文术语改为「逐句复读」，与「设置 → 学习」页已有的「逐句复读」概念对齐
+2. **`.gitignore` 补漏**：`frontend/dev-dist/`（vite-plugin-pwa dev 模式产物）此前未忽略，会被误提交
+
+### 一、目标与设计原则
+
+#### 1. 播放器 UI 文案本地化
+
+**问题现象**：播放器页面顶部的 `🔁 Echo Loop` 标签和 `Echo Loop 复读中` 状态条对中文用户不够友好
+
+**修复策略**：
+
+- 状态条文案：`'Echo Loop 复读中'` → `'逐句复读中'`
+- 模式开关 label：`'🔁 Echo Loop'` → `'🔁 逐句复读'`
+- Tooltip 说明：`'Echo Loop：开启后...'` → `'逐句复读：开启后...'`
+- 内部代码注释保留「Echo Loop 模式」作技术引用（指 v1.2.0 引入的 `loopWhole` + `loopSentence` 双循环算法）
+
+#### 2. dev-dist gitignore
+
+**问题现象**：`pnpm dev` 启动时 `vite-plugin-pwa` 生成 3 个 PWA dev 文件到 `frontend/dev-dist/`，之前已误提交到 git
+
+**修复策略**：
+
+- `.gitignore` 新增 `frontend/dev-dist/` 规则（与 `frontend/dist/` 并列）
+- `git rm --cached -r frontend/dev-dist/` 把已追踪的 3 个文件从索引中移除（保留本地）
+- 注释升级为 v1.3.10，说明是 PWA dev 模式产物
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `frontend/src/components/MediaPlayer.tsx` | 用户可见字符串「Echo Loop」→「逐句复读」（line 684 / 980 / 981） |
+| `.gitignore` | 新增 `frontend/dev-dist/` 规则，注释升级为 v1.3.10 |
+| 仓库索引 | `git rm --cached -r frontend/dev-dist/`（移除 3 个已追踪文件，保留本地） |
+| `docs/ChangeLog.md` | 新增 v1.3.10 章节（Changed 段：UI 改名；Added 段：dev-dist gitignore） |
+| `docs/PLAN.md` | 当前文件（活跃里程碑 v1.3.10） |
+| `docs/TASKS.md` | 新增 v1.3.10 任务清单（T1~T4） |
+
+### 三、验证清单
+
+- [x] `pnpm build` exit 0（1571 modules / 8.69s / tsc -b 严格类型检查通过）
+- [x] `git ls-files frontend/dev-dist/` 已为空（`git rm --cached` 生效）
+- [x] 后端无修改 → `go build` / `vet` / `test` 维持绿
+
+### 四、收尾说明
+
+- **用户迁移**：无——纯 UI 文案调整 + gitignore 补漏
+- **核心教训**（写入 project_memory）：**PWA 插件（vite-plugin-pwa）的 dev 模式产物 `dev-dist` 与生产构建产物 `dist` 必须分别 gitignore**——前者由 `pnpm dev` 实时生成，后者由 `pnpm build` 一次性生成
+
+---
+
+## 旧版：v1.3.9 Docker buildx ecdict.csv 可选化（2026-07-07 完成）
 
 v1.3.6 把 ECDICT 词库 CSV 拷进镜像后，CI 用户（GitHub Actions `build-and-push` workflow）反馈 buildx 报错：
 

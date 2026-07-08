@@ -681,7 +681,7 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
       >
         <span style={{ fontSize: isPhone ? 16 : 18 }}>{mode === 'repeat' ? '🔁' : '▶'}</span>
         <Text strong style={{ fontSize: isPhone ? 13 : 14, color: 'var(--ac-text-header, #794f27)' }}>
-          {mode === 'repeat' ? 'Echo Loop 复读中' : '普通播放'}
+          {mode === 'repeat' ? '逐句复读中' : '普通播放'}
         </Text>
         {mode === 'repeat' && hasSubtitle && (
           <>
@@ -977,8 +977,8 @@ export default function MediaPlayer({ mediaId, mediaType, pairedMedia, initialPo
         alignItems: 'center',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 36 }}>
-          <Tooltip title="Echo Loop：开启后每句重复 N 次 → 停顿 K 秒 → 下一句，整体循环 M 次">
-            <span style={{ fontWeight: 600 }}>🔁 Echo Loop</span>
+          <Tooltip title="逐句复读：开启后每句重复 N 次 → 停顿 K 秒 → 下一句，整体循环 M 次">
+            <span style={{ fontWeight: 600 }}>🔁 逐句复读</span>
           </Tooltip>
           {/* v1.3.8：无字幕时 checked=false + disabled（v1.3.7 已加 disabled，但 checked 没改，
               仍按 mode 渲染 → 无字幕 + mode='normal'（v1.3.8 起默认值）时显示正确 OFF） */}
