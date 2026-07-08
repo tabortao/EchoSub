@@ -1,8 +1,64 @@
 # PLAN.md — EchoSub 开发计划
 
-> 状态：v1.3.10 播放器 UI 逐句复读改名 + dev-dist gitignore | 日期：2026-07-07
+> 状态：v1.3.11 ECDICT CSV 直接 commit 到 git | 日期：2026-07-07
 
-## 活跃里程碑：v1.3.10 播放器 UI 「Echo Loop」→「逐句复读」+ dev-dist gitignore（2026-07-07 完成）
+## 活跃里程碑：v1.3.11 ECDICT CSV 直接入 git（2026-07-07 完成）
+
+v1.3.9 引入的 CI 下载 ECDICT 步骤在 GitHub Actions runner 上因 Release URL 404 失败。按用户要求简化为「直接 commit 到 git」。
+
+### 一、背景与决策
+
+**v1.3.9 方案的痛点**：
+
+- `https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict.csv` 返回 404（release 已被作者删除或重命名）
+- 即使 URL 有效，国内 runner 仍可能因 GitHub 直连超时失败
+- 兜底 `gh-proxy.com` 镜像不稳定，长期维护成本高
+
+**v1.3.11 方案**：
+
+- 直接 `git add backend/data/dict/ecdict.csv`（62.88 MB）
+- `.gitignore` 不再排除该文件
+- `.github/workflows/docker.yml` 移除下载步骤，替换为 `Verify ECDICT` 完整性检查
+- GitHub 接受 62.14 MB 文件（warn 但不拒，< 100 MB 软上限）
+
+### 二、文件变更清单
+
+| 路径 | 变更 |
+|------|------|
+| `backend/data/dict/ecdict.csv` | 62.88 MB 文件入 git 索引（commit `369416f`） |
+| `.gitignore` | 移除 `backend/data/dict/ecdict.csv` 忽略规则（commit `27dbfc2`） |
+| `.github/workflows/docker.yml` | 移除 `Download ECDICT` 步骤，替换为轻量 `Verify ECDICT` 检查（commit `27dbfc2`） |
+
+### 三、commit 记录
+
+```
+27dbfc2 chore: release v1.3.11 - cleanup docker.yml and gitignore
+369416f chore: release v1.3.11 ecdict.csv committed to git
+98b9d3c chore: release v1.3.10 播放器UI改名+补全gitignore
+```
+
+### 四、trade-off
+
+- ✅ CI 不再需要下载 ECDICT，`build-and-push` 一次过
+- ✅ 镜像始终内含 ECDICT，无降级风险
+- ⚠️ 仓库体积 +63 MB（GitHub 50MB warn，100MB 拒收 → 当前 62 MB 安全）
+- ⚠️ `git clone` 变慢约 10~20s（首次拉取）
+
+### 五、验证清单
+
+- [x] `git push origin main` 成功（GitHub 接受 62.14 MB 文件）
+- [x] 后端 `go build ./...` / `go vet ./...` / `go test ./...` 维持绿
+- [x] 前端 `pnpm build` 维持绿
+- [x] Dockerfile 通配符 COPY（v1.3.9）自动拾取 commit 到 git 的 CSV
+
+### 六、收尾说明
+
+- **未来升级 ECDICT**：用户手动替换 `backend/data/dict/ecdict.csv` → `git commit` → `git push`，CI 镜像自动使用新版本
+- **教训**（写入 project_memory）：**第三方数据文件优先入 git 而非 CI 下载**——避免 release URL 失效、镜像源不稳定、网络超时等长期问题；牺牲一点仓库体积换取 CI 稳定性，对中小项目是值得的
+
+---
+
+## 旧版：v1.3.10 播放器 UI 改名 + dev-dist gitignore（2026-07-07 完成）
 
 两个小调整：
 

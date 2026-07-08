@@ -9,6 +9,33 @@
 
 
 
+## [v1.3.11] - 2026-07-07
+
+### Changed
+
+#### ECDICT 词库 CSV 直接 commit 到 git（v1.3.11）
+
+**现象**：v1.3.9 引入的「CI runner 下载 ECDICT」步骤因 GitHub Release URL 404（`https://github.com/skywind3000/ECDICT/releases/download/1.0.28/ecdict.csv` 已不存在）导致 `build-and-push` workflow 失败。
+
+**修复**（[.gitignore](.gitignore) + [.github/workflows/docker.yml](.github/workflows/docker.yml) + commit `369416f`）：
+
+- `git add backend/data/dict/ecdict.csv` —— 62.88 MB CSV 文件直接入 git 索引
+- `.gitignore` 移除 `backend/data/dict/ecdict.csv` 忽略规则
+- `.github/workflows/docker.yml` 移除 `Download ECDICT` 步骤，替换为轻量 `Verify ECDICT` 完整性检查（`if [ -f ... ]; then echo OK; else echo WARN; fi`）
+- 推送：GitHub 接受 62.14 MB 文件（warn 但不拒）
+
+**commit 记录**：
+
+- `369416f` —— `chore: release v1.3.11 ecdict.csv committed to git`（CSV 文件 770,612 行）
+- `27dbfc2` —— `chore: release v1.3.11 - cleanup docker.yml and gitignore`（清理 workflow + .gitignore）
+
+**trade-off**：
+
+- ✅ CI 不再需要下载 ECDICT，`build-and-push` 一次过
+- ✅ 镜像始终内含 ECDICT，无降级风险
+- ⚠️ 仓库体积 +63 MB（GitHub 50MB warn，100MB 拒收 → 当前 62 MB 安全）
+- ⚠️ `git clone` 变慢约 10~20s（首次拉取）
+
 ## [v1.3.10] - 2026-07-07
 
 ### Changed

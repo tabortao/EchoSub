@@ -1,6 +1,29 @@
-# TASKS.md — v1.3.10 播放器 UI 逐句复读改名 + dev-dist gitignore（2026-07-07）
+# TASKS.md — v1.3.11 ECDICT CSV 直接 commit 到 git（2026-07-07）
 
 配套 [PLAN.md](PLAN.md) / [CONFIGURATION.md](CONFIGURATION.md)。每完成一个任务勾选并填时间。
+
+## v1.3.11 ECDICT CSV 直接 commit 到 git（2026-07-07）
+
+### Git — 解除 ecdict.csv 忽略并入仓
+
+- [x] **T1** [.gitignore](.gitignore) 移除 `backend/data/dict/ecdict.csv` 忽略规则
+- [x] **T2** `git add backend/data/dict/ecdict.csv`（62.88 MB / 770,612 行）
+
+### CI — 替换下载步骤为校验步骤
+
+- [x] **T3** [.github/workflows/docker.yml](.github/workflows/docker.yml) 移除 `Download ECDICT` 步骤（v1.3.9 引入），替换为轻量 `Verify ECDICT` 完整性检查（`if [ -f ... ]; then echo OK; else echo WARN; fi`）
+
+### 提交与推送
+
+- [x] **T4** commit `369416f`：ecdict.csv 入 git 索引
+- [x] **T5** commit `27dbfc2`：.gitignore + docker.yml 清理
+- [x] **T6** `git push origin main` 成功（GitHub 接受 62.14 MB 文件，warn 但不拒）
+
+### 验证
+
+- [x] **T7** 后端 `go build ./...` / `go vet ./...` / `go test ./...` 维持绿；前端 `pnpm build` 维持绿；Dockerfile 通配符 COPY 自动拾取；ChangeLog v1.3.11 + PLAN v1.3.11 活跃里程碑 + TASKS v1.3.11 段同步完成
+
+
 
 ## v1.3.10 播放器 UI 逐句复读改名 + dev-dist gitignore（2026-07-07）
 

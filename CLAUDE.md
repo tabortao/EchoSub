@@ -313,4 +313,4 @@ Windows 下 `strings.HasPrefix` 路径检查**不可靠**（路径分隔符混�
 
 ***
 
-**最后更新**：v1.3.10（播放器 UI 「Echo Loop」→「逐句复读」+ dev-dist 加入 .gitignore）
+**最后更新**：v1.3.11（ecdict.csv 62.88 MB 直接 commit 到 git，CI 不再下载）
